@@ -1,4 +1,4 @@
-"""Tests for loading the built-in defaults and a transcription config."""
+"""Tests for loading the built-in defaults and a campaign config."""
 
 import textwrap
 from pathlib import Path
@@ -162,3 +162,22 @@ def test_speakers_only_config_keeps_all_defaults(tmp_path):
 def test_top_level_must_be_mapping(tmp_path):
     with pytest.raises(ScribeError, match="top level"):
         load_config(write(tmp_path, "- just\n- a list\n"))
+
+
+def test_whisper_defaults_work_on_gpu_and_cpu():
+    whisper = load_config().settings["transcribe"]["whisper"]
+    assert whisper["compute_type"] == "default"  # WhisperX: float16 GPU, float32 CPU
+    assert whisper["align_model"] is None  # WhisperX picks one by language
+
+
+@pytest.mark.parametrize("value", ["org/wav2vec2-model", "null"])
+def test_optional_setting_accepts_text_or_null(tmp_path, value):
+    text = f"transcribe:\n  whisper:\n    align_model: {value}\n"
+    whisper = load_config(write(tmp_path, text)).settings["transcribe"]["whisper"]
+    assert whisper["align_model"] == (None if value == "null" else value)
+
+
+def test_optional_setting_rejects_other_types(tmp_path):
+    text = "transcribe:\n  whisper:\n    align_model: 5\n"
+    with pytest.raises(ScribeError, match=r"whisper\.align_model: expected text"):
+        load_config(write(tmp_path, text))

@@ -15,9 +15,10 @@ transcribe:
     model: large-v3
     language: en            # any Whisper language code; tuned and tested: en, pl
     device: cuda            # cpu works, but very slowly
-    compute_type: float16
+    compute_type: default   # WhisperX picks: float16 on GPU, float32 on CPU (or int8, ...)
     batch_size: 4           # lower it on "CUDA out of memory"
     prompt_max_tokens: 200  # glossary names beyond this are left out of the prompt
+    align_model: null       # word alignment model; null = WhisperX default for the language
 
   cleanup:                  # removing Whisper hallucinations, hesitations, loops
     energy_db: -50          # word is voiced if a frame_ms frame within it exceeds this (dBFS)

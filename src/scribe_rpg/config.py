@@ -148,6 +148,11 @@ def _check_type(default: Any, value: Any, label: str, name: str) -> None:
     """Require `value` to have the same kind of type as the default."""
     # bool is a subclass of int in Python, so it is checked first and
     # explicitly kept out of the number case.
+    if default is None:
+        # Optional text setting (e.g. align_model): text, or null for "not set".
+        if value is not None and not isinstance(value, str):
+            raise ScribeError(f"{label}: {name}: expected text or null, got {value!r}")
+        return
     if isinstance(default, bool):
         ok = isinstance(value, bool)
     elif isinstance(default, (int, float)):
