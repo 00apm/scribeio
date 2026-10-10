@@ -1,10 +1,250 @@
+"""Tests for the command line, with a fake transcriber (no GPU, no audio files)."""
+
+import json
+import textwrap
+from datetime import datetime, timezone
+
+import numpy as np
+import pytest
 from click.testing import CliRunner
 
 import scribe_rpg
 from scribe_rpg.cli import main
+from scribe_rpg.errors import ScribeError
+from scribe_rpg.transcribe import whisper
+
+from helpers import craig_dir, craig_zip, seg, silence, tone
+
+LOCAL_DATE = datetime(2026, 1, 1, 18, 0, tzinfo=timezone.utc).astimezone()
+LOCAL_DATE = LOCAL_DATE.strftime("%Y-%m-%d")
+VERSIONS = {"whisperx": "3.8.6", "torch": "2.8.0+cu128", "ffmpeg": "7.1"}
+
+
+class FakeTranscriber:
+    """Same interface as whisper.Transcriber; returns canned segments."""
+
+    calls: list[str] = []
+    fail: Exception | None = None
+    extra_warnings: list[str] = []
+
+    def __init__(self, cfg, names):
+        self.cfg = cfg
+        self.initial_prompt = ", ".join(names)
+        self.prompt_cut: list[str] = []
+        self.warnings = list(FakeTranscriber.extra_warnings)
+
+    def transcribe(self, audio, account, on_progress=None):
+        FakeTranscriber.calls.append(account)
+        if FakeTranscriber.fail:
+            raise FakeTranscriber.fail
+        if on_progress:
+            on_progress(50.0)
+            on_progress(100.0)
+        if account == "gm_account":
+            return [
+                seg("gm_account", 1.0, "Witajcie na sesji w Worgradzie"),
+                seg("gm_account", 15.0, "Dzięki za oglądanie!"),  # over silence
+            ]
+        return [seg(account, 5.0, "Tak.")]
+
+    def settings(self):
+        return {
+            **self.cfg,
+            "initial_prompt": self.initial_prompt,
+            "prompt_cut": self.prompt_cut,
+        }
+
+
+@pytest.fixture
+def fake_whisper(monkeypatch):
+    FakeTranscriber.calls = []
+    FakeTranscriber.fail = None
+    FakeTranscriber.extra_warnings = []
+    audio = np.concatenate([tone(10.0), silence(10.0)])  # speech 0-10 s, then silence
+    monkeypatch.setattr(whisper, "Transcriber", FakeTranscriber)
+    monkeypatch.setattr(whisper, "load_audio", lambda path: audio)
+    monkeypatch.setattr(whisper, "preflight", lambda cfg: [])
+    monkeypatch.setattr(whisper, "versions", lambda: dict(VERSIONS))
+    return FakeTranscriber
+
+
+@pytest.fixture
+def campaign(tmp_path):
+    folder = tmp_path / "campaign"
+    folder.mkdir()
+    glossary = folder / "glossary.txt"
+    glossary.write_text("Vorgrad\nWorgrad* -> Vorgrad\n", encoding="utf-8")
+    config = folder / "campaign.yaml"
+    config.write_text(
+        textwrap.dedent(
+            """\
+            speakers:
+              gm.account: Game Master
+              player.one: Player One
+            transcribe:
+              glossary: glossary.txt
+            """
+        ),
+        encoding="utf-8",
+    )
+    return config
+
+
+def invoke(*args):
+    return CliRunner().invoke(main, [str(a) for a in args])
 
 
 def test_version_option():
-    result = CliRunner().invoke(main, ["--version"])
+    result = invoke("--version")
     assert result.exit_code == 0
     assert scribe_rpg.__version__ in result.output
+
+
+def test_help_texts():
+    assert "Craig recording" in invoke("transcribe", "--help").output
+    assert "without the GPU" in invoke("merge", "--help").output
+
+
+def test_transcribe_writes_three_outputs(tmp_path, fake_whisper, campaign):
+    zip_path = craig_zip(tmp_path / "rec")
+    result = invoke("transcribe", zip_path, "-c", campaign)
+    assert result.exit_code == 0, result.output
+    out = tmp_path / "rec"
+    md = (out / f"{LOCAL_DATE}.md").read_text(encoding="utf-8")
+    assert "[00:00:01] Game Master: Witajcie na sesji w Vorgradzie" in md
+    assert "[00:00:05] Player One: Tak." in md
+    assert "Dzięki" not in md
+    report = (out / f"{LOCAL_DATE} - raport.md").read_text(encoding="utf-8")
+    assert "Dzięki za oglądanie! (0% voiced)" in report
+    assert "whisperx 3.8.6" in report
+    data = json.loads((out / f"{LOCAL_DATE}.json").read_text(encoding="utf-8"))
+    assert data["whisper"]["initial_prompt"] == "Vorgrad"
+    assert data["session"]["duration"] == 20.0
+    assert data["versions"] == VERSIONS
+    assert [t["transcribed"] for t in data["tracks"]] == [True, True, False]
+    assert fake_whisper.calls == ["gm_account", "player_one"]  # music never
+
+
+def test_outputs_contain_no_paths(tmp_path, fake_whisper, campaign):
+    zip_path = craig_zip(tmp_path / "rec")
+    out = tmp_path / "out"
+    result = invoke("transcribe", zip_path, "-c", campaign, "-o", out, "--name", "s")
+    assert result.exit_code == 0, result.output
+    data = json.loads((out / "s.json").read_text(encoding="utf-8"))
+    assert data["session"]["source"] == "session.zip"
+    assert all("/" not in t["file"] and "\\" not in t["file"] for t in data["tracks"])
+    for f in out.iterdir():
+        text = f.read_text(encoding="utf-8")
+        assert tmp_path.name not in text, f.name
+        assert "scribe-" not in text, f.name  # temp folder prefix
+
+
+def test_existing_outputs_need_force(tmp_path, fake_whisper, campaign):
+    zip_path = craig_zip(tmp_path / "rec")
+    assert invoke("transcribe", zip_path, "-c", campaign).exit_code == 0
+    again = invoke("transcribe", zip_path, "-c", campaign)
+    assert again.exit_code == 1
+    assert "--force" in again.output and "Traceback" not in again.output
+    assert invoke("transcribe", zip_path, "-c", campaign, "--force").exit_code == 0
+
+
+def test_preflight_failure_stops_before_unzipping(
+    tmp_path, fake_whisper, campaign, monkeypatch
+):
+    def fail(cfg):
+        raise ScribeError("ffmpeg not found in PATH; install it")
+
+    monkeypatch.setattr(whisper, "preflight", fail)
+    result = invoke("transcribe", craig_zip(tmp_path / "rec"), "-c", campaign)
+    assert result.exit_code == 1 and "ffmpeg not found" in result.output
+    assert "open session.zip" not in result.output
+    assert fake_whisper.calls == []
+
+
+def test_preflight_and_transcriber_warnings_shown(
+    tmp_path, fake_whisper, campaign, monkeypatch
+):
+    monkeypatch.setattr(whisper, "preflight", lambda cfg: ["runs on cpu: very slow"])
+    fake_whisper.extra_warnings = ["prompt length estimated"]
+    result = invoke("transcribe", craig_zip(tmp_path / "rec"), "-c", campaign)
+    assert result.exit_code == 0, result.output
+    assert "very slow" in result.output and "prompt length estimated" in result.output
+
+
+def test_failure_mid_run_writes_nothing(tmp_path, fake_whisper, campaign):
+    fake_whisper.fail = ScribeError("CUDA out of memory; try a smaller batch_size")
+    out = tmp_path / "out"
+    result = invoke(
+        "transcribe", craig_zip(tmp_path / "rec"), "-c", campaign, "-o", out
+    )
+    assert result.exit_code == 1
+    assert "smaller batch_size" in result.output and "Traceback" not in result.output
+    assert not out.exists() or not any(out.iterdir())
+
+
+def test_unknown_account_warns(tmp_path, fake_whisper):
+    result = invoke("transcribe", craig_zip(tmp_path / "rec"))
+    assert result.exit_code == 0, result.output
+    assert "unknown account gm_account" in result.output
+    md = (tmp_path / "rec" / f"{LOCAL_DATE}.md").read_text(encoding="utf-8")
+    assert "gm_account: Witajcie" in md
+
+
+def test_dir_input_writes_next_to_folder(tmp_path, fake_whisper, campaign):
+    folder = craig_dir(tmp_path / "proc" / "tracks")
+    assert invoke("transcribe", folder, "-c", campaign).exit_code == 0
+    assert (tmp_path / "proc" / f"{LOCAL_DATE}.md").exists()
+
+
+def test_dir_input_missing_track(tmp_path, fake_whisper, campaign):
+    folder = craig_dir(tmp_path / "tracks", skip={"player_one"})
+    result = invoke("transcribe", folder, "-c", campaign)
+    assert result.exit_code == 1 and "player_one" in result.output
+
+
+def test_merge_rebuilds_without_touching_json(tmp_path, fake_whisper, campaign):
+    zip_path = craig_zip(tmp_path / "rec")
+    assert invoke("transcribe", zip_path, "-c", campaign, "--name", "s").exit_code == 0
+    json_path = tmp_path / "rec" / "s.json"
+    before = json_path.read_bytes()
+    text = campaign.read_text(encoding="utf-8").replace("Game Master", "Narrator")
+    campaign.write_text(text, encoding="utf-8")
+    result = invoke("merge", json_path, "-c", campaign)
+    assert result.exit_code == 0, result.output
+    md = (tmp_path / "rec" / "s.md").read_text(encoding="utf-8")
+    assert "Narrator: Witajcie" in md
+    assert json_path.read_bytes() == before
+
+
+def test_merge_keep_fillers_and_name(tmp_path, fake_whisper, campaign):
+    zip_path = craig_zip(tmp_path / "rec")
+    assert invoke("transcribe", zip_path, "-c", campaign, "--name", "s").exit_code == 0
+    v2 = tmp_path / "v2"
+    result = invoke(
+        "merge", tmp_path / "rec" / "s.json", "-c", campaign,
+        "--name", "v2", "-o", v2, "--keep-fillers",
+    )  # fmt: skip
+    assert result.exit_code == 0, result.output
+    assert (v2 / "v2.md").exists() and (v2 / "v2 - raport.md").exists()
+    assert not (v2 / "v2.json").exists()
+
+
+def test_merge_unknown_format(tmp_path):
+    path = tmp_path / "s.json"
+    path.write_text('{"format": 99}', encoding="utf-8")
+    result = invoke("merge", path)
+    assert result.exit_code == 1
+    assert "unknown format" in result.output and "Traceback" not in result.output
+
+
+def test_config_error_is_one_line(tmp_path, fake_whisper):
+    bad = tmp_path / "bad.yaml"
+    bad.write_text("transcribe:\n  whisper:\n    bach_size: 2\n", encoding="utf-8")
+    result = invoke("transcribe", craig_zip(tmp_path / "rec"), "-c", bad)
+    assert result.exit_code == 1
+    assert "bad.yaml: transcribe.whisper.bach_size: unknown key" in result.output
+    assert "Traceback" not in result.output
+
+
+def test_usage_error_exit_2():
+    assert invoke("transcribe").exit_code == 2
