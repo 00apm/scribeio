@@ -1,0 +1,44 @@
+# Built-in defaults. A transcription config (-c) overrides any of these keys;
+# dicts merge, lists replace.
+
+# Substrings (case-insensitive) that mark music bot tracks. Kenku is the
+# default bot; add other bots' names in your config (the list replaces this).
+music_patterns: [kenku]
+
+whisper:
+  model: large-v3
+  language: en            # any Whisper language code; tuned and tested: en, pl
+  device: cuda            # cpu works, but very slowly
+  compute_type: float16
+  batch_size: 4           # lower it on "CUDA out of memory"
+  prompt_max_tokens: 200  # glossary names beyond this are left out of the prompt
+
+filters:
+  energy_db: -50          # word is voiced if a frame_ms frame within it exceeds this (dBFS)
+  frame_ms: 50
+  voiced_ratio: 0.5       # drop a segment when voiced words / words < this
+  phrase_max_words: 6     # phrase backstop applies only to segments this short
+  phrases:                # known Whisper hallucinations; case-insensitive substrings
+    # Polish
+    - dzięki za oglądanie
+    - dziękuję za oglądanie
+    - pta & tvp
+    - napisy stworzone
+    - napisy wykonane
+    - napisy przygotowane
+    # English
+    - thank you
+    - thanks for watching
+    - thank you for watching
+    - please subscribe
+    - subtitles by
+    - amara.org
+  keep_fillers: false     # true keeps hesitations (yyy, mmm, uh, um)
+  loop_min_words: 3
+  loop_max_repeat: 3      # a repeated segment is kept at most this many times in a row
+  pause: 1.5              # seconds; a new line starts when a speaker pauses this long
+
+bleed:                    # same speech on two tracks (report only)
+  similarity: 0.85
+  min_words: 5
+  min_overlap: 0.5        # fraction of the shorter segment
