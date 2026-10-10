@@ -1,0 +1,21 @@
+# audio and recordings never go into git
+*.zip
+*.flac
+*.wav
+*.mp3
+*.m4a
+*.opus
+*.aup
+*.aup3
+
+# python
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+
+# local Claude Code settings
+.claude/settings.local.json
+
+# design docs, notes, specs, plans: local only, never published
+_dev/

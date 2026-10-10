@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scribe"
+version = "0.1.0"
+description = "Craig (Discord) TTRPG session recordings -> mastered mix + transcript"
+readme = "README.md"
+requires-python = ">=3.13,<3.14"  # WhisperX 3.8.6 supports <3.14
+authors = [{ name = "Artur Marchewicz" }]
+dependencies = [
+    "pyyaml>=6",
+    # whisperx, torch (cu128) and ffmpeg are provided by the conda env `scribe`,
+    # installed in a fixed order (torch first) — see _dev/ARCHITECTURE.md.
+    # Not listed here so `pip install -e .` never swaps torch for the CPU build.
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+scribe = "scribe.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+scribe = ["*.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+markers = [
+    "gpu: needs CUDA + WhisperX (deselect with -m 'not gpu')",
+    "ffmpeg: needs ffmpeg in PATH",
+]
