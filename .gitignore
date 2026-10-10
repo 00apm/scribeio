@@ -17,8 +17,10 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 
-# local Claude Code settings
+# local Claude Code settings and assistant instructions (private)
 .claude/settings.local.json
+AGENTS.md
+CLAUDE.md
 
 # design docs, notes, specs, plans: local only, never published
 _dev/
