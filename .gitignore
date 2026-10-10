@@ -8,6 +8,9 @@
 *.aup
 *.aup3
 
+# real-session excerpt, its config and its test: local only, never in git (spec §12.3)
+tests/local/
+
 # python
 __pycache__/
 *.pyc

@@ -1,37 +1,46 @@
 [build-system]
-requires = ["setuptools>=69"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "scribe"
+name = "scribe-rpg"
 version = "0.1.0"
-description = "Craig (Discord) TTRPG session recordings -> mastered mix + transcript"
+description = "Transcripts of tabletop RPG sessions recorded with Craig (Discord)"
 readme = "README.md"
-requires-python = ">=3.13,<3.14"  # WhisperX 3.8.6 supports <3.14
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
 authors = [{ name = "Artur Marchewicz" }]
+keywords = ["ttrpg", "transcription", "whisper", "discord", "craig"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
 dependencies = [
+    "click>=8.2",
+    "rich>=13",
     "pyyaml>=6",
-    # whisperx, torch (cu128) and ffmpeg are provided by the conda env `scribe`,
-    # installed in a fixed order (torch first) — see _dev/ARCHITECTURE.md.
-    # Not listed here so `pip install -e .` never swaps torch for the CPU build.
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+# Install torch with CUDA first (README), so pip keeps the GPU build.
+transcribe = ["whisperx>=3.8.6,<4", "numpy>=1.24"]
+dev = ["pytest>=8", "numpy>=1.24"]
 
 [project.scripts]
-scribe = "scribe.cli:main"
+scribe = "scribe_rpg.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-scribe = ["*.yaml"]
+scribe_rpg = ["defaults.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
 markers = [
-    "gpu: needs CUDA + WhisperX (deselect with -m 'not gpu')",
-    "ffmpeg: needs ffmpeg in PATH",
+    "gpu: needs CUDA + WhisperX + the local excerpt in tests/local/ (deselect with -m 'not gpu')",
+    "ffmpeg: needs ffmpeg in PATH and WhisperX importable",
 ]
