@@ -14,7 +14,7 @@ TRACKS = [
     ("Kenku FM#1234 (000000000000000012)", "Kenku_FM_1234"),
 ]
 
-MUSIC = ["kenku", "tengu"]
+MUSIC = ["kenku", "jukebox"]  # default + one custom bot name
 
 
 def info_txt(tracks=TRACKS, start=START) -> str:
@@ -31,7 +31,7 @@ def info_txt(tracks=TRACKS, start=START) -> str:
 
 
 def craig_zip(folder: Path, tracks=TRACKS, start=START, name="session.zip") -> Path:
-    """Write a zip laid out like Craig's: info.txt, .aup, AAAAAA_data/*.flac, raw.dat."""
+    """Write a zip laid out like Craig's: info.txt, .aup, *_data/*.flac, raw.dat."""
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / name
     with zipfile.ZipFile(path, "w") as zf:

@@ -184,15 +184,21 @@ def open_recording(path: Path, music_patterns: list[str]) -> Iterator[Recording]
     """
     path = Path(path)
     if path.is_dir():
-        yield _read(path / "info.txt", path, path.resolve().name, music_patterns, complete=True)
+        yield _read(
+            path / "info.txt", path, path.resolve().name, music_patterns, complete=True
+        )
         return
     if not zipfile.is_zipfile(path):
         raise ScribeError(f"{path.name}: not a zip file or a folder of tracks")
     # The temp folder is removed when the with-block exits, whatever the reason.
-    with tempfile.TemporaryDirectory(prefix="scribe-", ignore_cleanup_errors=True) as tmp:
+    with tempfile.TemporaryDirectory(
+        prefix="scribe-", ignore_cleanup_errors=True
+    ) as tmp:
         root = Path(tmp)
         data_dir = _extract(path, root)
-        yield _read(root / "info.txt", data_dir, path.name, music_patterns, complete=False)
+        yield _read(
+            root / "info.txt", data_dir, path.name, music_patterns, complete=False
+        )
 
 
 def _extract(zip_path: Path, dest: Path) -> Path:
@@ -208,12 +214,19 @@ def _extract(zip_path: Path, dest: Path) -> Path:
             zf.extract(name, dest)
     data_dirs = sorted(p for p in dest.glob("*_data") if p.is_dir())
     if len(data_dirs) != 1:
-        raise ScribeError(f"{zip_path.name}: expected one *_data folder with FLAC tracks")
+        raise ScribeError(
+            f"{zip_path.name}: expected one *_data folder with FLAC tracks"
+        )
     return data_dirs[0]
 
 
-def _read(info_path: Path, track_dir: Path, source: str, music_patterns: list[str],
-          complete: bool) -> Recording:
+def _read(
+    info_path: Path,
+    track_dir: Path,
+    source: str,
+    music_patterns: list[str],
+    complete: bool,
+) -> Recording:
     """Build a Recording from info.txt and the track files in `track_dir`.
 
     Args:
@@ -239,9 +252,15 @@ def _read(info_path: Path, track_dir: Path, source: str, music_patterns: list[st
     ]
     if complete:
         present = {t.account for t in tracks}
-        missing = [a for a in info.accounts if a not in present and not is_music(a, music_patterns)]
+        missing = [
+            a
+            for a in info.accounts
+            if a not in present and not is_music(a, music_patterns)
+        ]
         if missing:
-            raise ScribeError(f"{source}: missing player track for {', '.join(missing)}")
+            raise ScribeError(
+                f"{source}: missing player track for {', '.join(missing)}"
+            )
     if not any(t.kind == "player" for t in tracks):
         raise ScribeError(f"{source}: no player tracks found")
     return Recording(source, info.start, tracks)

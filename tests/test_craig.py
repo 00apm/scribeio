@@ -4,10 +4,11 @@ import zipfile
 from datetime import datetime, timezone
 
 import pytest
-from helpers import MUSIC, TRACKS, craig_dir, craig_zip, info_txt
 
 from scribe_rpg.craig import is_music, open_recording, parse_info, sanitize
 from scribe_rpg.errors import ScribeError
+
+from helpers import MUSIC, TRACKS, craig_dir, craig_zip, info_txt
 
 
 @pytest.mark.parametrize(
@@ -31,7 +32,11 @@ def test_parse_info_start_is_local_time():
 
 
 def test_parse_info_accounts_sanitized_without_ids():
-    assert parse_info(info_txt()).accounts == ["gm_account", "player_one", "Kenku_FM_1234"]
+    assert parse_info(info_txt()).accounts == [
+        "gm_account",
+        "player_one",
+        "Kenku_FM_1234",
+    ]
 
 
 def test_parse_info_without_start_time():
@@ -52,7 +57,7 @@ def test_parse_info_without_tracks():
 
 def test_is_music_case_insensitive():
     assert is_music("Kenku_FM_1234", MUSIC)
-    assert is_music("TENGU_bot", MUSIC)
+    assert is_music("JUKEBOX_backup", MUSIC)
     assert not is_music("player_one", MUSIC)
 
 
