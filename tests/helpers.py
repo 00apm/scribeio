@@ -5,6 +5,8 @@ from __future__ import annotations
 import zipfile
 from pathlib import Path
 
+from scribe_rpg.transcribe.session import RawSession, Segment, TrackInfo, Word
+
 START = "2026-01-01T18:00:00.000Z"
 
 # (entry in info.txt, account in the track file name)
@@ -54,3 +56,54 @@ def craig_dir(folder: Path, tracks=TRACKS, start=START, skip=()) -> Path:
         if account not in skip:
             (folder / f"{n}-{account}.flac").write_bytes(b"fLaC fake")
     return folder
+
+
+def seg(
+    account, start, text, *, word_len=0.4, voiced=True, level_db=-20.0, estimated=False
+) -> Segment:
+    """Build a segment whose words follow each other from `start`.
+
+    Each word is `word_len` seconds long. `voiced` is one bool for all words or
+    a list with one bool per word.
+    """
+    tokens = text.split()
+    flags = voiced if isinstance(voiced, list) else [voiced] * len(tokens)
+    words = [
+        Word(
+            t,
+            round(start + i * word_len, 3),
+            round(start + (i + 1) * word_len, 3),
+            0.9,
+            flags[i],
+            estimated,
+        )
+        for i, t in enumerate(tokens)
+    ]
+    end = words[-1].end
+    return Segment(
+        account, start, end, text, words, avg_logprob=-0.3, level_db=level_db
+    )
+
+
+def raw_session(segments, tracks=None, **overrides) -> RawSession:
+    """Build a raw session with two players and a music track (fake names)."""
+    tracks = tracks or [
+        TrackInfo("gm_account", "player", "1-gm_account.flac", True),
+        TrackInfo("player_one", "player", "2-player_one.flac", True),
+        TrackInfo("Kenku_FM_1234", "music", "3-Kenku_FM_1234.flac", False),
+    ]
+    values = dict(
+        date="2026-01-01",
+        start="2026-01-01T19:00:00+01:00",
+        duration=3600.0,
+        source="session.zip",
+        whisper={
+            "model": "large-v3",
+            "initial_prompt": "Vorgrad, Ostromir",
+            "prompt_cut": [],
+        },
+        scribe="0.1.0",
+        versions={"whisperx": "3.8.6", "torch": "2.8.0+cu128", "ffmpeg": "7.1"},
+    )
+    values.update(overrides)
+    return RawSession(tracks=tracks, segments=segments, **values)
