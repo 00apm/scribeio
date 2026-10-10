@@ -3,7 +3,7 @@
 import pytest
 
 from scribe_rpg.errors import ScribeError
-from scribe_rpg.glossary import Glossary, load_glossary, parse_glossary
+from scribe_rpg.transcribe.glossary import Glossary, load_glossary, parse_glossary
 
 TEXT = """\
 # invented names only
