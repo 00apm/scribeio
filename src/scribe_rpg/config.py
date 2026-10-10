@@ -1,8 +1,16 @@
-"""Load the built-in defaults and an optional transcription config.
+"""Load the built-in defaults and an optional campaign config.
 
-The config file may override any key of ``defaults.yaml`` and adds two keys
-of its own: ``speakers`` (Discord account -> name in the transcript) and
-``glossary`` (path to the glossary file, relative to the config).
+One campaign config serves every command. It is sectioned like
+``defaults.yaml`` and every section is optional::
+
+    speakers:      Discord account -> name (shared by all commands)
+    input:         reading Craig recordings (shared)
+    transcribe:    `scribe transcribe` / `scribe merge`; also holds
+                   ``glossary`` (path relative to the config file)
+    master:        `scribe master` (added with audio mastering)
+
+``speakers`` and ``transcribe.glossary`` exist only in configs; every other
+key must exist in ``defaults.yaml``.
 """
 
 from __future__ import annotations
@@ -42,7 +50,7 @@ def load_config(
     """Build the settings for a run.
 
     Args:
-        path: Transcription config file (``-c``), or None for defaults only.
+        path: Campaign config file (``-c``), or None for defaults only.
         glossary: Glossary file from ``-g``; wins over the config's key.
         keep_fillers: ``--keep-fillers`` flag.
 
@@ -60,15 +68,17 @@ def load_config(
     if path is not None:
         path = Path(path)
         user = _read_yaml(path)
-        # speakers and glossary exist only in user configs, not in the defaults.
+        # speakers and transcribe.glossary exist only in user configs, not in
+        # the defaults, so they are taken out before the unknown-key check.
         speakers = _speakers(user.pop("speakers", None) or {}, path.name)
-        if (g := user.pop("glossary", None)) is not None:
+        section = user.get("transcribe")
+        if isinstance(section, dict) and (g := section.pop("glossary", None)):
             glossary_path = path.parent / str(g)
         settings = _merge(settings, user, path.name)
     if glossary is not None:
         glossary_path = Path(glossary)
     if keep_fillers:
-        settings["filters"]["keep_fillers"] = True
+        settings["transcribe"]["cleanup"]["keep_fillers"] = True
     return Config(settings, speakers, glossary_path)
 
 
