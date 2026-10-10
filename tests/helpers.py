@@ -5,6 +5,8 @@ from __future__ import annotations
 import zipfile
 from pathlib import Path
 
+import numpy as np
+
 from scribe_rpg.transcribe.session import RawSession, Segment, TrackInfo, Word
 
 START = "2026-01-01T18:00:00.000Z"
@@ -107,3 +109,14 @@ def raw_session(segments, tracks=None, **overrides) -> RawSession:
     )
     values.update(overrides)
     return RawSession(tracks=tracks, segments=segments, **values)
+
+
+def tone(seconds: float, amplitude: float = 0.1, sr: int = 16000) -> np.ndarray:
+    """440 Hz sine at 16 kHz; amplitude 0.1 is about -23 dBFS RMS."""
+    t = np.arange(int(seconds * sr)) / sr
+    return (amplitude * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+
+
+def silence(seconds: float, sr: int = 16000) -> np.ndarray:
+    """Digital silence at 16 kHz, like a Craig track when nobody talks."""
+    return np.zeros(int(seconds * sr), dtype=np.float32)
