@@ -40,6 +40,25 @@ transcribe:
   #   energy_db: -50        # takes effect only on a new `scribe transcribe`
   #   voiced_ratio: 0.5     # drop a segment when fewer of its words have sound
   #   keep_fillers: false   # true keeps yyy / mmm / uh / um
+  #   # Known Whisper hallucinations: a segment of at most 6 words containing
+  #   # one of these (case-insensitive) is dropped. Add phrases Whisper invents
+  #   # in your sessions; a real line that short with the phrase goes too, so
+  #   # add only what your group rarely says. Works on `scribe merge` (no new
+  #   # transcription). The list replaces the default, so keep these:
+  #   phrases:
+  #     - dzięki za oglądanie
+  #     - dziękuję za oglądanie
+  #     - pta & tvp
+  #     - napisy stworzone
+  #     - napisy wykonane
+  #     - napisy przygotowane
+  #     - thank you
+  #     - thanks for watching
+  #     - thank you for watching
+  #     - please subscribe
+  #     - subtitles by
+  #     - amara.org
+  #     - do widzenia       # example of your own: mid-session hallucination
 
   lines:
     pause: 1.5              # seconds of silence that start a new line
