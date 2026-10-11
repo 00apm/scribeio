@@ -65,5 +65,6 @@ strict = true
 warn_unreachable = true
 
 [[tool.mypy.overrides]]
-module = ["whisperx", "whisperx.*"]   # ships no type information
+# these ship no type information
+module = ["whisperx", "whisperx.*", "faster_whisper", "faster_whisper.*", "torchaudio", "torchaudio.*"]
 ignore_missing_imports = true
