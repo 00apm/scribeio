@@ -8,14 +8,19 @@
 *.aup
 *.aup3
 
+# real-session excerpt, its config and its test: local only, never in git (spec §12.3)
+tests/local/
+
 # python
 __pycache__/
 *.pyc
 *.egg-info/
 .pytest_cache/
 
-# local Claude Code settings
+# local Claude Code settings and assistant instructions (private)
 .claude/settings.local.json
+AGENTS.md
+CLAUDE.md
 
 # design docs, notes, specs, plans: local only, never published
 _dev/

@@ -1,0 +1,2 @@
+# Expected transcript files are compared byte for byte: keep LF everywhere.
+tests/data/** text eol=lf
