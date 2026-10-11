@@ -1,26 +1,105 @@
 # scribe
 
-Small local tool for TTRPG sessions recorded with Craig (Discord).
-One Craig `.zip` in → a mastered audio mix for the players and a transcript
-ready for an LLM assistant. Personal use only.
+Transcripts of tabletop RPG sessions recorded with [Craig](https://craig.chat)
+on Discord. One Craig `.zip` in → a transcript an LLM assistant can work with,
+plus a quality report.
+
+- Craig records one track per player, so no speaker diarization is needed:
+  speaker names come from a small config.
+- Whisper's hallucinations on silent stretches are removed by checking the
+  player's own track for sound; every removal is listed in the report.
+- Changed a name, the glossary or a threshold? `scribe merge` rebuilds the
+  transcript in seconds, without the GPU.
+
+scribe is a small app on top of [WhisperX](https://github.com/m-bain/whisperX);
+transcription quality and speed come from WhisperX and the Whisper model.
+
+## Install
+
+Needs Python 3.10–3.13 and ffmpeg in `PATH`. An NVIDIA GPU is strongly
+recommended: on a CPU, transcription takes hours per track.
+
+The recommended way is to install WhisperX yourself, so you know what lands on
+your disk:
+
+1. **PyTorch with CUDA** (about 2–3 GB), from
+   <https://pytorch.org/get-started/locally/>, for example:
+   `pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128`
+2. **WhisperX:** `pip install "whisperx>=3.8.6,<4"`
+3. **scribe:** from a clone of this repository, `pip install .`
+
+`pip install ".[transcribe]"` does steps 2 and 3 in one go. Without WhisperX,
+`scribe merge` still works.
+
+The first `scribe transcribe` downloads the models into the Hugging Face cache:
+Whisper `large-v3` (about 3 GB) and a word-alignment model for the language
+(about 0.4 GB for English, 1.2 GB for Polish). Later runs reuse them.
+
+Before any slow work, `scribe transcribe` checks that ffmpeg is in `PATH`,
+WhisperX is installed and, with the default `device: cuda`, that torch is a
+CUDA build and sees your GPU. The versions used are written into the `.json`
+and the report.
+
+## Usage
 
 ```
-scribe master     <zip>   # mastered mix (mp3)
-scribe transcribe <zip>   # transcript .md + .json + quality report
+scribe transcribe INPUT [-c CONFIG] [-g GLOSSARY] [-o DIR] [--name NAME] [--force] [--keep-fillers]
+scribe merge JSON       [-c CONFIG] [-g GLOSSARY] [-o DIR] [--name NAME] [--keep-fillers]
 ```
 
-## Install (conda env `scribe`)
+`INPUT` is the Craig zip (download it as FLAC, multi-track), or a folder with
+`info.txt` and `<n>-<account>.flac` tracks. `scribe <command> --help` lists
+every option.
 
-torch (cu128) and WhisperX are installed into the env first; then:
+A typical session:
+
+1. `scribe transcribe "session.zip" -c campaign.yaml` writes, next to the zip:
+   - `2026-01-01.md`: the transcript, frontmatter plus `[01:02:13] Name: text` lines
+   - `2026-01-01.json`: raw data (all segments, word timings, measurements)
+   - `2026-01-01 - raport.md`: per-track summary, warnings, every dropped
+     segment, possible bleed between tracks
+2. Read the report. Add unknown accounts to `speakers:`, misheard names to the
+   glossary.
+3. `scribe merge 2026-01-01.json -c campaign.yaml` rebuilds the `.md` and the
+   report.
+4. Give the `.md` to your assistant.
+
+Commented examples: [`examples/campaign.yaml`](examples/campaign.yaml) (one
+config for all commands; every section optional) and
+[`examples/glossary.txt`](examples/glossary.txt).
+
+## Languages
+
+Set `transcribe.whisper.language` in your config (default `en`). Any language
+Whisper supports works if WhisperX has a word-alignment model for it (or you
+set `transcribe.whisper.align_model`). English and Polish are tuned: the list
+of known Whisper hallucination phrases and the hesitation filter (`uh`, `um`,
+`erm` / `yyy`, `eee`, `mmm`) cover both. The main hallucination filter checks
+for sound on the speaker's own track, so it works in every language.
+
+## Supported setups
+
+| | |
+|---|---|
+| Tested | WhisperX 3.8.6, model `large-v3`, NVIDIA GPU (CUDA, float16), English and Polish |
+| Should work, untested | other Whisper models or a local model folder (`transcribe.whisper.model`); CPU (`device: cpu`, `compute_type: int8` or `float32`); WhisperX 3.x newer than 3.8.6; other languages with an alignment model |
+| Required | WhisperX with word alignment (word timings drive the filters and the line building) |
+| Not supported | other Whisper backends (`openai-whisper`, plain `faster-whisper`) |
+
+Untested setups get a warning, never a block. The cleanup thresholds were tuned
+on `large-v3`; smaller models hallucinate more, so check the report.
+
+## Development
 
 ```
-pip install -e .[dev]
+pip install -e ".[transcribe,dev]"
 pytest -m "not gpu"
+mypy
+ruff format src tests && ruff check src tests
 ```
 
-## Layout
+Tests use synthetic data only; no real recordings are in the repository.
 
-```
-src/scribe/     the package
-tests/          pytest
-```
+## License
+
+MIT
