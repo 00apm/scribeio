@@ -269,7 +269,7 @@ def missing_whisper(fake):
 def test_no_config_warns_about_defaults(tmp_path, fake_whisper):
     result = invoke("transcribe", craig_zip(tmp_path / "rec"))
     assert result.exit_code == 0, result.output
-    assert "no config (-c)" in result.output and "language en" in result.output
+    assert "no config" in result.output and "language en" in result.output
 
 
 def test_model_step_shows_model_language_and_device(tmp_path, fake_whisper, campaign):
@@ -346,4 +346,98 @@ def test_merge_without_config_warns(tmp_path, fake_whisper, campaign):
     )
     result = invoke("merge", tmp_path / "rec" / "s.json")
     assert result.exit_code == 0, result.output
-    assert "no config (-c)" in result.output
+    assert "no config" in result.output
+
+
+# --- scribe init and finding scribe.yaml ---------------------------------------
+
+
+def write_config_next_to(folder, name="Game Master"):
+    (folder / "scribe.yaml").write_text(
+        f"speakers:\n  gm.account: {name}\n", encoding="utf-8"
+    )
+
+
+def test_init_without_recording(tmp_path):
+    result = invoke("init", "-o", tmp_path / "cfg")
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "cfg" / "scribe.yaml").exists()
+    assert (tmp_path / "cfg" / "glossary.txt").exists()
+    assert "created scribe.yaml, glossary.txt" in result.output
+
+
+def test_init_from_recording_prefills_speakers(tmp_path):
+    zip_path = craig_zip(tmp_path / "rec")
+    result = invoke("init", zip_path, "--language", "pl")
+    assert result.exit_code == 0, result.output
+    text = (tmp_path / "rec" / "scribe.yaml").read_text(encoding="utf-8")
+    assert '"gm.account": "gm.account"' in text
+    assert "music bots (not transcribed): Kenku FM#1234" in text
+    assert "language: pl" in text
+    assert "scribe transcribe" in result.output  # next step hint
+
+
+def test_init_refuses_to_overwrite(tmp_path):
+    assert invoke("init", "-o", tmp_path).exit_code == 0
+    result = invoke("init", "-o", tmp_path)
+    assert result.exit_code == 1 and "--force" in result.output
+
+
+def test_transcribe_uses_config_next_to_recording(tmp_path, fake_whisper):
+    zip_path = craig_zip(tmp_path / "rec")
+    write_config_next_to(tmp_path / "rec", "Narrator")
+    result = invoke("transcribe", zip_path)
+    assert result.exit_code == 0, result.output
+    assert "using config scribe.yaml" in result.output
+    assert "no config" not in result.output
+    md = (tmp_path / "rec" / f"{LOCAL_DATE}.md").read_text(encoding="utf-8")
+    assert "Narrator: Witajcie" in md
+
+
+def test_transcribe_offers_to_create_config(tmp_path, fake_whisper, monkeypatch):
+    import scribe_rpg.cli as cli
+
+    monkeypatch.setattr(cli, "_interactive", lambda: True)
+    zip_path = craig_zip(tmp_path / "rec")
+    result = CliRunner().invoke(main, ["transcribe", str(zip_path)], input="y\n")
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "rec" / "scribe.yaml").exists()
+    assert "edit" in result.output and "scribe transcribe" in result.output
+    assert fake_whisper.calls == []  # stopped: nothing transcribed
+    assert not (tmp_path / "rec" / f"{LOCAL_DATE}.md").exists()
+
+
+def test_transcribe_declining_config_uses_defaults(tmp_path, fake_whisper, monkeypatch):
+    import scribe_rpg.cli as cli
+
+    monkeypatch.setattr(cli, "_interactive", lambda: True)
+    zip_path = craig_zip(tmp_path / "rec")
+    result = CliRunner().invoke(main, ["transcribe", str(zip_path)], input="n\n")
+    assert result.exit_code == 0, result.output
+    assert not (tmp_path / "rec" / "scribe.yaml").exists()
+    assert fake_whisper.calls == ["gm_account", "player_one"]
+
+
+def test_merge_uses_config_next_to_json(tmp_path, fake_whisper):
+    zip_path = craig_zip(tmp_path / "rec")
+    assert invoke("transcribe", zip_path, "--name", "s").exit_code == 0
+    write_config_next_to(tmp_path / "rec", "Narrator")
+    result = invoke("merge", tmp_path / "rec" / "s.json")
+    assert result.exit_code == 0, result.output
+    md = (tmp_path / "rec" / "s.md").read_text(encoding="utf-8")
+    assert "Narrator: Witajcie" in md
+
+
+def test_merge_without_config_points_to_init(tmp_path, fake_whisper):
+    assert (
+        invoke("transcribe", craig_zip(tmp_path / "rec"), "--name", "s").exit_code == 0
+    )
+    result = invoke("merge", tmp_path / "rec" / "s.json")
+    assert "scribe init" in result.output
+
+
+def test_init_elsewhere_hints_config_option(tmp_path):
+    zip_path = craig_zip(tmp_path / "rec")
+    result = invoke("init", zip_path, "-o", tmp_path / "cfg")
+    assert result.exit_code == 0, result.output
+    assert "-c" in result.output and "scribe.yaml" in result.output.split("Next:")[1]

@@ -7,6 +7,7 @@ with exit code 1; anything else is a bug and keeps its traceback.
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Callable
 from contextlib import ExitStack
 from pathlib import Path
@@ -14,7 +15,7 @@ from typing import Any, TypeVar
 
 import click
 
-from scribe_rpg import __version__, craig
+from scribe_rpg import __version__, craig, init
 from scribe_rpg.config import Config, load_config
 from scribe_rpg.errors import ScribeError
 from scribe_rpg.progress import Progress
@@ -107,13 +108,21 @@ def transcribe(
     from scribe_rpg.transcribe import energy
 
     progress = Progress()
-    cfg = load_config(config_path, glossary_path, keep_fillers)
+    folder = input_path.resolve().parent
     if config_path is None:
-        language = cfg.settings["transcribe"]["whisper"]["language"]
+        config_path = _find_config(folder, progress)
+    if config_path is None:
+        language = load_config().settings["transcribe"]["whisper"]["language"]
         progress.warn(
-            f"no config (-c): using defaults - language {language}, "
-            "account names as speakers"
+            f"no config (-c, or {init.CONFIG_NAME} next to the recording): using "
+            f"defaults - language {language}, account names as speakers"
         )
+        if _interactive() and click.confirm(
+            f"Create {init.CONFIG_NAME} for this recording now?", default=True, err=True
+        ):
+            _create_config(input_path, folder, None, False, progress)
+            return
+    cfg = load_config(config_path, glossary_path, keep_fillers)
     gloss = _glossary(cfg)
     wcfg = cfg.settings["transcribe"]["whisper"]
 
@@ -218,9 +227,14 @@ def merge(
     <name>.md and "<name> - raport.md"; never changes the .json.
     """
     progress = Progress()
-    cfg = load_config(config_path, glossary_path, keep_fillers)
     if config_path is None:
-        progress.warn("no config (-c): account names used as speakers")
+        config_path = _find_config(json_path.resolve().parent, progress)
+    if config_path is None:
+        progress.warn(
+            f"no config (-c, or {init.CONFIG_NAME} next to the .json): account "
+            f"names used as speakers; create one with: scribe init {json_path.name}"
+        )
+    cfg = load_config(config_path, glossary_path, keep_fillers)
     gloss = _glossary(cfg)
     raw = session_json.read(json_path)
     paths = _paths(out_dir or json_path.resolve().parent, name or json_path.stem)
@@ -277,6 +291,85 @@ def _ensure_models(
             continue
         models.download(model, progress)
     return wcfg
+
+
+@main.command(name="init")
+@click.argument(
+    "source",
+    metavar="[RECORDING]",
+    required=False,
+    type=click.Path(exists=True, path_type=Path),
+)
+@click.option(
+    "-o",
+    "--output",
+    "out_dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    help="Folder for the files (default: next to RECORDING, else here).",
+)
+@click.option("--language", help="Transcription language, e.g. pl (default: en).")
+@click.option("--force", is_flag=True, help="Overwrite an existing scribe.yaml.")
+def init_command(
+    source: Path | None, out_dir: Path | None, language: str | None, force: bool
+) -> None:  # fmt: skip
+    """Create scribe.yaml and glossary.txt to fill in.
+
+    With RECORDING (a Craig .zip, a track folder or a <name>.json), the
+    speakers section lists its Discord accounts, ready for their names.
+    scribe transcribe and scribe merge use scribe.yaml by themselves when it
+    is next to the recording or the .json.
+    """
+    progress = Progress()
+    if out_dir is None:
+        out_dir = source.resolve().parent if source else Path.cwd()
+    _create_config(source, out_dir, language, force, progress)
+
+
+def _interactive() -> bool:
+    """True when a person can answer questions (stdin is a terminal)."""
+    return sys.stdin.isatty()
+
+
+def _find_config(folder: Path, progress: Progress) -> Path | None:
+    """scribe.yaml in `folder`, announced when found."""
+    found = init.find_config(folder)
+    if found:
+        progress.console.print(
+            f"using config {found.name} (next to the input)", markup=False
+        )
+    return found
+
+
+def _create_config(
+    source: Path | None,
+    folder: Path,
+    language: str | None,
+    force: bool,
+    progress: Progress,
+) -> None:
+    """Write scribe.yaml (+ glossary.txt) from `source`; say what to do next."""
+    speakers = music = None
+    if source is not None:
+        patterns = load_config().settings["input"]["music_patterns"]
+        speakers, music = init.speakers_from(source, patterns)
+    written, kept = init.write(folder, speakers, music, language, force)
+    # soft_wrap: paths and the command are never broken across lines, so
+    # they can be copied from the terminal.
+    names = ", ".join(p.name for p in written)
+    out = progress.console
+    out.print(f"✔ created {names} in {folder}", markup=False, soft_wrap=True)
+    for path in kept:
+        out.print(f"kept existing {path.name}", markup=False, soft_wrap=True)
+    target = f'"{source}"' if source is not None else "<recording>"
+    # scribe finds scribe.yaml only next to the recording; elsewhere it needs -c.
+    beside = source is not None and folder.resolve() == source.resolve().parent
+    if not beside:
+        target += f' -c "{folder / init.CONFIG_NAME}"'
+    out.print(
+        f"Next: edit the speakers (and glossary) in {init.CONFIG_NAME}, then run:",
+        markup=False,
+    )
+    out.print(f"  scribe transcribe {target}", markup=False, soft_wrap=True)
 
 
 def _glossary(cfg: Config) -> Glossary:
