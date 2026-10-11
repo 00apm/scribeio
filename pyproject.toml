@@ -35,7 +35,7 @@ scribe = "scribe_rpg.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-scribe_rpg = ["defaults.yaml"]
+scribe_rpg = ["defaults.yaml", "templates/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

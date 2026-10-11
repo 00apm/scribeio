@@ -1,7 +1,10 @@
-# scribe campaign config. Every section and key is optional: what you leave
-# out comes from the built-in defaults. One file serves every command:
-#   scribe transcribe session.zip -c campaign.yaml
-#   scribe merge 2026-01-01.json -c campaign.yaml
+# scribe config, made by `scribe init`. Every section and key is optional:
+# what you leave out comes from the built-in defaults. One file serves every
+# command, and scribe finds it by itself when it is next to the recording
+# (or the .json):
+#   scribe transcribe session.zip          # uses scribe.yaml from that folder
+#   scribe merge 2026-01-01.json
+#   scribe transcribe session.zip -c other.yaml
 # Sections merge with the defaults; lists replace them. Unknown keys are an
 # error, so typos are caught.
 
@@ -13,7 +16,7 @@ speakers:
   gm.account: Game Master
   player.one: Player One
   player.two: Player Two
-  player.two.old: Player Two
+  player.two.old: Player Two   # several accounts may map to one person
 
 input:
   # Music bots: tracks whose account contains any of these (case-insensitive)
