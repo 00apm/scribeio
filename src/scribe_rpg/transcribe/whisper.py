@@ -11,6 +11,7 @@ Tested with WhisperX 3.8.6; other versions get a warning, never a block.
 
 from __future__ import annotations
 
+import gc
 import logging
 import math
 import re
@@ -285,10 +286,12 @@ def quiet_libraries() -> None:
     They would break up scribe's progress lines; real warnings and errors
     still come through.
     """
+    # WhisperX also warns per segment it cannot align; those words are
+    # reported as estimated, so only its errors are shown.
+    logging.getLogger("whisperx").setLevel(logging.ERROR)
     # Lightning sets its "lightning.pytorch" logger to INFO when imported, so
     # the logger printing the checkpoint-upgrade notice is set directly.
     for name in (
-        "whisperx",
         "pyannote",
         "speechbrain",
         "lightning",
@@ -326,17 +329,38 @@ def _oom_guard(cfg: dict[str, Any]) -> Iterator[None]:
         raise
 
 
+# Free GPU memory below which Windows may silently move GPU memory into
+# normal RAM (NVIDIA "Sysmem Fallback"), which makes transcription crawl.
+LOW_VRAM = 2 * 1024**3
+
+
+def _free_gpu() -> None:
+    """Return memory of unloaded models to the GPU (PyTorch keeps a cache)."""
+    gc.collect()
+    import torch
+
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
 class Transcriber:
-    """Whisper and alignment models, loaded once per run.
+    """Whisper and alignment models, with only one of them on the GPU at a time.
+
+    For each track Whisper transcribes, is unloaded, then the alignment model
+    aligns the words and is unloaded too. Keeping both (plus PyTorch's cache)
+    loaded fills an 8 GB GPU; Windows then moves memory into normal RAM
+    without an error and transcription slows down several times. Reloading
+    from the disk cache costs a few seconds per track.
 
     Attributes:
         initial_prompt: Glossary names given to Whisper.
         prompt_cut: Glossary names that did not fit the prompt.
-        warnings: Problems worth showing (e.g. prompt length only estimated).
+        warnings: Problems worth showing (prompt length only estimated, little
+            free GPU memory).
     """
 
     def __init__(self, cfg: dict[str, Any], names: list[str]) -> None:
-        """Load the models.
+        """Load Whisper (kept for the first track) and build the prompt.
 
         Args:
             cfg: The ``transcribe.whisper`` settings, passed to WhisperX as-is
@@ -344,54 +368,78 @@ class Transcriber:
             names: Glossary names for the prompt, in priority order.
 
         Raises:
-            ScribeError: On missing WhisperX, CUDA out of memory, or a
-                language without an alignment model.
+            ScribeError: On missing WhisperX, CUDA out of memory or a damaged
+                model file.
         """
-        whisperx = _whisperx()
+        _whisperx()
         quiet_libraries()
         self.cfg = cfg
         self.warnings: list[str] = []
-
-        # Models are checked (and downloaded with consent) before this point
-        # (see transcribe.models), so loading never touches the network.
-        def load(**extra: Any) -> Any:
-            return whisperx.load_model(
-                cfg["model"],
-                cfg["device"],
-                compute_type=cfg["compute_type"],
-                language=cfg["language"],
-                local_files_only=True,
-                **extra,
-            )
-
+        self.initial_prompt = ""
+        self.prompt_cut: list[str] = []
         with _oom_guard(cfg):
-            base = load()
+            base = self._load_whisper()
             count = self._token_counter(base)
             self.initial_prompt, self.prompt_cut = cut_prompt(
                 names, count, cfg["prompt_max_tokens"]
             )
             # The prompt goes in through the public asr_options; model= reuses
             # the already loaded weights (only the small VAD model is rebuilt).
-            self.model = (
-                load(
-                    asr_options={"initial_prompt": self.initial_prompt},
-                    model=base.model,
-                )
-                if self.initial_prompt
-                else base
+            self._whisper: Any = (
+                self._load_whisper(model=base.model) if self.initial_prompt else base
             )
-            try:
-                self.align_model, self.align_meta = whisperx.load_align_model(
-                    language_code=cfg["language"],
-                    device=cfg["device"],
-                    model_name=cfg["align_model"],
-                    model_cache_only=True,
-                )
-            except ValueError as e:
-                raise ScribeError(
-                    f"word alignment: {e}; set transcribe.whisper.align_model to a "
-                    "wav2vec2 model for this language"
-                ) from None
+            del base
+            self._check_free_memory()
+
+    def _load_whisper(self, **extra: Any) -> Any:
+        """Load Whisper from the local cache, with the prompt once it is known.
+
+        Models are checked (and downloaded with consent) before a run (see
+        transcribe.models), so loading never touches the network.
+        """
+        cfg = self.cfg
+        if self.initial_prompt:
+            extra.setdefault("asr_options", {"initial_prompt": self.initial_prompt})
+        return _whisperx().load_model(
+            cfg["model"],
+            cfg["device"],
+            compute_type=cfg["compute_type"],
+            language=cfg["language"],
+            local_files_only=True,
+            **extra,
+        )
+
+    def _load_alignment(self) -> tuple[Any, Any]:
+        cfg = self.cfg
+        try:
+            model, meta = _whisperx().load_align_model(
+                language_code=cfg["language"],
+                device=cfg["device"],
+                model_name=cfg["align_model"],
+                model_cache_only=True,
+            )
+        except ValueError as e:
+            raise ScribeError(
+                f"word alignment: {e}; set transcribe.whisper.align_model to a "
+                "wav2vec2 model for this language"
+            ) from None
+        return model, meta
+
+    def _check_free_memory(self) -> None:
+        """Warn when Whisper leaves little GPU memory for the work itself."""
+        if self.cfg["device"] != "cuda":
+            return
+        import torch
+
+        free, _total = torch.cuda.mem_get_info()
+        if free < LOW_VRAM:
+            self.warnings.append(
+                f"only {free / 1024**3:.1f} GB GPU memory free after loading Whisper; "
+                "Windows may then move GPU memory into RAM and transcription "
+                "crawls without an error. Lower transcribe.whisper.batch_size, or "
+                "set NVIDIA 'CUDA - Sysmem Fallback Policy' to 'Prefer No Sysmem "
+                "Fallback' to get a clear out-of-memory error instead"
+            )
 
     def _token_counter(self, pipeline: Any) -> Callable[[str], int]:
         """Count tokens with the model's tokenizer, or estimate if unavailable."""
@@ -407,45 +455,79 @@ class Transcriber:
         return lambda text: math.ceil(len(text) / 2)
 
     def transcribe(
-        self, audio: Any, account: str, on_progress: Progress | None = None
+        self,
+        audio: Any,
+        account: str,
+        on_progress: Progress | None = None,
+        on_phase: Callable[[str], None] | None = None,
     ) -> list[Segment]:
-        """Transcribe and align one track.
+        """Transcribe and align one track, one model on the GPU at a time.
 
         Args:
             audio: 16 kHz mono samples from `load_audio`.
             account: Track account stamped on the segments.
             on_progress: Called with 0..100 while the track is processed, if
                 WhisperX reports progress; always called with 100 at the end.
+            on_phase: Called with the current phase: loading Whisper, voice
+                detection, transcribing, loading alignment model, aligning.
 
         Returns:
             The track's segments with word timings.
         """
         whisperx = _whisperx()
         cfg = self.cfg
-        # Transcription is most of the work: map it to 0-90 %, alignment to 90-100 %.
-        transcribing = alignment = None
+
+        def phase(name: str) -> None:
+            if on_phase is not None:
+                on_phase(name)
+
+        # WhisperX reports transcription progress only after voice detection;
+        # its first report starts the "transcribing" phase. Transcription is
+        # most of the work: 0-90 %; alignment: 90-100 %.
+        started = False
+
+        def transcribing(percent: float) -> None:
+            nonlocal started
+            if not started:
+                started = True
+                phase("transcribing")
+            if on_progress is not None:
+                on_progress(percent * 0.9)
+
+        aligning = None
         if on_progress is not None:
-            report = on_progress  # bound for the lambdas (mypy narrowing)
-            transcribing = lambda p: report(p * 0.9)  # noqa: E731
-            alignment = lambda p: report(90 + p * 0.1)  # noqa: E731
+            report = on_progress  # bound for the lambda (mypy narrowing)
+            aligning = lambda p: report(90 + p * 0.1)  # noqa: E731
+
         with _oom_guard(cfg):
+            if self._whisper is None:
+                phase("loading Whisper")
+                self._whisper = self._load_whisper()
+            phase("voice detection")
             result = _call(
-                self.model.transcribe,
+                self._whisper.transcribe,
                 audio,
                 batch_size=cfg["batch_size"],
                 language=cfg["language"],
                 progress=transcribing,
             )
+            self._whisper = None
+            _free_gpu()
+            phase("loading alignment model")
+            align_model, align_meta = self._load_alignment()
+            phase("aligning")
             aligned = _call(
                 whisperx.align,
                 result["segments"],
-                self.align_model,
-                self.align_meta,
+                align_model,
+                align_meta,
                 audio,
                 cfg["device"],
                 return_char_alignments=False,
-                progress=alignment,
+                progress=aligning,
             )
+            del align_model, align_meta
+            _free_gpu()
         if on_progress:
             on_progress(100.0)
         return to_segments(aligned["segments"], account, result["segments"])

@@ -28,10 +28,6 @@ from rich.progress import (
 )
 from rich.progress import Progress as RichProgress
 
-# WhisperX reports 0-90 % for transcription and 90-100 % for alignment
-# (see transcribe.whisper.Transcriber.transcribe).
-_ALIGNING_FROM = 90.0
-
 
 class Progress:
     """Progress reporter for one command run.
@@ -117,6 +113,7 @@ class TrackBar:
         self._bar = bar
         self._task = task
         self._account = ""
+        self._phase = ""
         self._finished = 0
         self._percent = 0.0
         self._started = time.monotonic()
@@ -128,20 +125,18 @@ class TrackBar:
 
     @property
     def phase(self) -> str:
-        """What the current track is going through, judged by its progress.
+        """What the current track is going through, e.g. ``transcribing``."""
+        return self._phase
 
-        WhisperX first detects speech (no progress reported yet), then
-        transcribes, then aligns words.
-        """
-        if self._percent <= 0:
-            return "voice detection"
-        if self._percent < _ALIGNING_FROM:
-            return "transcribing"
-        return "aligning"
+    def set_phase(self, phase: str) -> None:
+        """Show a new phase for the current track (told by the transcriber)."""
+        self._phase = phase
+        self._refresh()
 
     def start(self, account: str) -> None:
         """Begin a track: show its name and phase next to the bar."""
         self._account = account
+        self._phase = "starting"
         self._percent = 0.0
         self._started = time.monotonic()
         self._refresh()

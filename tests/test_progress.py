@@ -63,16 +63,17 @@ def test_track_bar_position_counts_finished_tracks_and_percent():
         assert bar.position == pytest.approx(1.25)
 
 
-def test_track_bar_names_the_phase():
+def test_track_bar_shows_the_phase_it_is_told():
     p, _ = make()
     with p.tracks(1) as bar:
         bar.start("gm_account")
-        assert bar.phase == "voice detection"  # before WhisperX reports progress
-        bar.update(10.0)
-        assert bar.phase == "transcribing"
-        bar.update(95.0)
-        assert bar.phase == "aligning"
+        assert bar.phase == "starting"
+        bar.set_phase("loading Whisper [large-v3]")
+        bar.update(10.0)  # progress does not change the phase
+        assert bar.phase == "loading Whisper [large-v3]"
         bar.done("gm_account: 3 segments")
+        bar.start("player_one")
+        assert bar.phase == "starting"
 
 
 def test_download_bar_counts_bytes():

@@ -259,8 +259,18 @@ def fakes(monkeypatch):
     fake_whisperx = SimpleNamespace(
         load_model=load_model, load_align_model=load_align_model, align=fake_align
     )
+    state.freed = 0
+    state.free_bytes = 6 * 1024**3
+
+    def empty_cache():
+        state.freed += 1
+
     fake_torch = SimpleNamespace(
-        cuda=SimpleNamespace(is_available=lambda: state.cuda),
+        cuda=SimpleNamespace(
+            is_available=lambda: state.cuda,
+            empty_cache=empty_cache,
+            mem_get_info=lambda: (state.free_bytes, 8 * 1024**3),
+        ),
         version=SimpleNamespace(cuda=state.cuda_build),
     )
     state.torch = fake_torch
@@ -393,8 +403,8 @@ def test_transcriber_passes_settings_through(fakes):
             align_model="org/model",
         ),
         [],
-    )
-    [load] = fakes.loads  # no glossary: loaded once
+    ).transcribe([0.0] * 16000, "gm_account")
+    load = fakes.loads[0]
     assert (load["arch"], load["device"], load["compute_type"], load["language"]) == (
         "medium",
         "cpu",
@@ -448,8 +458,9 @@ def test_out_of_memory(fakes):
 
 def test_no_alignment_model_for_language(fakes):
     fakes.align_error = ValueError("No default align-model for language: xx")
+    t = whisper.Transcriber(wcfg(language="xx"), [])
     with pytest.raises(ScribeError, match="transcribe.whisper.align_model"):
-        whisper.Transcriber(wcfg(language="xx"), [])
+        t.transcribe([0.0] * 16000, "gm_account")
 
 
 def test_other_errors_keep_their_type(fakes):
@@ -465,7 +476,7 @@ def test_whisperx_missing(monkeypatch):
 
 
 def test_models_load_offline(fakes):
-    whisper.Transcriber(wcfg(), ["Vorgrad"])
+    whisper.Transcriber(wcfg(), ["Vorgrad"]).transcribe([0.0] * 16000, "gm_account")
     assert all(load["local_files_only"] is True for load in fakes.loads)
     assert fakes.align_cache_only is True
 
@@ -475,8 +486,9 @@ def test_damaged_model_file_is_a_clear_error(fakes):
         "PytorchStreamReader failed reading zip archive: "
         "failed finding central directory"
     )
+    t = whisper.Transcriber(wcfg(), [])
     with pytest.raises(ScribeError, match="damaged"):
-        whisper.Transcriber(wcfg(), [])
+        t.transcribe([0.0] * 16000, "gm_account")
 
 
 def test_preflight_quiets_library_logs(fakes):
@@ -486,11 +498,55 @@ def test_preflight_quiets_library_logs(fakes):
     # The checkpoint-upgrade notice comes from this exact logger; Lightning sets
     # its own "lightning.pytorch" logger to INFO on import, so the parent
     # loggers alone are not enough.
+    # WhisperX's per-segment alignment warnings are hidden too (ERROR); the
+    # affected words show up as estimated in the report.
+    assert logging.getLogger("whisperx").level == logging.ERROR
     names = (
-        "whisperx",
         "pyannote",
         "lightning.pytorch.utilities.migration.utils",
         "pytorch_lightning.utilities.migration.utils",
     )
     for name in names:
         assert logging.getLogger(name).level == logging.WARNING
+
+
+# --- one model on the GPU at a time ----------------------------------------------
+
+
+def test_only_one_model_on_the_gpu_at_a_time(fakes):
+    t = whisper.Transcriber(wcfg(), ["Vorgrad"])
+    loads_at_start = len(fakes.loads)  # base + with prompt
+    t.transcribe([0.0] * 16000, "gm_account")
+    t.transcribe([0.0] * 16000, "player_one")
+    # Whisper is unloaded after each track and loaded again for the next one,
+    # always with the glossary prompt; the alignment model once per track.
+    later = fakes.loads[loads_at_start:]
+    assert len(later) == 1
+    assert later[0]["asr_options"] == {"initial_prompt": "Vorgrad"}
+    assert len(fakes.align_loads) == 2
+    assert fakes.freed >= 4  # GPU cache emptied after every unload
+
+
+def test_phases_reported_per_track(fakes):
+    t = whisper.Transcriber(wcfg(), [])
+    first, second = [], []
+    t.transcribe([0.0] * 16000, "gm_account", on_phase=first.append)
+    t.transcribe([0.0] * 16000, "player_one", on_phase=second.append)
+    assert first == ["voice detection", "transcribing", "loading alignment model",
+                     "aligning"]  # fmt: skip
+    assert second[0] == "loading Whisper" and second[1:] == first
+
+
+def test_low_gpu_memory_warning(fakes):
+    fakes.free_bytes = 1024**3  # 1 GB left after loading Whisper
+    t = whisper.Transcriber(wcfg(), [])
+    assert any("Sysmem Fallback" in w and "batch_size" in w for w in t.warnings)
+
+
+def test_enough_gpu_memory_no_warning(fakes):
+    assert whisper.Transcriber(wcfg(), []).warnings == []
+
+
+def test_no_memory_check_on_cpu(fakes):
+    fakes.free_bytes = 0
+    assert whisper.Transcriber(wcfg(device="cpu"), []).warnings == []

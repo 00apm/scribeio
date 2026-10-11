@@ -175,7 +175,9 @@ def transcribe(
                 bar.start(t.account)
                 audio = whisper.load_audio(t.path)
                 duration = max(duration, len(audio) / energy.SAMPLE_RATE)
-                found = transcriber.transcribe(audio, t.account, on_progress=bar.update)
+                found = transcriber.transcribe(
+                    audio, t.account, on_progress=bar.update, on_phase=bar.set_phase
+                )
                 energy.annotate(found, audio, cleanup["energy_db"], cleanup["frame_ms"])
                 segments.extend(found)
                 bar.done(f"{t.account}: {len(found)} segments")

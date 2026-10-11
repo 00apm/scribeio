@@ -104,6 +104,17 @@ for sound on the speaker's own track, so it works in every language.
 Untested setups get a warning, never a block. The cleanup thresholds were tuned
 on `large-v3`; smaller models hallucinate more, so check the report.
 
+## Troubleshooting
+
+**Transcription is much slower than expected (Windows).** When GPU memory is
+full, the NVIDIA driver quietly moves the rest into normal RAM ("Shared GPU
+memory" in Task Manager rises above zero) and work slows down several times,
+without any error. scribe keeps only one model on the GPU at a time and warns
+when little memory is left after loading Whisper. If it still happens, lower
+`transcribe.whisper.batch_size`, or set *NVIDIA Control Panel → Manage 3D
+settings → CUDA - Sysmem Fallback Policy* to *Prefer No Sysmem Fallback*: you
+then get a clear out-of-memory error, which scribe explains.
+
 ## Development
 
 ```

@@ -33,7 +33,9 @@ class FakeTranscriber:
         self.prompt_cut: list[str] = []
         self.warnings = list(FakeTranscriber.extra_warnings)
 
-    def transcribe(self, audio, account, on_progress=None):
+    def transcribe(self, audio, account, on_progress=None, on_phase=None):
+        if on_phase:
+            on_phase("transcribing")
         FakeTranscriber.calls.append(account)
         if FakeTranscriber.fail:
             raise FakeTranscriber.fail
