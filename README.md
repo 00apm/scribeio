@@ -31,9 +31,13 @@ your disk:
 `pip install ".[transcribe]"` does steps 2 and 3 in one go. Without WhisperX,
 `scribe merge` still works.
 
-The first `scribe transcribe` downloads the models into the Hugging Face cache:
-Whisper `large-v3` (about 3 GB) and a word-alignment model for the language
-(about 0.4 GB for English, 1.2 GB for Polish). Later runs reuse them.
+`scribe transcribe` needs two models: Whisper (`large-v3` by default, about
+3 GB) and a word-alignment model for the language (about 0.4 GB for English,
+1.2 GB for Polish). Models already on your disk are used offline. If one is
+missing, scribe shows its size and asks before downloading it; for a missing
+Whisper model it can also use another one you already have, for that run.
+`--yes` downloads without asking. A cut-off download is detected and
+replaced, never used.
 
 Before any slow work, `scribe transcribe` checks that ffmpeg is in `PATH`,
 WhisperX is installed and, with the default `device: cuda`, that torch is a
@@ -43,13 +47,14 @@ and the report.
 ## Usage
 
 ```
-scribe transcribe INPUT [-c CONFIG] [-g GLOSSARY] [-o DIR] [--name NAME] [--force] [--keep-fillers]
+scribe transcribe INPUT [-c CONFIG] [-g GLOSSARY] [-o DIR] [--name NAME] [--force] [--keep-fillers] [--yes]
 scribe merge JSON       [-c CONFIG] [-g GLOSSARY] [-o DIR] [--name NAME] [--keep-fillers]
 ```
 
 `INPUT` is the Craig zip (download it as FLAC, multi-track), or a folder with
 `info.txt` and `<n>-<account>.flac` tracks. `scribe <command> --help` lists
-every option.
+every option. Without `-c`, scribe warns and uses the defaults: English, and
+Discord account names as speakers.
 
 A typical session:
 
