@@ -18,7 +18,14 @@ from scribe_rpg import __version__, craig
 from scribe_rpg.config import Config, load_config
 from scribe_rpg.errors import ScribeError
 from scribe_rpg.progress import Progress
-from scribe_rpg.transcribe import markdown, pipeline, report, session_json, whisper
+from scribe_rpg.transcribe import (
+    markdown,
+    models,
+    pipeline,
+    report,
+    session_json,
+    whisper,
+)
 from scribe_rpg.transcribe.glossary import Glossary, load_glossary
 from scribe_rpg.transcribe.session import RawSession, Segment, TrackInfo
 
@@ -76,6 +83,9 @@ def main() -> None:
 )
 @_common
 @click.option("--force", is_flag=True, help="Overwrite existing outputs.")
+@click.option(
+    "-y", "--yes", is_flag=True, help="Download missing models without asking."
+)
 def transcribe(
     input_path: Path,
     config_path: Path | None,
@@ -84,6 +94,7 @@ def transcribe(
     name: str | None,
     keep_fillers: bool,
     force: bool,
+    yes: bool,
 ) -> None:
     """Transcribe a Craig recording.
 
@@ -97,6 +108,12 @@ def transcribe(
 
     progress = Progress()
     cfg = load_config(config_path, glossary_path, keep_fillers)
+    if config_path is None:
+        language = cfg.settings["transcribe"]["whisper"]["language"]
+        progress.warn(
+            f"no config (-c): using defaults - language {language}, "
+            "account names as speakers"
+        )
     gloss = _glossary(cfg)
     wcfg = cfg.settings["transcribe"]["whisper"]
 
@@ -106,6 +123,9 @@ def transcribe(
         used_versions = whisper.versions()
     for w in warnings:
         progress.warn(w)
+    with progress.step("check models"):
+        needed = models.needed(wcfg)
+    wcfg = _ensure_models(needed, wcfg, progress, yes)
 
     # The ExitStack keeps the zip's temp folder alive until outputs are written
     # and removes it afterwards, also on errors and Ctrl+C.
@@ -129,8 +149,8 @@ def transcribe(
                     "no speakers: entry, account name used"
                 )
 
-        label = f"load Whisper {wcfg['model']} on {wcfg['device']}"
-        with progress.step(f"{label} (first run downloads the model)"):
+        label = f"load Whisper {wcfg['model']} ({wcfg['language']}) on {wcfg['device']}"
+        with progress.step(label):
             transcriber = whisper.Transcriber(wcfg, gloss.names)
         for w in transcriber.warnings:
             progress.warn(w)
@@ -199,6 +219,8 @@ def merge(
     """
     progress = Progress()
     cfg = load_config(config_path, glossary_path, keep_fillers)
+    if config_path is None:
+        progress.warn("no config (-c): account names used as speakers")
     gloss = _glossary(cfg)
     raw = session_json.read(json_path)
     paths = _paths(out_dir or json_path.resolve().parent, name or json_path.stem)
@@ -208,6 +230,53 @@ def merge(
     for w in result.warnings:
         progress.warn(w)
     _summary(progress, paths, result)
+
+
+def _ensure_models(
+    needed: list[models.Model],
+    wcfg: dict[str, Any],
+    progress: Progress,
+    yes: bool,
+) -> dict[str, Any]:
+    """Make sure every needed model is on disk, asking before any download.
+
+    For a missing Whisper model the user may also pick another downloaded
+    one for this run; scribe never switches on its own.
+
+    Returns:
+        The whisper settings to use (the model may have been switched).
+
+    Raises:
+        ScribeError: If the user aborts.
+    """
+    for model in needed:
+        if model.cached:
+            continue
+        text = models.describe(model, models.size(model))
+        progress.warn(text if model.damaged else f"{text} is not downloaded")
+        others = models.cached_whisper_models() if model.kind == "Whisper model" else []
+        if yes:
+            choice = "d"
+        else:
+            options = {"d": "download it"}
+            if others:
+                options["u"] = f"use {others[0]} for this run"
+            options["a"] = "abort"
+            for key, meaning in options.items():
+                progress.console.print(f"  [{key}] {meaning}", markup=False)
+            choice = click.prompt(
+                "Choose", type=click.Choice(list(options)), default="a", err=True
+            )
+        if choice == "a":
+            raise ScribeError(
+                f"{models.label(model)} not downloaded; run again and choose "
+                "download, or add --yes"
+            )
+        if choice == "u":
+            wcfg = {**wcfg, "model": others[0]}
+            continue
+        models.download(model, progress)
+    return wcfg
 
 
 def _glossary(cfg: Config) -> Glossary:

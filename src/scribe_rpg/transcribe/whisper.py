@@ -285,8 +285,18 @@ def quiet_libraries() -> None:
     They would break up scribe's progress lines; real warnings and errors
     still come through.
     """
-    for name in ("whisperx", "lightning", "lightning_fabric", "pytorch_lightning",
-                 "pyannote", "speechbrain"):  # fmt: skip
+    # Lightning sets its "lightning.pytorch" logger to INFO when imported, so
+    # the logger printing the checkpoint-upgrade notice is set directly.
+    for name in (
+        "whisperx",
+        "pyannote",
+        "speechbrain",
+        "lightning",
+        "lightning_fabric",
+        "pytorch_lightning",
+        "lightning.pytorch.utilities.migration.utils",
+        "pytorch_lightning.utilities.migration.utils",
+    ):
         logging.getLogger(name).setLevel(logging.WARNING)
     # pyannote turns TF32 off for reproducibility and says so on every run.
     warnings.filterwarnings("ignore", message=".*TensorFloat-32.*")

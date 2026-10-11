@@ -11,7 +11,7 @@ from click.testing import CliRunner
 import scribe_rpg
 from scribe_rpg.cli import main
 from scribe_rpg.errors import ScribeError
-from scribe_rpg.transcribe import whisper
+from scribe_rpg.transcribe import models, whisper
 
 from helpers import craig_dir, craig_zip, seg, silence, tone
 
@@ -65,6 +65,18 @@ def fake_whisper(monkeypatch):
     monkeypatch.setattr(whisper, "load_audio", lambda path: audio)
     monkeypatch.setattr(whisper, "preflight", lambda cfg: [])
     monkeypatch.setattr(whisper, "versions", lambda: dict(VERSIONS))
+    FakeTranscriber.models = [
+        models.Model("Whisper model", "large-v3", "huggingface", True),
+        models.Model("alignment model", "WAV2VEC2_ASR_BASE_960H", "torchaudio", True),
+    ]
+    FakeTranscriber.downloads = []
+    FakeTranscriber.others = []
+    monkeypatch.setattr(models, "needed", lambda cfg: FakeTranscriber.models)
+    monkeypatch.setattr(models, "size", lambda m: 3_100_000_000)
+    monkeypatch.setattr(models, "cached_whisper_models", lambda: FakeTranscriber.others)
+    monkeypatch.setattr(
+        models, "download", lambda m, progress: FakeTranscriber.downloads.append(m.name)
+    )
     return FakeTranscriber
 
 
@@ -248,3 +260,90 @@ def test_config_error_is_one_line(tmp_path, fake_whisper):
 
 def test_usage_error_exit_2():
     assert invoke("transcribe").exit_code == 2
+
+
+def missing_whisper(fake):
+    fake.models[0] = models.Model("Whisper model", "large-v3", "huggingface", False)
+
+
+def test_no_config_warns_about_defaults(tmp_path, fake_whisper):
+    result = invoke("transcribe", craig_zip(tmp_path / "rec"))
+    assert result.exit_code == 0, result.output
+    assert "no config (-c)" in result.output and "language en" in result.output
+
+
+def test_model_step_shows_model_language_and_device(tmp_path, fake_whisper, campaign):
+    result = invoke("transcribe", craig_zip(tmp_path / "rec"), "-c", campaign)
+    assert "load Whisper large-v3 (en) on cuda" in result.output
+
+
+def test_missing_model_abort(tmp_path, fake_whisper, campaign):
+    missing_whisper(fake_whisper)
+    result = CliRunner().invoke(
+        main, ["transcribe", str(craig_zip(tmp_path / "rec")), "-c", str(campaign)],
+        input="a\n",
+    )  # fmt: skip
+    assert result.exit_code == 1
+    assert "Whisper model large-v3 (2.9 GB) is not downloaded" in result.output
+    assert "--yes" in result.output and "Traceback" not in result.output
+    assert "open session.zip" not in result.output  # checked before unzipping
+    assert fake_whisper.downloads == [] and fake_whisper.calls == []
+
+
+def test_missing_model_download_when_asked(tmp_path, fake_whisper, campaign):
+    missing_whisper(fake_whisper)
+    result = CliRunner().invoke(
+        main, ["transcribe", str(craig_zip(tmp_path / "rec")), "-c", str(campaign)],
+        input="d\n",
+    )  # fmt: skip
+    assert result.exit_code == 0, result.output
+    assert fake_whisper.downloads == ["large-v3"]
+
+
+def test_missing_model_yes_downloads_without_asking(tmp_path, fake_whisper, campaign):
+    missing_whisper(fake_whisper)
+    result = invoke("transcribe", craig_zip(tmp_path / "rec"), "-c", campaign, "--yes")
+    assert result.exit_code == 0, result.output
+    assert fake_whisper.downloads == ["large-v3"]
+    assert "Choose" not in result.output
+
+
+def test_missing_model_use_other_downloaded_one(tmp_path, fake_whisper, campaign):
+    missing_whisper(fake_whisper)
+    fake_whisper.others = ["medium"]
+    out = tmp_path / "out"
+    result = CliRunner().invoke(
+        main, ["transcribe", str(craig_zip(tmp_path / "rec")), "-c", str(campaign),
+               "-o", str(out), "--name", "s"],
+        input="u\n",
+    )  # fmt: skip
+    assert result.exit_code == 0, result.output
+    assert "use medium for this run" in result.output
+    assert fake_whisper.downloads == []
+    data = json.loads((out / "s.json").read_text(encoding="utf-8"))
+    assert data["whisper"]["model"] == "medium"
+
+
+def test_missing_alignment_model_offers_no_other_model(
+    tmp_path, fake_whisper, campaign
+):
+    fake_whisper.models[1] = models.Model(
+        "alignment model", "WAV2VEC2_ASR_BASE_960H", "torchaudio", False, damaged=True
+    )
+    fake_whisper.others = ["medium"]
+    result = CliRunner().invoke(
+        main, ["transcribe", str(craig_zip(tmp_path / "rec")), "-c", str(campaign)],
+        input="d\n",
+    )  # fmt: skip
+    assert result.exit_code == 0, result.output
+    assert "damaged" in result.output and "[u]" not in result.output
+    assert fake_whisper.downloads == ["WAV2VEC2_ASR_BASE_960H"]
+
+
+def test_merge_without_config_warns(tmp_path, fake_whisper, campaign):
+    assert (
+        invoke("transcribe", craig_zip(tmp_path / "rec"), "--name", "s").exit_code == 0
+    )
+    result = invoke("merge", tmp_path / "rec" / "s.json")
+    assert result.exit_code == 0, result.output
+    assert "no config (-c)" in result.output

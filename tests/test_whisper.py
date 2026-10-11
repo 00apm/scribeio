@@ -483,5 +483,14 @@ def test_preflight_quiets_library_logs(fakes):
     import logging
 
     whisper.preflight(wcfg())
-    for name in ("whisperx", "lightning", "pyannote"):
+    # The checkpoint-upgrade notice comes from this exact logger; Lightning sets
+    # its own "lightning.pytorch" logger to INFO on import, so the parent
+    # loggers alone are not enough.
+    names = (
+        "whisperx",
+        "pyannote",
+        "lightning.pytorch.utilities.migration.utils",
+        "pytorch_lightning.utilities.migration.utils",
+    )
+    for name in names:
         assert logging.getLogger(name).level == logging.WARNING
