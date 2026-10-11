@@ -243,6 +243,7 @@ def fakes(monkeypatch):
                 "language": language,
                 "asr_options": asr_options,
                 "model": model,
+                "local_files_only": kwargs.get("local_files_only"),
             }
         )
         cls = FakePipeline if state.progress else FakePipelineNoProgress
@@ -252,6 +253,7 @@ def fakes(monkeypatch):
         if state.align_error:
             raise state.align_error
         state.align_loads.append((language_code, device, model_name))
+        state.align_cache_only = kwargs.get("model_cache_only")
         return "align-model", {"language": language_code}
 
     fake_whisperx = SimpleNamespace(
@@ -460,3 +462,26 @@ def test_whisperx_missing(monkeypatch):
     monkeypatch.setitem(sys.modules, "whisperx", None)
     with pytest.raises(ScribeError, match="WhisperX not installed"):
         whisper.Transcriber(wcfg(), [])
+
+
+def test_models_load_offline(fakes):
+    whisper.Transcriber(wcfg(), ["Vorgrad"])
+    assert all(load["local_files_only"] is True for load in fakes.loads)
+    assert fakes.align_cache_only is True
+
+
+def test_damaged_model_file_is_a_clear_error(fakes):
+    fakes.align_error = RuntimeError(
+        "PytorchStreamReader failed reading zip archive: "
+        "failed finding central directory"
+    )
+    with pytest.raises(ScribeError, match="damaged"):
+        whisper.Transcriber(wcfg(), [])
+
+
+def test_preflight_quiets_library_logs(fakes):
+    import logging
+
+    whisper.preflight(wcfg())
+    for name in ("whisperx", "lightning", "pyannote"):
+        assert logging.getLogger(name).level == logging.WARNING

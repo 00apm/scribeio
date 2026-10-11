@@ -11,10 +11,12 @@ Tested with WhisperX 3.8.6; other versions get a warning, never a block.
 
 from __future__ import annotations
 
+import logging
 import math
 import re
 import shutil
 import subprocess
+import warnings
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from importlib.metadata import PackageNotFoundError, version
@@ -62,6 +64,7 @@ def preflight(cfg: dict[str, Any]) -> list[str]:
         ScribeError: If ffmpeg or WhisperX is missing, or the settings cannot
             work on this machine (CUDA requested but unusable; float16 on CPU).
     """
+    quiet_libraries()
     if shutil.which("ffmpeg") is None:
         raise ScribeError(FFMPEG_HINT)
     _whisperx()
@@ -276,16 +279,39 @@ def _call(
     return func(*args, **kwargs)
 
 
+def quiet_libraries() -> None:
+    """Hide info logs and notices of WhisperX and its libraries.
+
+    They would break up scribe's progress lines; real warnings and errors
+    still come through.
+    """
+    for name in ("whisperx", "lightning", "lightning_fabric", "pytorch_lightning",
+                 "pyannote", "speechbrain"):  # fmt: skip
+        logging.getLogger(name).setLevel(logging.WARNING)
+    # pyannote turns TF32 off for reproducibility and says so on every run.
+    warnings.filterwarnings("ignore", message=".*TensorFloat-32.*")
+
+
+# Messages torch gives when a model file is cut off or corrupt.
+_DAMAGED = ("pytorchstreamreader", "central directory", "unexpected eof")
+
+
 @contextmanager
 def _oom_guard(cfg: dict[str, Any]) -> Iterator[None]:
-    """Turn a CUDA out-of-memory error into a ScribeError with advice."""
+    """Turn CUDA out-of-memory and damaged-model errors into ScribeErrors."""
     try:
         yield
     except Exception as e:
-        if "out of memory" in str(e).lower():
+        message = str(e).lower()
+        if "out of memory" in message:
             raise ScribeError(
                 "CUDA out of memory; try a smaller transcribe.whisper.batch_size "
                 f"(now {cfg['batch_size']})"
+            ) from None
+        if any(d in message for d in _DAMAGED):
+            raise ScribeError(
+                f"a model file is damaged ({e}); delete it from the model cache "
+                "and run again"
             ) from None
         raise
 
@@ -312,15 +338,19 @@ class Transcriber:
                 language without an alignment model.
         """
         whisperx = _whisperx()
+        quiet_libraries()
         self.cfg = cfg
         self.warnings: list[str] = []
 
+        # Models are checked (and downloaded with consent) before this point
+        # (see transcribe.models), so loading never touches the network.
         def load(**extra: Any) -> Any:
             return whisperx.load_model(
                 cfg["model"],
                 cfg["device"],
                 compute_type=cfg["compute_type"],
                 language=cfg["language"],
+                local_files_only=True,
                 **extra,
             )
 
@@ -345,6 +375,7 @@ class Transcriber:
                     language_code=cfg["language"],
                     device=cfg["device"],
                     model_name=cfg["align_model"],
+                    model_cache_only=True,
                 )
             except ValueError as e:
                 raise ScribeError(
