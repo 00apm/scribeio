@@ -47,31 +47,41 @@ and the report.
 ## Usage
 
 ```
+scribe init [RECORDING] [-o DIR] [--language LANG] [--force]
 scribe transcribe INPUT [-c CONFIG] [-g GLOSSARY] [-o DIR] [--name NAME] [--force] [--keep-fillers] [--yes]
 scribe merge JSON       [-c CONFIG] [-g GLOSSARY] [-o DIR] [--name NAME] [--keep-fillers]
 ```
 
 `INPUT` is the Craig zip (download it as FLAC, multi-track), or a folder with
 `info.txt` and `<n>-<account>.flac` tracks. `scribe <command> --help` lists
-every option. Without `-c`, scribe warns and uses the defaults: English, and
-Discord account names as speakers.
+every option.
+
+Settings live in one file, `scribe.yaml` (speakers, glossary, language,
+everything else optional), plus `glossary.txt`. `scribe init` writes both from
+commented templates; given a recording, it lists its Discord accounts so you
+only fill in the names. `transcribe` and `merge` use `scribe.yaml` by themselves
+when it sits next to the recording or the `.json`; `-c` points to another one.
+Without any config, `transcribe` offers to create one, or continues with the
+defaults (English, account names as speakers).
 
 A typical session:
 
-1. `scribe transcribe "session.zip" -c campaign.yaml` writes, next to the zip:
+1. `scribe init "session.zip" --language pl`, then fill in the names in
+   `scribe.yaml` (and campaign names in `glossary.txt`). Copy both to the next
+   session's folder to reuse them.
+2. `scribe transcribe "session.zip"` writes, next to the zip:
    - `2026-01-01.md`: the transcript, frontmatter plus `[01:02:13] Name: text` lines
    - `2026-01-01.json`: raw data (all segments, word timings, measurements)
    - `2026-01-01 - raport.md`: per-track summary, warnings, every dropped
      segment, possible bleed between tracks
-2. Read the report. Add unknown accounts to `speakers:`, misheard names to the
+3. Read the report. Add unknown accounts to `speakers:`, misheard names to the
    glossary.
-3. `scribe merge 2026-01-01.json -c campaign.yaml` rebuilds the `.md` and the
-   report.
-4. Give the `.md` to your assistant.
+4. `scribe merge 2026-01-01.json` rebuilds the `.md` and the report.
+5. Give the `.md` to your assistant.
 
-Commented examples: [`examples/campaign.yaml`](examples/campaign.yaml) (one
-config for all commands; every section optional) and
-[`examples/glossary.txt`](examples/glossary.txt).
+The templates, with every option explained:
+[`scribe.yaml`](src/scribe_rpg/templates/scribe.yaml) and
+[`glossary.txt`](src/scribe_rpg/templates/glossary.txt).
 
 ## Languages
 
