@@ -63,10 +63,12 @@ class Info:
     Attributes:
         start: Recording start in the system's local time zone.
         accounts: Track list, sanitized like the track file names.
+        names: The same tracks as Discord shows the accounts (no ID, no ``#0``).
     """
 
     start: datetime
     accounts: list[str]
+    names: list[str]
 
 
 @dataclass(frozen=True)
@@ -111,14 +113,15 @@ def parse_info(text: str) -> Info:
         text: Content of info.txt.
 
     Returns:
-        The start time (local) and the sanitized track accounts.
+        The start time (local) and the track accounts, sanitized and as
+        Discord shows them.
 
     Raises:
         ScribeError: If the start time or the track list is missing or
             unreadable.
     """
     start = None
-    accounts: list[str] = []
+    names: list[str] = []
     in_tracks = False
     # info.txt is "Key:<tabs>value" lines; the track list follows "Tracks:"
     # as indented lines and ends at the first line that is not indented.
@@ -126,7 +129,7 @@ def parse_info(text: str) -> Info:
         if not line.strip():
             continue
         if in_tracks and line[:1].isspace():
-            accounts.append(_account(line))
+            names.append(_display_name(line))
             continue
         in_tracks = False
         key, _, value = line.partition(":")
@@ -137,21 +140,41 @@ def parse_info(text: str) -> Info:
             in_tracks = True
     if start is None:
         raise ScribeError("info.txt: no 'Start time' line")
-    if not accounts:
+    if not names:
         raise ScribeError("info.txt: no tracks listed")
-    return Info(start, accounts)
+    return Info(start, [sanitize(n) for n in names], names)
 
 
-def _account(entry: str) -> str:
-    """Turn a track list entry into the account used in file names.
+def _display_name(entry: str) -> str:
+    """Turn a track list entry into the account as Discord shows it.
 
-    ``gm.account#0 (1234)`` becomes ``gm_account``: the Discord ID in
+    ``gm.account#0 (1234)`` becomes ``gm.account``: the Discord ID in
     parentheses and the ``#0`` of new-style usernames are dropped, legacy
-    discriminators such as ``#1234`` stay.
+    discriminators such as ``#1234`` stay. `sanitize` then gives the form
+    used in track file names.
     """
     name = re.sub(r"\s*\(\d+\)\s*$", "", entry.strip())
-    name = re.sub(r"#0$", "", name)
-    return sanitize(name)
+    return re.sub(r"#0$", "", name)
+
+
+def read_info(path: Path) -> Info:
+    """Read info.txt of a Craig zip or track folder, without extracting tracks.
+
+    Raises:
+        ScribeError: If the input is not a Craig recording.
+    """
+    path = Path(path)
+    if path.is_dir():
+        info_path = path / "info.txt"
+        if not info_path.is_file():
+            raise ScribeError(f"{path.name}: info.txt not found")
+        return parse_info(info_path.read_text(encoding="utf-8-sig"))
+    if not zipfile.is_zipfile(path):
+        raise ScribeError(f"{path.name}: not a zip file or a folder of tracks")
+    with zipfile.ZipFile(path) as zf:
+        if "info.txt" not in zf.namelist():
+            raise ScribeError(f"{path.name}: not a Craig recording (no info.txt)")
+        return parse_info(zf.read("info.txt").decode("utf-8-sig"))
 
 
 def _parse_time(value: str) -> datetime:

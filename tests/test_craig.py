@@ -5,7 +5,13 @@ from datetime import datetime, timezone
 
 import pytest
 
-from scribe_rpg.craig import is_music, open_recording, parse_info, sanitize
+from scribe_rpg.craig import (
+    is_music,
+    open_recording,
+    parse_info,
+    read_info,
+    sanitize,
+)
 from scribe_rpg.errors import ScribeError
 
 from helpers import MUSIC, TRACKS, craig_dir, craig_zip, info_txt
@@ -147,3 +153,26 @@ def test_dir_mode_without_info_txt(tmp_path):
     with pytest.raises(ScribeError, match="info.txt"):
         with open_recording(folder, MUSIC):
             pass
+
+
+def test_parse_info_keeps_names_as_discord_shows_them():
+    names = parse_info(info_txt()).names
+    assert names == ["gm.account", "player.one", "Kenku FM#1234"]
+
+
+def test_read_info_from_zip_without_extracting(tmp_path):
+    info = read_info(craig_zip(tmp_path))
+    assert info.accounts == ["gm_account", "player_one", "Kenku_FM_1234"]
+    assert info.names[0] == "gm.account"
+    assert not any(tmp_path.rglob("*_data"))  # nothing unpacked next to the zip
+
+
+def test_read_info_from_folder(tmp_path):
+    assert read_info(craig_dir(tmp_path / "tracks")).names[1] == "player.one"
+
+
+def test_read_info_not_a_recording(tmp_path):
+    f = tmp_path / "notes.txt"
+    f.write_text("x", encoding="utf-8")
+    with pytest.raises(ScribeError, match="not a zip"):
+        read_info(f)
