@@ -61,3 +61,32 @@ def test_track_bar_position_counts_finished_tracks_and_percent():
         bar.done("gm_account: 1 segment")
         bar.update(25.0)
         assert bar.position == pytest.approx(1.25)
+
+
+def test_track_bar_names_the_phase():
+    p, _ = make()
+    with p.tracks(1) as bar:
+        bar.start("gm_account")
+        assert bar.phase == "voice detection"  # before WhisperX reports progress
+        bar.update(10.0)
+        assert bar.phase == "transcribing"
+        bar.update(95.0)
+        assert bar.phase == "aligning"
+        bar.done("gm_account: 3 segments")
+
+
+def test_download_bar_counts_bytes():
+    p, buf = make()
+    with p.download("model.pth", total=300) as advance:
+        advance(100)
+        advance(200)
+    assert "✔ download model.pth" in buf.getvalue()
+
+
+def test_download_bar_failure_prints_no_check():
+    p, buf = make()
+    with pytest.raises(OSError):
+        with p.download("model.pth", total=300) as advance:
+            advance(100)
+            raise OSError("connection reset")
+    assert "✔" not in buf.getvalue()
