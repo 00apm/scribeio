@@ -4,7 +4,15 @@ import numpy as np
 import pytest
 
 from scribe_rpg.errors import ScribeError
-from scribe_rpg.master.excerpt import Excerpt, choose, per_second
+from scribe_rpg.master.excerpt import (
+    Excerpt,
+    activities,
+    activity,
+    choose,
+    per_second,
+)
+
+from helpers import make_flac
 
 
 def act(*parts):
@@ -129,3 +137,24 @@ def test_at_past_the_end():
 def test_empty_recording():
     with pytest.raises(ScribeError, match="no audio"):
         choose({"a": np.zeros(0)}, [], 30)
+
+
+# --- activity from audio (ffmpeg) -------------------------------------------
+
+EXPECTED = [0, 0, 1, 1, 0, 0, 0, 1, 0, 0]
+
+
+@pytest.mark.ffmpeg
+@pytest.mark.parametrize("channels", [1, 2])
+def test_activity_from_flac(tmp_path, channels):
+    flac = make_flac(tmp_path / "a.flac", 10, on=[(2, 4), (7, 8)], channels=channels)
+    assert activity(flac, 50, -50).tolist() == pytest.approx(EXPECTED, abs=0.05)
+
+
+@pytest.mark.ffmpeg
+def test_activities_keep_order(tmp_path):
+    loud = make_flac(tmp_path / "1-loud.flac", 3)
+    quiet = make_flac(tmp_path / "2-quiet.flac", 3, on=[])
+    first, second = activities([loud, quiet], 50, -50)
+    assert first.tolist() == pytest.approx([1, 1, 1])
+    assert second.tolist() == [0, 0, 0]

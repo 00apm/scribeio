@@ -2,21 +2,28 @@
 
 A window of `length` seconds is scored by its least active voice track, so
 the preview holds every player. When no window has all voices, a montage
-takes each voice's most active stretch instead. Pure numpy; decoding the
-tracks happens elsewhere.
+takes each voice's most active stretch instead. `activity` streams a track
+through ffmpeg at a low rate; everything else is pure numpy.
 """
 
 from __future__ import annotations
 
+import os
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 import numpy.typing as npt
 
+from scribe_rpg import ffmpeg
 from scribe_rpg.errors import ScribeError
-from scribe_rpg.transcribe.energy import Levels
+from scribe_rpg.transcribe.energy import Levels, frame_levels
 
 Activity = npt.NDArray[np.float64]
+
+# Speech activity needs no high frequencies; 8 kHz keeps decoding cheap.
+ACTIVITY_RATE = 8000
 
 # Window sums are rounded before comparing, so cumsum rounding noise cannot
 # break a tie that is exact in the data.
@@ -51,6 +58,26 @@ def per_second(levels: Levels, frame_ms: int, energy_db: float) -> Activity:
     counts = np.diff(np.append(starts, len(active)))
     shares: Activity = np.add.reduceat(active, starts) / counts
     return shares
+
+
+def activity(path: Path, frame_ms: int, energy_db: float) -> Activity:
+    """Activity per second of one track, decoded in one-minute chunks.
+
+    A minute holds whole frames for any frame length that divides 60 s, so
+    only the last chunk's last frame is padded.
+    """
+    levels = [
+        frame_levels(chunk, frame_ms, ACTIVITY_RATE)
+        for chunk in ffmpeg.decode(path, ACTIVITY_RATE, chunk_seconds=60)
+    ]
+    joined = np.concatenate(levels) if levels else np.zeros(0)
+    return per_second(joined, frame_ms, energy_db)
+
+
+def activities(paths: list[Path], frame_ms: int, energy_db: float) -> list[Activity]:
+    """`activity` of every track, in parallel (one ffmpeg per CPU), in order."""
+    with ThreadPoolExecutor(max_workers=os.cpu_count() or 1) as pool:
+        return list(pool.map(lambda p: activity(p, frame_ms, energy_db), paths))
 
 
 def choose(
