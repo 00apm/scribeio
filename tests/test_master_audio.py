@@ -3,6 +3,7 @@
 import pytest
 
 from scribe_rpg import ffmpeg
+from scribe_rpg.errors import ScribeError
 from scribe_rpg.master.catalogue import Step
 from scribe_rpg.master.render import (
     chain_filter,
@@ -149,3 +150,48 @@ def test_render_failure_leaves_no_file(tmp_path, monkeypatch, error):
     with pytest.raises(error):
         mix.render(plans_for(a), [], {}, "mono", out, "mp3", "96k", None)
     assert not out.exists()
+
+
+# --- config check -------------------------------------------------------------
+
+
+def checked(tmp_path, text):
+    from scribe_rpg.config import load_config
+    from scribe_rpg.master.config import resolve
+    from scribe_rpg.master.mix import check
+
+    path = tmp_path / "scribe.yaml"
+    path.write_text("master:\n" + text, encoding="utf-8")
+    check(resolve(load_config(path).settings["master"]))
+
+
+def test_check_default_config_passes(tmp_path):
+    checked(tmp_path, "  format: mp3\n")
+
+
+def test_check_unknown_option(tmp_path):
+    with pytest.raises(ScribeError) as e:
+        checked(tmp_path, "  voice:\n    comp: {level: 3}\n")
+    # ffmpeg 9 wording; older versions say "Option 'level' not found"
+    assert str(e.value).startswith("master.voice.comp (acompressor): ")
+    assert "'level'" in str(e.value) and "not found" in str(e.value)
+    assert "|" not in str(e.value) and "@" not in str(e.value)
+
+
+def test_check_value_out_of_range(tmp_path):
+    with pytest.raises(ScribeError) as e:
+        checked(tmp_path, "  voice:\n    comp: {ratio: 99}\n")
+    assert str(e.value) == (
+        "master.voice.comp (acompressor): "
+        "Value 99.000000 for parameter 'ratio' out of range [1 - 20]"
+    )
+
+
+def test_check_reports_player_step(tmp_path):
+    with pytest.raises(ScribeError) as e:
+        checked(
+            tmp_path,
+            "  players:\n    player_one:\n      chain: [gate, loudness]\n"
+            "      gate: {threshold: 7}\n",
+        )
+    assert str(e.value).startswith("master.players.player_one.gate (agate): ")

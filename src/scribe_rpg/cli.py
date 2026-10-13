@@ -421,6 +421,7 @@ def master(
         raise click.UsageError("--at and --montage cannot be used together")
 
     from scribe_rpg import ffmpeg
+    from scribe_rpg.master import mix
     from scribe_rpg.master.config import resolve, unknown_players
 
     progress = Progress()
@@ -434,6 +435,10 @@ def master(
     cfg = load_config(config_path)
     mcfg = resolve(cfg.settings["master"])
     ffmpeg.require()
+    if old := ffmpeg.version_warning():
+        progress.warn(old)
+    with progress.step("config check"):
+        mix.check(mcfg)
     with ExitStack() as stack:
         with progress.step(f"open {input_path.name}"):
             patterns = cfg.settings["input"]["music_patterns"]

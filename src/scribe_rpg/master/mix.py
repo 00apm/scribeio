@@ -8,19 +8,24 @@ the mix goes through the mix chain and is encoded, all in one ffmpeg run.
 from __future__ import annotations
 
 import os
+import re
+import subprocess
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from scribe_rpg import craig, ffmpeg
-from scribe_rpg.master.catalogue import Step
+from scribe_rpg.errors import ScribeError
+from scribe_rpg.master.catalogue import OPERATIONS, Step
+from scribe_rpg.master.config import MasterConfig
 from scribe_rpg.master.render import (
     Gains,
     Measured,
     chain_filter,
     measure,
     measure_filter,
+    step_filter,
     track_gains,
 )
 
@@ -29,6 +34,10 @@ from scribe_rpg.master.render import (
 MATCH = Step("match", "loudness", {"target": -19, "dual_mono": True}, "preview")
 
 OnMeasured = Callable[[str, list[Measured]], None]
+
+# ffmpeg's own name for a bad option ("... out of range [1 - 20]"), stripped
+# of its "[Parsed_x @ 0x...] " prefix
+_PREFIX = re.compile(r"^\[[^\]]*\]\s*")
 
 
 @dataclass
@@ -164,3 +173,42 @@ def render(
     except BaseException:
         out.unlink(missing_ok=True)
         raise
+
+
+def check(cfg: MasterConfig) -> None:
+    """Run every filter step once on 0.1 s of silence, before any real work.
+
+    ffmpeg checks option names and ranges itself; a bad one stops here, with
+    the step's config path, instead of after minutes of measuring.
+
+    Raises:
+        ScribeError: ``<path> (<type>): <ffmpeg's message>``, first bad step.
+    """
+    chains = [cfg.voice, cfg.music, cfg.mix, *cfg.players.values()]
+    steps = {s.where: s for chain in chains for s in chain if s.type not in OPERATIONS}
+    with ThreadPoolExecutor(max_workers=os.cpu_count() or 1) as pool:
+        problems = list(pool.map(_problem, steps.values()))
+    for step, problem in zip(steps.values(), problems, strict=True):
+        if problem is not None:
+            raise ScribeError(f"{step.where} ({step.type}): {problem}")
+
+
+def _problem(step: Step) -> str | None:
+    """ffmpeg's complaint about `step`, or None if it runs."""
+    done = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-nostdin", "-nostats",
+         "-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono", "-t", "0.1",
+         "-af", f"aformat=sample_fmts=flt,{step_filter(step)}",
+         "-f", "null", "-"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )  # fmt: skip
+    if done.returncode == 0:
+        return None
+    lines = [_PREFIX.sub("", line).strip() for line in done.stderr.splitlines()]
+    lines = [line for line in lines if line]
+    # the most specific line first: a range, then any option line, else the last
+    for key in ("out of range", "option"):
+        for line in lines:
+            if key in line.lower():
+                return line
+    return lines[-1] if lines else f"ffmpeg exited with {done.returncode}"

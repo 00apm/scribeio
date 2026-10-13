@@ -623,6 +623,17 @@ def test_master_notes_players_not_in_recording(tmp_path):
 
 
 @pytest.mark.ffmpeg
+def test_master_checks_config_before_reading(tmp_path):
+    folder = master_dir(tmp_path / "rec" / "tracks")
+    config = tmp_path / "scribe.yaml"
+    config.write_text("master:\n  voice:\n    comp: {ratio: 99}\n", encoding="utf-8")
+    result = invoke("master", folder, *START_ARG, "-c", config)
+    assert result.exit_code == 1
+    assert "master.voice.comp (acompressor): Value 99" in result.output
+    assert "open tracks" not in result.output
+
+
+@pytest.mark.ffmpeg
 def test_master_failed_render_leaves_nothing(tmp_path, monkeypatch):
     folder = master_dir(tmp_path / "rec" / "tracks")
     out = tmp_path / "rec" / "2026-02-03_master.mp3"
