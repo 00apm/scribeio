@@ -60,11 +60,15 @@ master:
   # a step: an ffmpeg filter (type + the filter's own options) or `loudness`.
   # Steps not in a chain do nothing but can be named in a user chain.
   voice:
-    chain: [rumble, level, comp, loudness]
+    chain: [rumble, level, comp, eq, loudness]
     rumble:   {type: highpass, f: 80}
     level:    {type: loudness, target: -19}
     comp:     {type: acompressor, threshold: -15dB, ratio: 3, knee: 18dB,
                attack: 15, release: 40}
+    # firequalizer: linear-frequency interpolation between the entries (Hz,
+    # dB); delay 0.05 s is long enough for an accurate low end
+    eq:       {type: firequalizer, delay: 0.05,
+               gain_entry: "entry(80,0);entry(150,1.5);entry(300,0);entry(2500,0);entry(3300,3);entry(5000,3);entry(6000,0)"}
     loudness: {type: loudness, target: -19}
     hum:      {type: bandreject, f: 50, w: 2, t: h}
     denoise:  {type: afftdn}

@@ -628,7 +628,7 @@ def test_master_preview_writes_matched_files(tmp_path):
     result = invoke("master", folder, *START_ARG, "--preview", "--length", "20")
     assert result.exit_code == 0, result.output
     preview = tmp_path / "rec" / "2026-02-03_preview"
-    original, final = preview / "00-original.flac", preview / "07-final.mp3"
+    original, final = preview / "00-original.flac", preview / "08-final.mp3"
     assert lufs(original) == pytest.approx(-19, abs=0.5)
     assert lufs(final) == pytest.approx(-19, abs=0.5)
     assert not (tmp_path / "rec" / "2026-02-03_master.mp3").exists()

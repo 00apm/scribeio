@@ -19,8 +19,14 @@ def test_default_chains():
         ("rumble", "highpass"),
         ("level", "loudness"),
         ("comp", "acompressor"),
+        ("eq", "firequalizer"),
         ("loudness", "loudness"),
     ]
+    assert cfg.voice[3].options == {
+        "gain_entry": "entry(80,0);entry(150,1.5);entry(300,0);entry(2500,0);"
+        "entry(3300,3);entry(5000,3);entry(6000,0)",
+        "delay": 0.05,
+    }
     assert cfg.voice[0] == Step("rumble", "highpass", {"f": 80}, "master.voice.rumble")
     assert cfg.voice[2].options["threshold"] == "-15dB"
     assert cfg.music == [
