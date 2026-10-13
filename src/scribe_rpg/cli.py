@@ -100,8 +100,9 @@ def transcribe(
     """Transcribe a Craig recording.
 
     INPUT is the Craig .zip, or a folder with info.txt and <n>-<account>.flac
-    tracks. Writes <name>.md (transcript), <name>.json (raw data for
-    `scribe merge`) and "<name> - raport.md" (quality report). Needs WhisperX
+    tracks. Writes <name>_transcript.md, <name>_transcript.json (raw data for
+    `scribe merge`) and <name>_transcript-report.md (quality report); <name>
+    is the session date unless --name gives one. Needs WhisperX
     (see README); an NVIDIA GPU is strongly recommended.
     """
     # Imported here: numpy is only needed for transcription, not for merge.
@@ -223,10 +224,12 @@ def merge(
     name: str | None,
     keep_fillers: bool,
 ) -> None:
-    """Rebuild transcript and report from a <name>.json, without the GPU.
+    """Rebuild transcript and report from a .json, without the GPU.
 
-    Use it after changing speakers, glossary or cleanup settings. Overwrites
-    <name>.md and "<name> - raport.md"; never changes the .json.
+    JSON is a <name>_transcript.json from `scribe transcribe`. Use it after
+    changing speakers, glossary or cleanup settings. Overwrites
+    <name>_transcript.md and <name>_transcript-report.md; never changes the
+    .json.
     """
     progress = Progress()
     if config_path is None:
@@ -239,7 +242,7 @@ def merge(
     cfg = load_config(config_path, glossary_path, keep_fillers)
     gloss = _glossary(cfg)
     raw = session_json.read(json_path)
-    paths = _paths(out_dir or json_path.resolve().parent, name or json_path.stem)
+    paths = _paths(out_dir or json_path.resolve().parent, name or _json_name(json_path))
     with progress.step(f"merge {json_path.name}"):
         paths["md"].parent.mkdir(parents=True, exist_ok=True)
         result = _merge_and_write(raw, cfg, gloss, paths)
@@ -381,10 +384,16 @@ def _glossary(cfg: Config) -> Glossary:
 def _paths(out_dir: Path, name: str) -> dict[str, Path]:
     """The three output files for a session name."""
     return {
-        "md": out_dir / f"{name}.md",
-        "json": out_dir / f"{name}.json",
-        "report": out_dir / f"{name} - raport.md",
+        "md": out_dir / f"{name}_transcript.md",
+        "json": out_dir / f"{name}_transcript.json",
+        "report": out_dir / f"{name}_transcript-report.md",
     }
+
+
+def _json_name(json_path: Path) -> str:
+    """Session name of a .json: its stem without a trailing ``_transcript``."""
+    stem = json_path.stem
+    return stem.removesuffix("_transcript") or stem
 
 
 def _merge_and_write(

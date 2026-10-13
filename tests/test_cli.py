@@ -124,14 +124,16 @@ def test_transcribe_writes_three_outputs(tmp_path, fake_whisper, campaign):
     result = invoke("transcribe", zip_path, "-c", campaign)
     assert result.exit_code == 0, result.output
     out = tmp_path / "rec"
-    md = (out / f"{LOCAL_DATE}.md").read_text(encoding="utf-8")
+    md = (out / f"{LOCAL_DATE}_transcript.md").read_text(encoding="utf-8")
     assert "[00:00:01] Game Master: Witajcie na sesji w Vorgradzie" in md
     assert "[00:00:05] Player One: Tak." in md
     assert "Dzięki" not in md
-    report = (out / f"{LOCAL_DATE} - raport.md").read_text(encoding="utf-8")
+    report = (out / f"{LOCAL_DATE}_transcript-report.md").read_text(encoding="utf-8")
     assert "Dzięki za oglądanie! (0% voiced)" in report
     assert "whisperx 3.8.6" in report
-    data = json.loads((out / f"{LOCAL_DATE}.json").read_text(encoding="utf-8"))
+    data = json.loads(
+        (out / f"{LOCAL_DATE}_transcript.json").read_text(encoding="utf-8")
+    )
     assert data["whisper"]["initial_prompt"] == "Vorgrad"
     assert data["session"]["duration"] == 20.0
     assert data["versions"] == VERSIONS
@@ -144,7 +146,7 @@ def test_outputs_contain_no_paths(tmp_path, fake_whisper, campaign):
     out = tmp_path / "out"
     result = invoke("transcribe", zip_path, "-c", campaign, "-o", out, "--name", "s")
     assert result.exit_code == 0, result.output
-    data = json.loads((out / "s.json").read_text(encoding="utf-8"))
+    data = json.loads((out / "s_transcript.json").read_text(encoding="utf-8"))
     assert data["session"]["source"] == "session.zip"
     assert all("/" not in t["file"] and "\\" not in t["file"] for t in data["tracks"])
     for f in out.iterdir():
@@ -200,14 +202,14 @@ def test_unknown_account_warns(tmp_path, fake_whisper):
     result = invoke("transcribe", craig_zip(tmp_path / "rec"))
     assert result.exit_code == 0, result.output
     assert "unknown account gm_account" in result.output
-    md = (tmp_path / "rec" / f"{LOCAL_DATE}.md").read_text(encoding="utf-8")
+    md = (tmp_path / "rec" / f"{LOCAL_DATE}_transcript.md").read_text(encoding="utf-8")
     assert "gm_account: Witajcie" in md
 
 
 def test_dir_input_writes_next_to_folder(tmp_path, fake_whisper, campaign):
     folder = craig_dir(tmp_path / "proc" / "tracks")
     assert invoke("transcribe", folder, "-c", campaign).exit_code == 0
-    assert (tmp_path / "proc" / f"{LOCAL_DATE}.md").exists()
+    assert (tmp_path / "proc" / f"{LOCAL_DATE}_transcript.md").exists()
 
 
 def test_dir_input_missing_track(tmp_path, fake_whisper, campaign):
@@ -219,13 +221,13 @@ def test_dir_input_missing_track(tmp_path, fake_whisper, campaign):
 def test_merge_rebuilds_without_touching_json(tmp_path, fake_whisper, campaign):
     zip_path = craig_zip(tmp_path / "rec")
     assert invoke("transcribe", zip_path, "-c", campaign, "--name", "s").exit_code == 0
-    json_path = tmp_path / "rec" / "s.json"
+    json_path = tmp_path / "rec" / "s_transcript.json"
     before = json_path.read_bytes()
     text = campaign.read_text(encoding="utf-8").replace("Game Master", "Narrator")
     campaign.write_text(text, encoding="utf-8")
     result = invoke("merge", json_path, "-c", campaign)
     assert result.exit_code == 0, result.output
-    md = (tmp_path / "rec" / "s.md").read_text(encoding="utf-8")
+    md = (tmp_path / "rec" / "s_transcript.md").read_text(encoding="utf-8")
     assert "Narrator: Witajcie" in md
     assert json_path.read_bytes() == before
 
@@ -235,12 +237,37 @@ def test_merge_keep_fillers_and_name(tmp_path, fake_whisper, campaign):
     assert invoke("transcribe", zip_path, "-c", campaign, "--name", "s").exit_code == 0
     v2 = tmp_path / "v2"
     result = invoke(
-        "merge", tmp_path / "rec" / "s.json", "-c", campaign,
+        "merge", tmp_path / "rec" / "s_transcript.json", "-c", campaign,
         "--name", "v2", "-o", v2, "--keep-fillers",
     )  # fmt: skip
     assert result.exit_code == 0, result.output
-    assert (v2 / "v2.md").exists() and (v2 / "v2 - raport.md").exists()
-    assert not (v2 / "v2.json").exists()
+    assert (v2 / "v2_transcript.md").exists()
+    assert (v2 / "v2_transcript-report.md").exists()
+    assert not (v2 / "v2_transcript.json").exists()
+
+
+def test_merge_keeps_the_session_name(tmp_path, fake_whisper, campaign):
+    assert (
+        invoke("transcribe", craig_zip(tmp_path / "rec"), "-c", campaign).exit_code == 0
+    )
+    rec = tmp_path / "rec"
+    (rec / f"{LOCAL_DATE}_transcript.md").unlink()
+    result = invoke("merge", rec / f"{LOCAL_DATE}_transcript.json", "-c", campaign)
+    assert result.exit_code == 0, result.output
+    assert (rec / f"{LOCAL_DATE}_transcript.md").exists()
+    assert not (rec / f"{LOCAL_DATE}_transcript_transcript.md").exists()
+
+
+def test_merge_json_without_suffix(tmp_path, fake_whisper, campaign):
+    zip_path = craig_zip(tmp_path / "rec")
+    assert invoke("transcribe", zip_path, "-c", campaign, "--name", "s").exit_code == 0
+    rec = tmp_path / "rec"
+    plain = rec / "plain.json"
+    plain.write_bytes((rec / "s_transcript.json").read_bytes())
+    result = invoke("merge", plain, "-c", campaign)
+    assert result.exit_code == 0, result.output
+    assert (rec / "plain_transcript.md").exists()
+    assert (rec / "plain_transcript-report.md").exists()
 
 
 def test_merge_unknown_format(tmp_path):
@@ -322,7 +349,7 @@ def test_missing_model_use_other_downloaded_one(tmp_path, fake_whisper, campaign
     assert result.exit_code == 0, result.output
     assert "use medium for this run" in result.output
     assert fake_whisper.downloads == []
-    data = json.loads((out / "s.json").read_text(encoding="utf-8"))
+    data = json.loads((out / "s_transcript.json").read_text(encoding="utf-8"))
     assert data["whisper"]["model"] == "medium"
 
 
@@ -346,7 +373,7 @@ def test_merge_without_config_warns(tmp_path, fake_whisper, campaign):
     assert (
         invoke("transcribe", craig_zip(tmp_path / "rec"), "--name", "s").exit_code == 0
     )
-    result = invoke("merge", tmp_path / "rec" / "s.json")
+    result = invoke("merge", tmp_path / "rec" / "s_transcript.json")
     assert result.exit_code == 0, result.output
     assert "no config" in result.output
 
@@ -392,7 +419,7 @@ def test_transcribe_uses_config_next_to_recording(tmp_path, fake_whisper):
     assert result.exit_code == 0, result.output
     assert "using config scribe.yaml" in result.output
     assert "no config" not in result.output
-    md = (tmp_path / "rec" / f"{LOCAL_DATE}.md").read_text(encoding="utf-8")
+    md = (tmp_path / "rec" / f"{LOCAL_DATE}_transcript.md").read_text(encoding="utf-8")
     assert "Narrator: Witajcie" in md
 
 
@@ -406,7 +433,7 @@ def test_transcribe_offers_to_create_config(tmp_path, fake_whisper, monkeypatch)
     assert (tmp_path / "rec" / "scribe.yaml").exists()
     assert "edit" in result.output and "scribe transcribe" in result.output
     assert fake_whisper.calls == []  # stopped: nothing transcribed
-    assert not (tmp_path / "rec" / f"{LOCAL_DATE}.md").exists()
+    assert not (tmp_path / "rec" / f"{LOCAL_DATE}_transcript.md").exists()
 
 
 def test_transcribe_declining_config_uses_defaults(tmp_path, fake_whisper, monkeypatch):
@@ -424,9 +451,9 @@ def test_merge_uses_config_next_to_json(tmp_path, fake_whisper):
     zip_path = craig_zip(tmp_path / "rec")
     assert invoke("transcribe", zip_path, "--name", "s").exit_code == 0
     write_config_next_to(tmp_path / "rec", "Narrator")
-    result = invoke("merge", tmp_path / "rec" / "s.json")
+    result = invoke("merge", tmp_path / "rec" / "s_transcript.json")
     assert result.exit_code == 0, result.output
-    md = (tmp_path / "rec" / "s.md").read_text(encoding="utf-8")
+    md = (tmp_path / "rec" / "s_transcript.md").read_text(encoding="utf-8")
     assert "Narrator: Witajcie" in md
 
 
@@ -434,7 +461,7 @@ def test_merge_without_config_points_to_init(tmp_path, fake_whisper):
     assert (
         invoke("transcribe", craig_zip(tmp_path / "rec"), "--name", "s").exit_code == 0
     )
-    result = invoke("merge", tmp_path / "rec" / "s.json")
+    result = invoke("merge", tmp_path / "rec" / "s_transcript.json")
     assert "scribe init" in result.output
 
 

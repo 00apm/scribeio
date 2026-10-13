@@ -70,13 +70,13 @@ A typical session:
    `scribe.yaml` (and campaign names in `glossary.txt`). Copy both to the next
    session's folder to reuse them.
 2. `scribe transcribe "session.zip"` writes, next to the zip:
-   - `2026-01-01.md`: the transcript, frontmatter plus `[01:02:13] Name: text` lines
-   - `2026-01-01.json`: raw data (all segments, word timings, measurements)
-   - `2026-01-01 - raport.md`: per-track summary, warnings, every dropped
+   - `2026-01-01_transcript.md`: the transcript, frontmatter plus `[01:02:13] Name: text` lines
+   - `2026-01-01_transcript.json`: raw data (all segments, word timings, measurements)
+   - `2026-01-01_transcript-report.md`: per-track summary, warnings, every dropped
      segment, possible bleed between tracks
 3. Read the report. Add unknown accounts to `speakers:`, misheard names to the
    glossary.
-4. `scribe merge 2026-01-01.json` rebuilds the `.md` and the report.
+4. `scribe merge 2026-01-01_transcript.json` rebuilds the `.md` and the report.
 5. Give the `.md` to your assistant.
 
 The templates, with every option explained:
