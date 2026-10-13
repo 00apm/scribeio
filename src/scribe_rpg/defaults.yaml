@@ -51,3 +51,29 @@ transcribe:
     similarity: 0.85
     min_words: 5
     min_overlap: 0.5        # fraction of the shorter segment
+
+master:
+  channels: mono            # mono | stereo
+  format: mp3               # mp3 | m4a | opus
+  bitrate: null             # null = default for the format (mp3 96k, m4a 64k, opus 48k)
+  # A stage's `chain` lists step names in processing order; every other key is
+  # a step: an ffmpeg filter (type + the filter's own options) or `loudness`.
+  # Steps not in a chain do nothing but can be named in a user chain.
+  voice:
+    chain: [rumble, level, comp, loudness]
+    rumble:   {type: highpass, f: 80}
+    level:    {type: loudness, target: -19}
+    comp:     {type: acompressor, threshold: -15dB, ratio: 3, knee: 18dB,
+               attack: 15, release: 40}
+    loudness: {type: loudness, target: -19}
+    hum:      {type: bandreject, f: 50, w: 2, t: h}
+    denoise:  {type: afftdn}
+    gate:     {type: agate, threshold: -40dB, range: -12dB}
+    deess:    {type: deesser}
+  music:
+    chain: [loudness]
+    loudness: {type: loudness, target: -36}
+  mix:
+    chain: [limiter]
+    limiter:  {type: alimiter, limit: -1dB, level: false}   # level: false = no auto gain
+  players: {}               # Discord account -> same shape as voice, merged over it
