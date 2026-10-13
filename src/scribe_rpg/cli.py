@@ -421,7 +421,7 @@ def master(
         raise click.UsageError("--at and --montage cannot be used together")
 
     from scribe_rpg import ffmpeg
-    from scribe_rpg.master.config import resolve
+    from scribe_rpg.master.config import resolve, unknown_players
 
     progress = Progress()
     if config_path is None:
@@ -443,6 +443,8 @@ def master(
                 progress.warn(
                     f"unknown account {t.account}: no speakers: entry, voice chain used"
                 )
+        for key in unknown_players(mcfg, [t.account for t in rec.players]):
+            progress.warn(f"players: {key}: not in this recording, ignored")
         name = name or rec.start.strftime("%Y-%m-%d")
         folder = out_dir or input_path.resolve().parent
         if preview:

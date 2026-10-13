@@ -24,6 +24,7 @@ import yaml
 
 from scribe_rpg.craig import sanitize
 from scribe_rpg.errors import ScribeError
+from scribe_rpg.master.config import merge as merge_master
 
 
 @dataclass
@@ -74,7 +75,10 @@ def load_config(
         section = user.get("transcribe")
         if isinstance(section, dict) and (g := section.pop("glossary", None)):
             glossary_path = path.parent / str(g)
+        # master has its own rules (new steps, players): see master.config
+        master = user.pop("master", None)
         settings = _merge(settings, user, path.name)
+        settings["master"] = merge_master(settings["master"], master, path.name)
     if glossary is not None:
         glossary_path = Path(glossary)
     if keep_fillers:

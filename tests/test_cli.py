@@ -608,6 +608,21 @@ def test_master_renders_mp3(tmp_path):
 
 
 @pytest.mark.ffmpeg
+def test_master_notes_players_not_in_recording(tmp_path):
+    folder = master_dir(tmp_path / "rec" / "tracks")
+    config = tmp_path / "scribe.yaml"
+    config.write_text(
+        "master:\n  players:\n    gm_account:\n      comp: {ratio: 4}\n"
+        "    absent.one:\n      comp: {ratio: 2}\n",
+        encoding="utf-8",
+    )
+    result = invoke("master", folder, *START_ARG, "-c", config)
+    assert result.exit_code == 0, result.output
+    assert "players: absent_one: not in this recording, ignored" in result.output
+    assert "players: gm_account" not in result.output
+
+
+@pytest.mark.ffmpeg
 def test_master_failed_render_leaves_nothing(tmp_path, monkeypatch):
     folder = master_dir(tmp_path / "rec" / "tracks")
     out = tmp_path / "rec" / "2026-02-03_master.mp3"
