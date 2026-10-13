@@ -22,8 +22,8 @@ HINT = (
     'ffmpeg not found in PATH; install it (conda install -c conda-forge "ffmpeg<8", '
     "winget install ffmpeg, apt install ffmpeg or brew install ffmpeg)"
 )
-# 4.4 added amix's normalize option; ebur128 dualmono (3.x) and alimiter
-# level (4.4) are no newer. Not checked against the changelog yet.
+# amix normalize first appears in 4.4 (absent in 4.3's filter docs);
+# ebur128 dualmono and alimiter level already exist in 4.4.
 MIN_VERSION = (4, 4)
 
 _BASE = ["ffmpeg", "-hide_banner", "-nostdin", "-nostats"]
