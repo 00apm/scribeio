@@ -9,11 +9,12 @@ import pytest
 from click.testing import CliRunner
 
 import scribe_rpg
+from scribe_rpg import ffmpeg
 from scribe_rpg.cli import main
 from scribe_rpg.errors import ScribeError
 from scribe_rpg.transcribe import models, whisper
 
-from helpers import craig_dir, craig_zip, seg, silence, tone
+from helpers import craig_dir, craig_zip, make_flac, seg, silence, tone
 
 LOCAL_DATE = datetime(2026, 1, 1, 18, 0, tzinfo=timezone.utc).astimezone()
 LOCAL_DATE = LOCAL_DATE.strftime("%Y-%m-%d")
@@ -491,3 +492,85 @@ def test_init_elsewhere_hints_config_option(tmp_path):
     result = invoke("init", zip_path, "-o", tmp_path / "cfg")
     assert result.exit_code == 0, result.output
     assert "-c" in result.output and "scribe.yaml" in result.output.split("Next:")[1]
+
+
+# --- master --preview -------------------------------------------------------
+
+START_ARG = ("--start", "2026-02-03 19:30")
+
+
+def preview_dir(folder):
+    """3 voices + music, 100 s; each voice alone for 20 s, all at 60-80 s."""
+    folder.mkdir(parents=True)
+    make_flac(folder / "1-gm_account.flac", 100, on=[(0, 20), (60, 80)])
+    make_flac(folder / "2-player_one.flac", 100, on=[(20, 40), (60, 80)])
+    make_flac(folder / "Gra cz'1 Łucja.flac", 100, on=[(40, 80)])
+    make_flac(folder / "4-Kenku_FM_1234.flac", 100, freq=220)
+    return folder
+
+
+@pytest.mark.ffmpeg
+def test_master_preview_cuts_tracks(tmp_path):
+    folder = preview_dir(tmp_path / "rec" / "tracks")
+    result = invoke("master", folder, *START_ARG, "--preview", "--length", "20")
+    assert result.exit_code == 0, result.output
+    assert "excerpt: 00:01:00, 20 s" in result.output
+    tracks = tmp_path / "rec" / "2026-02-03_preview" / "tracks"
+    files = sorted(p.name for p in tracks.iterdir())
+    assert files == [
+        "1-gm_account.flac", "2-player_one.flac", "4-Kenku_FM_1234.flac",
+        "Gra cz'1 Łucja.flac",
+    ]  # fmt: skip
+    for p in tracks.iterdir():
+        assert ffmpeg.duration(p) == pytest.approx(20, abs=0.1)
+
+
+@pytest.mark.ffmpeg
+def test_master_preview_montage_and_fresh_folder(tmp_path):
+    folder = preview_dir(tmp_path / "rec" / "tracks")
+    preview = tmp_path / "rec" / "2026-02-03_preview"
+    (preview / "tracks").mkdir(parents=True)
+    (preview / "stale.flac").write_bytes(b"x")
+    args = ("master", folder, *START_ARG, "--preview", "--length", "20")
+    result = invoke(*args, "--montage")
+    assert result.exit_code == 0, result.output
+    # three voices: pieces of 20 // 3 = 6 s, each voice's earliest best
+    assert "excerpt (montage): 00:00:00-00:00:06, 00:00:20-00:00:26, " in result.output
+    assert not (preview / "stale.flac").exists()
+    for p in (preview / "tracks").iterdir():
+        assert ffmpeg.duration(p) == pytest.approx(18, abs=0.1)
+
+
+@pytest.mark.ffmpeg
+def test_master_preview_at_past_the_end(tmp_path):
+    folder = preview_dir(tmp_path / "rec" / "tracks")
+    result = invoke("master", folder, *START_ARG, "--preview", "--at", "99:00:00")
+    assert result.exit_code == 1
+    assert "past the end (00:01:40)" in result.output
+
+
+@pytest.mark.parametrize(
+    "extra", [("--at", "00:01:00"), ("--length", "30"), ("--montage",)]
+)
+def test_master_preview_options_need_preview(tmp_path, extra):
+    folder = craig_dir(tmp_path / "tracks")
+    result = invoke("master", folder, *extra)
+    assert result.exit_code == 2 and "--preview" in result.output
+
+
+def test_master_at_with_montage(tmp_path):
+    folder = craig_dir(tmp_path / "tracks")
+    result = invoke("master", folder, "--preview", "--at", "00:01:00", "--montage")
+    assert result.exit_code == 2 and "--montage" in result.output
+
+
+@pytest.mark.parametrize("text", ["1:00", "00:61:00", "ab:cd:ef"])
+def test_master_bad_at(tmp_path, text):
+    folder = craig_dir(tmp_path / "tracks")
+    result = invoke("master", folder, "--preview", "--at", text)
+    assert result.exit_code == 2 and "HH:MM:SS" in result.output
+
+
+def test_master_without_preview_not_implemented_yet(tmp_path):
+    result = invoke("master", craig_dir(tmp_path / "tracks"))
+    assert result.exit_code == 1 and "not implemented yet" in result.output

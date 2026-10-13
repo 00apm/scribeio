@@ -7,12 +7,13 @@ with exit code 1; anything else is a bug and keeps its traceback.
 
 from __future__ import annotations
 
+import re
 import sys
 from collections.abc import Callable
 from contextlib import ExitStack
 from datetime import datetime
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 import click
 
@@ -30,6 +31,10 @@ from scribe_rpg.transcribe import (
 )
 from scribe_rpg.transcribe.glossary import Glossary, load_glossary
 from scribe_rpg.transcribe.session import RawSession, Segment, TrackInfo
+
+if TYPE_CHECKING:
+    # numpy at runtime only inside `master` / `transcribe`, never for `merge`
+    from scribe_rpg.master.excerpt import Excerpt
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -326,6 +331,146 @@ def _ensure_models(
             continue
         models.download(model, progress)
     return wcfg
+
+
+AT = re.compile(r"(\d+):([0-5]\d):([0-5]\d)")
+
+
+def _parse_at(
+    ctx: click.Context, param: click.Parameter, value: str | None
+) -> int | None:
+    """Parse ``--at HH:MM:SS`` to seconds; bad text is a usage error."""
+    if value is None:
+        return None
+    m = AT.fullmatch(value)
+    if m is None:
+        raise click.BadParameter(f"{value!r}: expected HH:MM:SS")
+    h, mnt, sec = map(int, m.groups())
+    return h * 3600 + mnt * 60 + sec
+
+
+@main.command()
+@click.argument(
+    "input_path", metavar="INPUT", type=click.Path(exists=True, path_type=Path)
+)
+@click.option(
+    "-c",
+    "--config",
+    "config_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Campaign config (YAML): speakers, master settings.",
+)
+@click.option(
+    "-o",
+    "--output",
+    "out_dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    help="Output folder (default: next to the input).",
+)
+@click.option("--name", help="Output name (default: session date).")
+@_start_option
+@click.option("--force", is_flag=True, help="Overwrite existing outputs.")
+@click.option(
+    "--preview",
+    is_flag=True,
+    help="Write <name>_preview/ for a short excerpt instead of the full master.",
+)
+@click.option(
+    "--at",
+    callback=_parse_at,
+    metavar="HH:MM:SS",
+    help="Preview: excerpt start (default: found automatically).",
+)
+@click.option(
+    "--length",
+    type=click.IntRange(min=1),
+    metavar="SECONDS",
+    help="Preview: excerpt length (default 90).",
+)
+@click.option(
+    "--montage", is_flag=True,
+    help="Preview: join each voice's most active stretch.",
+)  # fmt: skip
+def master(
+    input_path: Path,
+    config_path: Path | None,
+    out_dir: Path | None,
+    name: str | None,
+    start: datetime | None,
+    force: bool,
+    preview: bool,
+    at: int | None,
+    length: int | None,
+    montage: bool,
+) -> None:
+    """Mix and master a Craig recording into one audio file.
+
+    INPUT is the Craig .zip, or a folder of FLAC tracks (one per speaker;
+    without info.txt it needs --start). With --preview, writes
+    <name>_preview/ for a short excerpt: tracks/ holds the excerpt of every
+    track, unprocessed.
+    """
+    used = [opt for opt, v in [("--at", at), ("--length", length)] if v is not None]
+    used += ["--montage"] if montage else []
+    if used and not preview:
+        raise click.UsageError(f"{', '.join(used)} needs --preview")
+    if at is not None and montage:
+        raise click.UsageError("--at and --montage cannot be used together")
+    if not preview:
+        raise ScribeError("full mastering not implemented yet")
+
+    from scribe_rpg import ffmpeg
+    from scribe_rpg.master import excerpt
+    from scribe_rpg.master import preview as previews
+
+    progress = Progress()
+    if config_path is None:
+        config_path = _find_config(input_path.resolve().parent, progress)
+    cfg = load_config(config_path)
+    ffmpeg.require()
+    with ExitStack() as stack:
+        with progress.step(f"open {input_path.name}"):
+            patterns = cfg.settings["input"]["music_patterns"]
+            rec = stack.enter_context(craig.open_recording(input_path, patterns, start))
+        name = name or rec.start.strftime("%Y-%m-%d")
+        folder = (out_dir or input_path.resolve().parent) / f"{name}_preview"
+        clean = cfg.settings["transcribe"]["cleanup"]
+        with progress.step("find excerpt"):
+            acts = excerpt.activities(
+                [t.path for t in rec.tracks], clean["frame_ms"], clean["energy_db"]
+            )
+            voice = {
+                t.account: a
+                for t, a in zip(rec.tracks, acts, strict=True)
+                if t.kind == "player"
+            }
+            music = [
+                a for t, a in zip(rec.tracks, acts, strict=True) if t.kind == "music"
+            ]
+            ex = excerpt.choose(voice, music, length or 90, at, montage)
+        _show_excerpt(ex, montage, progress)
+        with progress.step(f"cut {len(rec.tracks)} tracks"):
+            previews.fresh_folder(folder)
+            previews.cut(rec.tracks, ex.ranges, folder / "tracks")
+    progress.console.print(f"preview: {folder}", markup=False, soft_wrap=True)
+
+
+def _show_excerpt(ex: Excerpt, forced: bool, progress: Progress) -> None:
+    """Print the chosen excerpt, the montage notice and missing voices."""
+    from scribe_rpg.master.excerpt import hms
+
+    if ex.montage:
+        spans = ", ".join(f"{hms(s)}-{hms(e)}" for s, e in ex.ranges)
+        progress.console.print(f"excerpt (montage): {spans}", markup=False)
+        if not forced:
+            progress.warn(
+                "no stretch has every voice; montage of each voice's most active part"
+            )
+    else:
+        [(s, e)] = ex.ranges
+        progress.console.print(f"excerpt: {hms(s)}, {e - s} s", markup=False)
+    if ex.missing:
+        progress.warn(f"silent in the excerpt: {', '.join(ex.missing)}")
 
 
 @main.command(name="init")
