@@ -9,14 +9,17 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
-from collections.abc import Iterator
+import threading
+from collections.abc import Callable, Iterator
 from pathlib import Path
-from typing import IO
-
-import numpy as np
-import numpy.typing as npt
+from typing import IO, TYPE_CHECKING
 
 from scribe_rpg.errors import ScribeError
+
+if TYPE_CHECKING:
+    # numpy only inside decode: `scribe merge` imports this module too
+    import numpy as np
+    import numpy.typing as npt
 
 HINT = (
     'ffmpeg not found in PATH; install it (conda install -c conda-forge "ffmpeg<8", '
@@ -78,6 +81,46 @@ def run(args: list[str], label: str) -> subprocess.CompletedProcess[str]:
     return done
 
 
+def run_progress(
+    args: list[str], label: str, on_time: Callable[[float], None] | None = None
+) -> None:
+    """Run ffmpeg like `run`, telling `on_time` the seconds written so far.
+
+    Reads ffmpeg's ``-progress pipe:1`` lines; stderr is drained by a thread
+    so a chatty ffmpeg cannot block. ffmpeg is killed if this is interrupted.
+
+    Raises:
+        ScribeError: If ffmpeg exits non-zero; names `label` and the last
+            lines of its stderr.
+    """
+    proc = subprocess.Popen(
+        [*_BASE, *args, "-progress", "pipe:1"],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        encoding="utf-8", errors="replace",
+    )  # fmt: skip
+    assert proc.stdout is not None and proc.stderr is not None
+    stderr = proc.stderr
+    err: list[str] = []
+    drain = threading.Thread(target=lambda: err.append(stderr.read()))
+    drain.start()
+    try:
+        for line in proc.stdout:
+            key, _, value = line.strip().partition("=")
+            # out_time_us is in microseconds; "N/A" before the first frame
+            if key == "out_time_us" and on_time and value.lstrip("-").isdigit():
+                on_time(max(0, int(value)) / 1_000_000)
+        code = proc.wait()
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+        drain.join()
+        proc.stdout.close()
+        proc.stderr.close()
+    if code != 0:
+        raise ScribeError(f"ffmpeg failed ({label}): {_tail(''.join(err))}")
+
+
 def decode(
     path: Path, rate: int, chunk_seconds: int = 60
 ) -> Iterator[npt.NDArray[np.float32]]:
@@ -88,6 +131,8 @@ def decode(
     Raises:
         ScribeError: If ffmpeg exits non-zero.
     """
+    import numpy as np
+
     args = [*_BASE, "-loglevel", "error", "-i", str(path), "-ac", "1",
             "-ar", str(rate), "-f", "f32le", "pipe:1"]  # fmt: skip
     size = rate * chunk_seconds * 4  # bytes per chunk (4 per float32 sample)

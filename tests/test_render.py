@@ -114,3 +114,27 @@ def test_parse_integrated_silence(value):
 
 def test_parse_integrated_without_summary():
     assert parse_integrated("no ebur128 here") is None
+
+
+def test_mix_graph_two_voices_and_music_mono():
+    from pathlib import Path
+
+    from scribe_rpg.craig import Track
+    from scribe_rpg.master.mix import TrackPlan, graph
+
+    plans = [
+        TrackPlan(
+            Track("a", "player", Path("1-a.flac")), [Step("hp", "highpass", {"f": 80})]
+        ),
+        TrackPlan(Track("b", "player", Path("2-b.flac")), []),
+        TrackPlan(Track("m", "music", Path("3-m.flac")), [LOUD], {0: -3.0}),
+    ]
+    limiter = [Step("limiter", "alimiter", {"limit": "-1dB"})]
+    mono = "aformat=channel_layouts=mono,aformat=sample_fmts=flt"
+    assert graph(plans, limiter, {}, "mono") == (
+        f"[0:a]{mono},highpass=f=80[t0];"
+        f"[1:a]{mono}[t1];"
+        f"[2:a]{mono},volume=-3.00dB[t2];"
+        "[t0][t1][t2]amix=inputs=3:normalize=0:duration=longest,"
+        "aformat=sample_fmts=flt,alimiter=limit=-1dB[out]"
+    )

@@ -571,6 +571,75 @@ def test_master_bad_at(tmp_path, text):
     assert result.exit_code == 2 and "HH:MM:SS" in result.output
 
 
-def test_master_without_preview_not_implemented_yet(tmp_path):
-    result = invoke("master", craig_dir(tmp_path / "tracks"))
-    assert result.exit_code == 1 and "not implemented yet" in result.output
+# --- master (full) ----------------------------------------------------------
+
+
+def master_dir(folder):
+    """Unequal lengths (longest 35 s), one silent voice, a non-ASCII name."""
+    folder.mkdir(parents=True)
+    make_flac(folder / "1-gm_account.flac", 30)
+    make_flac(folder / "2-player_one.flac", 20, on=[])
+    make_flac(folder / "Gra cz'1 Łucja.flac", 25, freq=660, volume_db=-30)
+    make_flac(folder / "4-Kenku_FM_1234.flac", 35, freq=220)
+    return folder
+
+
+def lufs(path):
+    from scribe_rpg.master.render import measure
+
+    graph = "[0:a]ebur128=dualmono=true:framelog=verbose"
+    return measure(["-i", str(path)], graph, "test")
+
+
+@pytest.mark.ffmpeg
+def test_master_renders_mp3(tmp_path):
+    folder = master_dir(tmp_path / "rec" / "tracks")
+    result = invoke("master", folder, *START_ARG)
+    assert result.exit_code == 0, result.output
+    out = tmp_path / "rec" / "2026-02-03_master.mp3"
+    assert ffmpeg.duration(out) == pytest.approx(35, abs=0.1)
+    info = ffmpeg.run(["-i", str(out), "-f", "null", "-"], "probe").stderr
+    assert "mono" in info
+    assert "player_one" in result.output and "silent" in result.output
+    assert "gm_account: level" in result.output
+    again = invoke("master", folder, *START_ARG)
+    assert again.exit_code == 1 and "already exists" in again.output
+    assert invoke("master", folder, *START_ARG, "--force").exit_code == 0
+
+
+@pytest.mark.ffmpeg
+def test_master_failed_render_leaves_nothing(tmp_path, monkeypatch):
+    folder = master_dir(tmp_path / "rec" / "tracks")
+    out = tmp_path / "rec" / "2026-02-03_master.mp3"
+
+    def fail(args, label, on_time=None):
+        out.write_bytes(b"half")
+        raise ScribeError(f"ffmpeg failed ({label}): boom")
+
+    monkeypatch.setattr(ffmpeg, "run_progress", fail)
+    result = invoke("master", folder, *START_ARG)
+    assert result.exit_code == 1 and "boom" in result.output
+    assert not out.exists()
+
+
+@pytest.mark.ffmpeg
+def test_master_preview_writes_matched_files(tmp_path):
+    folder = preview_dir(tmp_path / "rec" / "tracks")
+    result = invoke("master", folder, *START_ARG, "--preview", "--length", "20")
+    assert result.exit_code == 0, result.output
+    preview = tmp_path / "rec" / "2026-02-03_preview"
+    original, final = preview / "00-original.flac", preview / "07-final.mp3"
+    assert lufs(original) == pytest.approx(-19, abs=0.5)
+    assert lufs(final) == pytest.approx(-19, abs=0.5)
+    assert not (tmp_path / "rec" / "2026-02-03_master.mp3").exists()
+
+
+def test_cli_import_does_not_load_numpy():
+    # scribe merge must work without numpy loaded (fresh interpreter: the
+    # test session itself has numpy imported already)
+    import subprocess
+    import sys
+
+    code = "import sys, scribe_rpg.cli; print('numpy' in sys.modules)"
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert out.stdout.strip() == "False", out.stderr

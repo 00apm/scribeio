@@ -34,7 +34,9 @@ from scribe_rpg.transcribe.session import RawSession, Segment, TrackInfo
 
 if TYPE_CHECKING:
     # numpy at runtime only inside `master` / `transcribe`, never for `merge`
+    from scribe_rpg.master.config import MasterConfig
     from scribe_rpg.master.excerpt import Excerpt
+    from scribe_rpg.master.render import Measured
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -406,9 +408,10 @@ def master(
     """Mix and master a Craig recording into one audio file.
 
     INPUT is the Craig .zip, or a folder of FLAC tracks (one per speaker;
-    without info.txt it needs --start). With --preview, writes
-    <name>_preview/ for a short excerpt: tracks/ holds the excerpt of every
-    track, unprocessed.
+    without info.txt it needs --start). Writes <name>_master.<format>: every
+    track through its chain, mixed, the mix chain, encoded. With --preview,
+    writes only <name>_preview/ for a short excerpt: tracks/ (the excerpt of
+    every track, unprocessed) and listening files at equal loudness.
     """
     used = [opt for opt, v in [("--at", at), ("--length", length)] if v is not None]
     used += ["--montage"] if montage else []
@@ -416,43 +419,128 @@ def master(
         raise click.UsageError(f"{', '.join(used)} needs --preview")
     if at is not None and montage:
         raise click.UsageError("--at and --montage cannot be used together")
-    if not preview:
-        raise ScribeError("full mastering not implemented yet")
 
     from scribe_rpg import ffmpeg
-    from scribe_rpg.master import excerpt
-    from scribe_rpg.master import preview as previews
+    from scribe_rpg.master.config import resolve
 
     progress = Progress()
     if config_path is None:
         config_path = _find_config(input_path.resolve().parent, progress)
+    if config_path is None:
+        progress.warn(
+            f"no config (-c, or {init.CONFIG_NAME} next to the recording): using "
+            "the default mastering settings"
+        )
     cfg = load_config(config_path)
+    mcfg = resolve(cfg.settings["master"])
     ffmpeg.require()
     with ExitStack() as stack:
         with progress.step(f"open {input_path.name}"):
             patterns = cfg.settings["input"]["music_patterns"]
             rec = stack.enter_context(craig.open_recording(input_path, patterns, start))
+        for t in rec.players:
+            if craig.sanitize(t.account) not in cfg.speakers:
+                progress.warn(
+                    f"unknown account {t.account}: no speakers: entry, voice chain used"
+                )
         name = name or rec.start.strftime("%Y-%m-%d")
-        folder = (out_dir or input_path.resolve().parent) / f"{name}_preview"
-        clean = cfg.settings["transcribe"]["cleanup"]
-        with progress.step("find excerpt"):
-            acts = excerpt.activities(
-                [t.path for t in rec.tracks], clean["frame_ms"], clean["energy_db"]
-            )
-            voice = {
-                t.account: a
-                for t, a in zip(rec.tracks, acts, strict=True)
-                if t.kind == "player"
-            }
-            music = [
-                a for t, a in zip(rec.tracks, acts, strict=True) if t.kind == "music"
-            ]
-            ex = excerpt.choose(voice, music, length or 90, at, montage)
-        _show_excerpt(ex, montage, progress)
-        with progress.step(f"cut {len(rec.tracks)} tracks"):
-            previews.fresh_folder(folder)
-            previews.cut(rec.tracks, ex.ranges, folder / "tracks")
+        folder = out_dir or input_path.resolve().parent
+        if preview:
+            clean = cfg.settings["transcribe"]["cleanup"]
+            ex = _find_excerpt(rec, clean, length or 90, at, montage, progress)
+            _write_preview(rec, ex, mcfg, folder / f"{name}_preview", progress)
+        else:
+            _write_master(rec, mcfg, folder / f"{name}_master.{mcfg.format}",
+                          force, progress)  # fmt: skip
+
+
+def _find_excerpt(
+    rec: craig.Recording,
+    clean: dict[str, Any],
+    length: int,
+    at: int | None,
+    montage: bool,
+    progress: Progress,
+) -> Excerpt:
+    """Measure every track's activity and choose the preview excerpt."""
+    from scribe_rpg.master import excerpt
+
+    with progress.step("find excerpt"):
+        acts = excerpt.activities(
+            [t.path for t in rec.tracks], clean["frame_ms"], clean["energy_db"]
+        )
+        pairs = list(zip(rec.tracks, acts, strict=True))
+        voice = {t.account: a for t, a in pairs if t.kind == "player"}
+        music = [a for t, a in pairs if t.kind == "music"]
+        ex = excerpt.choose(voice, music, length, at, montage)
+    _show_excerpt(ex, montage, progress)
+    return ex
+
+
+def _write_preview(
+    rec: craig.Recording,
+    ex: Excerpt,
+    mcfg: MasterConfig,
+    folder: Path,
+    progress: Progress,
+) -> None:
+    """Cut the excerpt out of every track, then write the listening files."""
+    from scribe_rpg.master import preview
+
+    with progress.step(f"cut {len(rec.tracks)} tracks"):
+        preview.fresh_folder(folder)
+        paths = preview.cut(rec.tracks, ex.ranges, folder / "tracks")
+    cut = [
+        craig.Track(t.account, t.kind, p)
+        for t, p in zip(rec.tracks, paths, strict=True)
+    ]
+    preview.write_files(cut, mcfg, folder, progress)
     progress.console.print(f"preview: {folder}", markup=False, soft_wrap=True)
+
+
+def _write_master(
+    rec: craig.Recording,
+    mcfg: MasterConfig,
+    out: Path,
+    force: bool,
+    progress: Progress,
+) -> None:
+    """Measure the loudness steps, then render the whole recording to `out`."""
+    from scribe_rpg.master import mix
+
+    if out.exists() and not force:
+        raise ScribeError(
+            f"output already exists: {out.name} (use --force to overwrite)"
+        )
+    plans = [mix.TrackPlan(t, mcfg.chain_for(t)) for t in rec.tracks]
+    with progress.step(f"measure {len(plans)} tracks"):
+        mix_gains = mix.measure_all(
+            plans, mcfg.mix, mcfg.channels, _measured_printer(progress)
+        )
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with progress.tracks(1) as bar:
+        bar.start(out.name)
+        bar.set_phase("rendering")
+        mix.render(plans, mcfg.mix, mix_gains, mcfg.channels, out, mcfg.format,
+                   mcfg.bitrate, bar.update)  # fmt: skip
+        bar.done(f"render {out.name}")
+    progress.console.print(f"master: {out}", markup=False, soft_wrap=True)
+
+
+def _measured_printer(progress: Progress) -> Callable[[str, list[Measured]], None]:
+    """Print each track's loudness steps: level and gain; warn on silence."""
+
+    def show(account: str, measured: list[Measured]) -> None:
+        parts = []
+        for m in measured:
+            if m.loudness is None or m.gain is None:
+                progress.warn(f"{account}: silent, {m.step} applies no gain")
+            else:
+                parts.append(f"{m.step} {m.loudness:.1f} LUFS → {m.gain:+.1f} dB")
+        if parts:
+            progress.console.print(f"{account}: {', '.join(parts)}", markup=False)
+
+    return show
 
 
 def _show_excerpt(ex: Excerpt, forced: bool, progress: Progress) -> None:

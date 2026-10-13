@@ -59,3 +59,79 @@ def test_highpass_80(tmp_path, freq, low, high):
     before = loudness(tone, [meter], {}, 0)
     after = loudness(tone, [hp, meter], {}, 1)
     assert low < before - after < high
+
+
+# --- mix and render ---------------------------------------------------------
+
+
+def file_loudness(path):
+    return measure(
+        ["-i", str(path)], "[0:a]ebur128=dualmono=true:framelog=verbose", "t"
+    )
+
+
+def peak_db(path):
+    import re
+
+    from scribe_rpg import ffmpeg
+
+    done = ffmpeg.run(
+        ["-i", str(path), "-af", "astats=measure_perchannel=none", "-f", "null", "-"],
+        "peak",
+    )
+    return float(re.findall(r"Peak level dB:\s*(-?[\d.]+)", done.stderr)[-1])
+
+
+def plans_for(*paths):
+    from scribe_rpg.craig import Track
+    from scribe_rpg.master.mix import TrackPlan
+
+    return [TrackPlan(Track(p.stem, "player", p), []) for p in paths]
+
+
+def test_amix_sums_without_halving(tmp_path):
+    from scribe_rpg.master.mix import render
+
+    a = make_flac(tmp_path / "a.flac", 5, volume_db=-20)
+    b = make_flac(tmp_path / "b.flac", 5, volume_db=-20)
+    out = tmp_path / "sum.flac"
+    render(plans_for(a, b), [], {}, "mono", out, "flac", "", None)
+    assert file_loudness(out) - file_loudness(a) == pytest.approx(6.02, abs=0.2)
+
+
+def test_limiter_caps_the_mix(tmp_path):
+    from scribe_rpg.master.mix import render
+
+    a = make_flac(tmp_path / "a.flac", 5, volume_db=-3)
+    b = make_flac(tmp_path / "b.flac", 5, volume_db=-3)
+    out = tmp_path / "sum.flac"
+    limiter = [Step("limiter", "alimiter", {"limit": "-1dB", "level": False})]
+    render(plans_for(a, b), limiter, {}, "mono", out, "flac", "", None)
+    assert peak_db(out) <= -0.9
+
+
+def test_render_reports_progress(tmp_path):
+    from scribe_rpg.master.mix import render
+
+    a = make_flac(tmp_path / "a.flac", 3)
+    seen = []
+    render(plans_for(a), [], {}, "mono", tmp_path / "o.flac", "flac", "", seen.append)
+    assert seen and seen[-1] == pytest.approx(100, abs=1)
+
+
+@pytest.mark.parametrize("error", [KeyboardInterrupt, RuntimeError])
+def test_render_failure_leaves_no_file(tmp_path, monkeypatch, error):
+    from scribe_rpg import ffmpeg
+    from scribe_rpg.master import mix
+
+    a = make_flac(tmp_path / "a.flac", 3)
+    out = tmp_path / "o.mp3"
+
+    def half_written(args, label, on_time=None):
+        out.write_bytes(b"half")
+        raise error()
+
+    monkeypatch.setattr(ffmpeg, "run_progress", half_written)
+    with pytest.raises(error):
+        mix.render(plans_for(a), [], {}, "mono", out, "mp3", "96k", None)
+    assert not out.exists()
