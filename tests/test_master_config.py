@@ -214,6 +214,18 @@ def test_merge_without_user_section():
             "  music:\n    loudness: {target: loud}\n",
             "master.music.loudness: loudness needs a target in LUFS, e.g. -19",
         ),
+        (
+            "  voice:\n    stereo: yes please\n",
+            "master.voice.stereo: expected true or false",
+        ),
+        (
+            "  music:\n    stereo: true\n",
+            "master.music.stereo: only voice and players have `stereo`",
+        ),
+        (
+            "  voice:\n    chain: [stereo]\n",
+            "master.voice.chain: unknown step 'stereo'",
+        ),
         ("  players: [a]\n", "master.players: expected key: value pairs"),
         ("  players:\n    a: 3\n", "master.players.a: expected key: value pairs"),
     ],
@@ -235,6 +247,24 @@ def test_voice_step_used_only_by_a_player(tmp_path):
 def test_repeating_the_same_type_is_allowed(tmp_path):
     cfg = load(tmp_path, "  voice:\n    comp: {type: acompressor, ratio: 6}\n")
     assert cfg.voice[2].options["ratio"] == 6
+
+
+def test_stereo_voices(tmp_path):
+    music = Track("Kenku_FM_1234", "music", Path("3-Kenku_FM_1234.flac"))
+    cfg = defaults()
+    assert not cfg.keeps_stereo(Track("a", "player", Path("1-a.flac")))
+    assert cfg.keeps_stereo(music)
+    cfg = load(tmp_path, "  players:\n    pro.mic:\n      stereo: true\n")
+    assert cfg.keeps_stereo(Track("pro.mic", "player", Path("1-pro.mic.flac")))
+    assert not cfg.keeps_stereo(Track("other", "player", Path("2-other.flac")))
+    same = [(s.name, s.type, s.options) for s in cfg.voice]
+    assert [(s.name, s.type, s.options) for s in player(cfg, "pro.mic")] == same
+    cfg = load(
+        tmp_path,
+        "  voice:\n    stereo: true\n  players:\n    a:\n      stereo: false\n",
+    )
+    assert cfg.keeps_stereo(Track("b", "player", Path("1-b.flac")))
+    assert not cfg.keeps_stereo(Track("a", "player", Path("2-a.flac")))
 
 
 def test_unknown_players(tmp_path):

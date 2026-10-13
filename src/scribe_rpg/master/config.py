@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from scribe_rpg import craig
@@ -36,6 +36,8 @@ class MasterConfig:
         music: Chain for music bot tracks.
         mix: Chain for the mix of all tracks.
         players: Sanitized account -> chain (player block merged over voice).
+        voice_stereo: ``voice.stereo``: voices recorded in stereo stay stereo.
+        players_stereo: Sanitized account -> its block's ``stereo``.
     """
 
     channels: str
@@ -45,12 +47,24 @@ class MasterConfig:
     music: list[Step]
     mix: list[Step]
     players: dict[str, list[Step]]
+    voice_stereo: bool = False
+    players_stereo: dict[str, bool] = field(default_factory=dict)
 
     def chain_for(self, track: craig.Track) -> list[Step]:
         """The chain that processes `track`."""
         if track.kind == "music":
             return self.music
         return self.players.get(craig.sanitize(track.account), self.voice)
+
+    def keeps_stereo(self, track: craig.Track) -> bool:
+        """Whether `track` is processed in stereo when the output is stereo.
+
+        Music always is; a voice only if its config says ``stereo: true``.
+        """
+        if track.kind == "music":
+            return True
+        account = craig.sanitize(track.account)
+        return self.players_stereo.get(account, self.voice_stereo)
 
 
 def resolve(section: dict[str, Any]) -> MasterConfig:
@@ -59,10 +73,12 @@ def resolve(section: dict[str, Any]) -> MasterConfig:
     Raises:
         ScribeError: If a chain names a step that is not defined.
     """
+    blocks = section.get("players") or {}
     players = {
         craig.sanitize(str(account)): _chain(block, f"master.players.{account}")
-        for account, block in (section.get("players") or {}).items()
+        for account, block in blocks.items()
     }
+    voice_stereo = bool(section["voice"].get("stereo", False))
     fmt = section["format"]
     return MasterConfig(
         channels=section["channels"],
@@ -72,6 +88,11 @@ def resolve(section: dict[str, Any]) -> MasterConfig:
         music=_chain(section["music"], "master.music"),
         mix=_chain(section["mix"], "master.mix"),
         players=players,
+        voice_stereo=voice_stereo,
+        players_stereo={
+            craig.sanitize(str(account)): bool(block.get("stereo", voice_stereo))
+            for account, block in blocks.items()
+        },
     )
 
 
@@ -163,6 +184,13 @@ def _merge_stage(
                 raise fail(path, "expected a list of step names")
             out["chain"] = settings
             continue
+        if name == "stereo":
+            if "stereo" not in base:
+                raise fail(path, "only voice and players have `stereo`")
+            if not isinstance(settings, bool):
+                raise fail(path, "expected true or false")
+            out["stereo"] = settings
+            continue
         settings = _map(settings, path, fail)
         old = base.get(name)
         kind = settings.get("type", old["type"] if old else None)
@@ -205,5 +233,5 @@ def _check_used(user: dict[str, Any], out: dict[str, Any], fail: Fail) -> None:
     ]
     for where, given, used in stages:
         for name in given:
-            if name != "chain" and name not in used:
+            if name not in ("chain", "stereo") and name not in used:
                 raise fail(f"{where}.{name}", "step is in no chain")

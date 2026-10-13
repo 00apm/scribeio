@@ -84,11 +84,20 @@ def write_files(
     files can sit in between). Both are brought to the same loudness (MATCH).
     """
     total = len(cfg.voice) + len(cfg.music) + len(cfg.mix)
+
+    def track_plans(chained: bool) -> list[mix.TrackPlan]:
+        return [
+            mix.TrackPlan(
+                t, cfg.chain_for(t) if chained else [], stereo=cfg.keeps_stereo(t)
+            )
+            for t in tracks
+        ]
+
     files = [
-        (dest / "00-original.flac", [mix.TrackPlan(t, []) for t in tracks], [], "flac"),
+        (dest / "00-original.flac", track_plans(False), [], "flac"),
         (
             dest / f"{total + 1:02d}-final.{cfg.format}",
-            [mix.TrackPlan(t, cfg.chain_for(t)) for t in tracks],
+            track_plans(True),
             cfg.mix,
             cfg.format,
         ),

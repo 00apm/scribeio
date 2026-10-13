@@ -393,6 +393,10 @@ def _parse_at(
     "--montage", is_flag=True,
     help="Preview: join each voice's most active stretch.",
 )  # fmt: skip
+@click.option(
+    "--format", "fmt", type=click.Choice(["mp3", "m4a", "opus"]),
+    help="Output format (default: master.format in the config, else mp3).",
+)  # fmt: skip
 def master(
     input_path: Path,
     config_path: Path | None,
@@ -404,6 +408,7 @@ def master(
     at: int | None,
     length: int | None,
     montage: bool,
+    fmt: str | None,
 ) -> None:
     """Mix and master a Craig recording into one audio file.
 
@@ -433,7 +438,9 @@ def master(
             "the default mastering settings"
         )
     cfg = load_config(config_path)
-    mcfg = resolve(cfg.settings["master"])
+    section = cfg.settings["master"]
+    # --format wins; the bitrate default then follows it unless the config set one
+    mcfg = resolve({**section, "format": fmt} if fmt else section)
     ffmpeg.require()
     if old := ffmpeg.version_warning():
         progress.warn(old)
@@ -519,7 +526,10 @@ def _write_master(
         raise ScribeError(
             f"output already exists: {out.name} (use --force to overwrite)"
         )
-    plans = [mix.TrackPlan(t, mcfg.chain_for(t)) for t in rec.tracks]
+    plans = [
+        mix.TrackPlan(t, mcfg.chain_for(t), stereo=mcfg.keeps_stereo(t))
+        for t in rec.tracks
+    ]
     with progress.step(f"measure {len(plans)} tracks"):
         mix_gains = mix.measure_all(
             plans, mcfg.mix, mcfg.channels, _measured_printer(progress)

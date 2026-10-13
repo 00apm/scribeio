@@ -133,11 +133,49 @@ def test_mix_graph_two_voices_and_music_mono():
         TrackPlan(Track("m", "music", Path("3-m.flac")), [LOUD], {0: -3.0}),
     ]
     limiter = [Step("limiter", "alimiter", {"limit": "-1dB"})]
-    mono = "aformat=channel_layouts=mono,aformat=sample_fmts=flt"
+    mono = "aformat=sample_fmts=flt:channel_layouts=mono,aformat=sample_fmts=flt"
     assert graph(plans, limiter, {}, "mono") == (
         f"[0:a]{mono},highpass=f=80,adenorm[t0];"
         f"[1:a]{mono}[t1];"
         f"[2:a]{mono},volume=-3.00dB[t2];"
         "[t0][t1][t2]amix=inputs=3:normalize=0:duration=longest,"
         "aformat=sample_fmts=flt,alimiter=limit=-1dB,adenorm[out]"
+    )
+
+
+def test_prep_mono_and_stereo():
+    from pathlib import Path
+
+    from scribe_rpg.craig import Track
+    from scribe_rpg.master.mix import TrackPlan, prep
+
+    voice = TrackPlan(Track("a", "player", Path("1-a.flac")), [])
+    stereo_voice = TrackPlan(Track("b", "player", Path("2-b.flac")), [], stereo=True)
+    mono = "aformat=sample_fmts=flt:channel_layouts=mono"
+    stereo = "aformat=sample_fmts=flt:channel_layouts=stereo"
+    # mono output: everything read as mono
+    assert prep(voice, "mono") == mono and prep(stereo_voice, "mono") == mono
+    # stereo output: a track is read as stereo only if it keeps its stereo
+    assert prep(voice, "stereo") == mono
+    assert prep(stereo_voice, "stereo") == stereo
+
+
+def test_mix_graph_stereo_pans_mono_voices_after_their_chain():
+    from pathlib import Path
+
+    from scribe_rpg.craig import Track
+    from scribe_rpg.master.mix import TrackPlan, graph
+
+    hp = [Step("hp", "highpass", {"f": 80})]
+    plans = [
+        TrackPlan(Track("a", "player", Path("1-a.flac")), hp),
+        TrackPlan(Track("b", "player", Path("2-b.flac")), hp, stereo=True),
+    ]
+    mono = "aformat=sample_fmts=flt:channel_layouts=mono,aformat=sample_fmts=flt"
+    stereo = "aformat=sample_fmts=flt:channel_layouts=stereo,aformat=sample_fmts=flt"
+    assert graph(plans, [], {}, "stereo") == (
+        f"[0:a]{mono},highpass=f=80,adenorm,pan=stereo|c0=c0|c1=c0[t0];"
+        f"[1:a]{stereo},highpass=f=80,adenorm[t1];"
+        "[t0][t1]amix=inputs=2:normalize=0:duration=longest,"
+        "aformat=sample_fmts=flt[out]"
     )

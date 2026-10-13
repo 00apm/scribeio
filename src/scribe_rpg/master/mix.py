@@ -49,17 +49,35 @@ class TrackPlan:
         steps: Its resolved chain.
         gains: Measured gain of each loudness step (by chain index).
         upto: Use only ``steps[:upto]`` (preview step files); None = all.
+        stereo: Keep the track's stereo when the output is stereo (music, a
+            voice recorded in stereo); otherwise it is processed as mono.
     """
 
     track: craig.Track
     steps: list[Step]
     gains: Gains = field(default_factory=dict)
     upto: int | None = None
+    stereo: bool = False
 
 
-def prep(track: craig.Track, channels: str) -> str:
-    """Input filter of a track: downmix to mono (stereo arrives with Task 15)."""
-    return "aformat=channel_layouts=mono"
+def _layout(plan: TrackPlan, channels: str) -> str:
+    """Channel layout the track is processed in."""
+    return "stereo" if channels == "stereo" and plan.stereo else "mono"
+
+
+def prep(plan: TrackPlan, channels: str) -> str:
+    """Input filter of a track: float, in the layout it is processed in."""
+    return f"aformat=sample_fmts=flt:channel_layouts={_layout(plan, channels)}"
+
+
+def to_mix(plan: TrackPlan, channels: str) -> str:
+    """Filter text after the chain: a mono track in a stereo mix is copied to
+    both sides at full level (as its loudness was measured, dual mono); empty
+    otherwise. Done once, after the chain, so the chain filters run once.
+    """
+    if channels == "stereo" and _layout(plan, channels) == "mono":
+        return ",pan=stereo|c0=c0|c1=c0"
+    return ""
 
 
 def graph(
@@ -78,8 +96,8 @@ def graph(
 def _graph(plans: list[TrackPlan], channels: str, mix_chain: str) -> str:
     """Per-track chains, the amix, then `mix_chain` (no output label)."""
     parts = [
-        f"[{i}:a]{prep(p.track, channels)},"
-        f"{chain_filter(p.steps, p.gains, p.upto)}[t{i}]"
+        f"[{i}:a]{prep(p, channels)},"
+        f"{chain_filter(p.steps, p.gains, p.upto)}{to_mix(p, channels)}[t{i}]"
         for i, p in enumerate(plans)
     ]
     labels = "".join(f"[t{i}]" for i in range(len(plans)))
@@ -112,7 +130,7 @@ def measure_all(
     """
 
     def one(plan: TrackPlan) -> list[Measured]:
-        prepared = prep(plan.track, channels)
+        prepared = prep(plan, channels)
         plan.gains, measured = track_gains(
             plan.track.path, prepared, plan.steps[: plan.upto], plan.track.account
         )

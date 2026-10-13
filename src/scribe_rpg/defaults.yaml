@@ -60,6 +60,10 @@ master:
   # a step: an ffmpeg filter (type + the filter's own options) or `loudness`.
   # Steps not in a chain do nothing but can be named in a user chain.
   voice:
+    # stereo: true keeps a voice recorded in stereo (e.g. a stereo mic) stereo
+    # through its chain when channels is stereo; otherwise a voice is filtered
+    # as mono and copied to both sides only for the mix. Set it per player.
+    stereo: false
     chain: [rumble, level, comp, eq, loudness]
     rumble:   {type: highpass, f: 80}
     level:    {type: loudness, target: -19}

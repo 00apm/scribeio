@@ -1,6 +1,8 @@
 """Tests for the command line, with a fake transcriber (no GPU, no audio files)."""
 
 import json
+import re
+import subprocess
 import textwrap
 from datetime import datetime, timezone
 
@@ -631,6 +633,75 @@ def test_master_checks_config_before_reading(tmp_path):
     assert result.exit_code == 1
     assert "master.voice.comp (acompressor): Value 99" in result.output
     assert "open tracks" not in result.output
+
+
+def audio_stream(path):
+    """The input's ``Stream #0:0: Audio: <codec>, <rate>, <layout>`` line."""
+    info = ffmpeg.run(["-i", str(path), "-f", "null", "-"], "probe").stderr
+    return next(line for line in info.splitlines() if "Stream #0:0" in line)
+
+
+def side_peak(path):
+    """Peak dB of left minus right: about -90 (mp3 residue) when they match."""
+    diff = ffmpeg.run(
+        ["-i", str(path), "-af", "pan=mono|c0=c0-c1,volumedetect", "-f", "null", "-"],
+        "diff",
+    ).stderr
+    peak = re.search(r"max_volume: (-inf|-?[\d.]+) dB", diff)
+    assert peak is not None
+    return float(peak.group(1))
+
+
+def master_stereo(tmp_path, config_text):
+    folder = master_dir(tmp_path / "rec" / "tracks")
+    config = tmp_path / "scribe.yaml"
+    config.write_text(config_text, encoding="utf-8")
+    result = invoke("master", folder, *START_ARG, "-c", config)
+    assert result.exit_code == 0, result.output
+    out = tmp_path / "rec" / "2026-02-03_master.mp3"
+    assert ", stereo," in audio_stream(out)
+    return folder, out
+
+
+@pytest.mark.ffmpeg
+def test_master_stereo_mono_voices_centred(tmp_path):
+    _, out = master_stereo(tmp_path, "master:\n  channels: stereo\n")
+    assert side_peak(out) < -60
+
+
+@pytest.mark.ffmpeg
+def test_master_stereo_keeps_a_stereo_voice(tmp_path):
+    folder = tmp_path / "rec" / "tracks"
+    folder.mkdir(parents=True)
+    # a voice recorded in stereo: different tones left and right
+    subprocess.run(
+        ["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "sine=440:d=30",
+         "-f", "lavfi", "-i", "sine=660:d=30", "-filter_complex",
+         "[0:a][1:a]amerge=inputs=2", "-c:a", "flac",
+         str(folder / "1-pro_mic.flac")],
+        check=True,
+    )  # fmt: skip
+    make_flac(folder / "2-Kenku_FM_1234.flac", 30, freq=220)
+    config = tmp_path / "scribe.yaml"
+    config.write_text(
+        "master:\n  channels: stereo\n  players:\n    pro_mic:\n      stereo: true\n",
+        encoding="utf-8",
+    )
+    result = invoke("master", folder, *START_ARG, "-c", config)
+    assert result.exit_code == 0, result.output
+    out = tmp_path / "rec" / "2026-02-03_master.mp3"
+    assert side_peak(out) > -30
+
+
+@pytest.mark.ffmpeg
+@pytest.mark.parametrize(("fmt", "codec"), [("m4a", "aac"), ("opus", "opus")])
+def test_master_format_option(tmp_path, fmt, codec):
+    folder = master_dir(tmp_path / "rec" / "tracks")
+    result = invoke("master", folder, *START_ARG, "--format", fmt)
+    assert result.exit_code == 0, result.output
+    out = tmp_path / "rec" / f"2026-02-03_master.{fmt}"
+    assert f"Audio: {codec}" in audio_stream(out)
+    assert ffmpeg.duration(out) == pytest.approx(35, abs=0.1)
 
 
 @pytest.mark.ffmpeg
