@@ -212,6 +212,27 @@ def test_dir_input_writes_next_to_folder(tmp_path, fake_whisper, campaign):
     assert (tmp_path / "proc" / f"{LOCAL_DATE}_transcript.md").exists()
 
 
+def test_dir_input_without_info_txt_with_start(tmp_path, fake_whisper, campaign):
+    folder = craig_dir(tmp_path / "proc" / "tracks", info=False)
+    result = invoke("transcribe", folder, "-c", campaign, "--start", "2026-02-03 19:30")
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "proc" / "2026-02-03_transcript.md").exists()
+
+
+def test_dir_input_without_info_txt_asks_for_start(tmp_path, fake_whisper, campaign):
+    folder = craig_dir(tmp_path / "tracks", info=False)
+    result = invoke("transcribe", folder, "-c", campaign)
+    assert result.exit_code == 1 and "--start" in result.output
+
+
+@pytest.mark.parametrize("text", ["2026-02-03", "03.02.2026 19:30", "2026-02-30 19:30"])
+def test_bad_start_is_a_usage_error(tmp_path, fake_whisper, campaign, text):
+    folder = craig_dir(tmp_path / "tracks", info=False)
+    result = invoke("transcribe", folder, "-c", campaign, "--start", text)
+    assert result.exit_code == 2
+    assert "YYYY-MM-DD HH:MM" in result.output
+
+
 def test_dir_input_missing_track(tmp_path, fake_whisper, campaign):
     folder = craig_dir(tmp_path / "tracks", skip={"player_one"})
     result = invoke("transcribe", folder, "-c", campaign)

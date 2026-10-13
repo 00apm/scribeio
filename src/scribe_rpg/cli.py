@@ -10,6 +10,7 @@ from __future__ import annotations
 import sys
 from collections.abc import Callable
 from contextlib import ExitStack
+from datetime import datetime
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -72,6 +73,32 @@ def _common(f: F) -> F:
     return f
 
 
+def _parse_start(
+    ctx: click.Context, param: click.Parameter, value: str | None
+) -> datetime | None:
+    """Parse ``--start`` as local time; bad text is a usage error (exit 2)."""
+    if value is None:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d %H:%M").astimezone()
+    except ValueError:
+        raise click.BadParameter(
+            f'{value!r}: expected "YYYY-MM-DD HH:MM" (local time)'
+        ) from None
+
+
+def _start_option(f: F) -> F:
+    """The ``--start`` option: session start for input without info.txt."""
+    option = click.option(
+        "--start",
+        callback=_parse_start,
+        metavar='"YYYY-MM-DD HH:MM"',
+        help="Session start (local time); wins over info.txt. Needed for a "
+        "folder without info.txt.",
+    )
+    return option(f)
+
+
 @click.group(cls=_Group)
 @click.version_option(__version__, prog_name="scribe")
 def main() -> None:
@@ -83,6 +110,7 @@ def main() -> None:
     "input_path", metavar="INPUT", type=click.Path(exists=True, path_type=Path)
 )
 @_common
+@_start_option
 @click.option("--force", is_flag=True, help="Overwrite existing outputs.")
 @click.option(
     "-y", "--yes", is_flag=True, help="Download missing models without asking."
@@ -94,16 +122,18 @@ def transcribe(
     out_dir: Path | None,
     name: str | None,
     keep_fillers: bool,
+    start: datetime | None,
     force: bool,
     yes: bool,
 ) -> None:
     """Transcribe a Craig recording.
 
-    INPUT is the Craig .zip, or a folder with info.txt and <n>-<account>.flac
-    tracks. Writes <name>_transcript.md, <name>_transcript.json (raw data for
-    `scribe merge`) and <name>_transcript-report.md (quality report); <name>
-    is the session date unless --name gives one. Needs WhisperX
-    (see README); an NVIDIA GPU is strongly recommended.
+    INPUT is the Craig .zip, or a folder of FLAC tracks (one per speaker;
+    without info.txt it needs --start). Writes <name>_transcript.md,
+    <name>_transcript.json (raw data for `scribe merge`) and
+    <name>_transcript-report.md (quality report); <name> is the session date
+    unless --name gives one. Needs WhisperX (see README); an NVIDIA GPU is
+    strongly recommended.
     """
     # Imported here: numpy is only needed for transcription, not for merge.
     from scribe_rpg.transcribe import energy
@@ -142,7 +172,7 @@ def transcribe(
     with ExitStack() as stack:
         with progress.step(f"open {input_path.name}"):
             patterns = cfg.settings["input"]["music_patterns"]
-            rec = stack.enter_context(craig.open_recording(input_path, patterns))
+            rec = stack.enter_context(craig.open_recording(input_path, patterns, start))
         paths = _paths(
             out_dir or input_path.resolve().parent,
             name or rec.start.strftime("%Y-%m-%d"),

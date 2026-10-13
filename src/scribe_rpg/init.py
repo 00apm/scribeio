@@ -47,9 +47,9 @@ def speakers_from(
         music_patterns: Substrings that mark music bots.
 
     Returns:
-        Player accounts and music accounts. From a recording they are written
-        as Discord shows them; a JSON only knows the file-name form, which
-        works as well (scribe sanitizes config keys).
+        Player accounts and music accounts. From a zip they are written as
+        Discord shows them (info.txt); a track folder and a JSON give the
+        file-name form, which works as well (scribe sanitizes config keys).
     """
     source = Path(source)
     if source.suffix.lower() == ".json":
@@ -58,8 +58,13 @@ def speakers_from(
         tracks = session_json.read(source).tracks
         players = [t.account for t in tracks if t.kind == "player"]
         return players, [t.account for t in tracks if t.kind == "music"]
-    names = craig.read_info(source).names
-    music = [n for n in names if craig.is_music(craig.sanitize(n), music_patterns)]
+    if source.is_dir():
+        names = [craig.account_of(f) for f in craig.dir_tracks(source)]
+        if not names:
+            raise ScribeError(f"{source.name}: no FLAC files")
+    else:
+        names = craig.read_info(source).names
+    music = [n for n in names if craig.is_music(n, music_patterns)]
     return [n for n in names if n not in music], music
 
 

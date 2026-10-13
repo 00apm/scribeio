@@ -82,9 +82,17 @@ def test_speakers_from_zip(tmp_path):
     assert music == ["Kenku FM#1234"]
 
 
-def test_speakers_from_track_folder(tmp_path):
+def test_speakers_from_track_folder_uses_file_names(tmp_path):
     players, _ = init.speakers_from(craig_dir(tmp_path / "tracks"), MUSIC)
-    assert players == ["gm.account", "player.one"]
+    assert players == ["gm_account", "player_one"]
+
+
+def test_speakers_from_folder_without_info_txt(tmp_path):
+    names = ["1-gm_account.flac", "Game Master.flac", "3-Kenku_FM_1234.flac"]
+    folder = craig_dir(tmp_path / "tracks", info=False, names=names)
+    players, music = init.speakers_from(folder, MUSIC)
+    assert players == ["gm_account", "Game Master"]
+    assert music == ["Kenku_FM_1234"]
 
 
 def test_speakers_from_json(tmp_path):
