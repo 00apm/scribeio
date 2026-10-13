@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 import zipfile
 from pathlib import Path
 
@@ -120,3 +121,37 @@ def tone(seconds: float, amplitude: float = 0.1, sr: int = 16000) -> np.ndarray:
 def silence(seconds: float, sr: int = 16000) -> np.ndarray:
     """Digital silence at 16 kHz, like a Craig track when nobody talks."""
     return np.zeros(int(seconds * sr), dtype=np.float32)
+
+
+def make_flac(
+    path: Path,
+    seconds: float,
+    *,
+    freq: int = 440,
+    volume_db: float = -20,
+    on: list[tuple[float, float]] | None = None,
+    channels: int = 1,
+) -> Path:
+    """Write a 48 kHz FLAC sine with ffmpeg (needs ffmpeg in PATH).
+
+    `volume_db` is the tone's peak level in dBFS. `on` lists (start, end)
+    seconds where the tone sounds; digital silence elsewhere. None means the
+    tone sounds the whole time.
+    """
+    # lavfi's sine has amplitude 1/8; scale it to the requested peak
+    gain = 8 * 10 ** (volume_db / 20)
+    level = str(gain)
+    if on is not None:
+        terms = "+".join(f"between(t,{a},{b})" for a, b in on) or "0"
+        level = f"'if({terms},{gain},0)'"
+    subprocess.run(
+        [
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi",
+            "-i", f"sine=frequency={freq}:duration={seconds}:sample_rate=48000",
+            "-af", f"volume={level}:eval=frame", "-ac", str(channels),
+            "-c:a", "flac", str(path),
+        ],
+        check=True,
+    )  # fmt: skip
+    return path

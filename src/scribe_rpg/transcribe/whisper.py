@@ -15,8 +15,6 @@ import gc
 import logging
 import math
 import re
-import shutil
-import subprocess
 import warnings
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
@@ -24,6 +22,7 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
+from scribe_rpg import ffmpeg
 from scribe_rpg.errors import ScribeError
 from scribe_rpg.transcribe.session import Segment, Word
 
@@ -35,11 +34,6 @@ INSTALL_HINT = (
     'WhisperX not installed: pip install "whisperx>=3.8.6,<4" '
     "(install torch with CUDA first; see README)"
 )
-FFMPEG_HINT = (
-    'ffmpeg not found in PATH; install it (conda install -c conda-forge "ffmpeg<8", '
-    "winget install ffmpeg, apt install ffmpeg or brew install ffmpeg)"
-)
-
 Progress = Callable[[float], None]
 
 
@@ -66,8 +60,7 @@ def preflight(cfg: dict[str, Any]) -> list[str]:
             work on this machine (CUDA requested but unusable; float16 on CPU).
     """
     quiet_libraries()
-    if shutil.which("ffmpeg") is None:
-        raise ScribeError(FFMPEG_HINT)
+    ffmpeg.require()
     _whisperx()
     import torch
 
@@ -108,7 +101,7 @@ def versions() -> dict[str, str]:
     return {
         "whisperx": _installed_version("whisperx"),
         "torch": _installed_version("torch"),
-        "ffmpeg": _ffmpeg_version(),
+        "ffmpeg": ffmpeg.version(),
     }
 
 
@@ -125,20 +118,6 @@ def _parse_version(text: str) -> tuple[int, int, int] | None:
     if not m:
         return None
     return int(m.group(1)), int(m.group(2)), int(m.group(3) or 0)
-
-
-def _ffmpeg_version() -> str:
-    """Version from the first line of ``ffmpeg -version``, or ``"unknown"``."""
-    try:
-        run = subprocess.run(
-            ["ffmpeg", "-version"], capture_output=True, text=True, timeout=10
-        )
-    except (OSError, subprocess.SubprocessError):
-        return "unknown"
-    parts = (run.stdout or "").split()
-    if parts[:2] == ["ffmpeg", "version"] and len(parts) > 2:
-        return parts[2]
-    return "unknown"
 
 
 def load_audio(path: Path) -> Any:

@@ -10,6 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from scribe_rpg import ffmpeg
 from scribe_rpg.config import load_config
 from scribe_rpg.errors import ScribeError
 from scribe_rpg.transcribe import whisper
@@ -276,7 +277,7 @@ def fakes(monkeypatch):
     state.torch = fake_torch
     monkeypatch.setitem(sys.modules, "whisperx", fake_whisperx)
     monkeypatch.setitem(sys.modules, "torch", fake_torch)
-    monkeypatch.setattr(whisper.shutil, "which", lambda name: "ffmpeg")
+    monkeypatch.setattr(ffmpeg.shutil, "which", lambda name: "ffmpeg")
     monkeypatch.setattr(
         whisper, "_installed_version", lambda pkg: state.whisperx_version
     )
@@ -297,7 +298,7 @@ def test_preflight_ok_on_gpu(fakes):
 
 
 def test_preflight_ffmpeg_missing(fakes, monkeypatch):
-    monkeypatch.setattr(whisper.shutil, "which", lambda name: None)
+    monkeypatch.setattr(ffmpeg.shutil, "which", lambda name: None)
     with pytest.raises(ScribeError, match="ffmpeg not found"):
         whisper.preflight(wcfg())
 
@@ -357,24 +358,12 @@ def test_preflight_unknown_whisperx_version_is_fine(fakes):
 def test_versions(monkeypatch):
     versions = {"whisperx": "3.8.6", "torch": "2.8.0+cu128"}
     monkeypatch.setattr(whisper, "_installed_version", lambda pkg: versions[pkg])
-    monkeypatch.setattr(whisper, "_ffmpeg_version", lambda: "7.1.1")
+    monkeypatch.setattr(ffmpeg, "version", lambda: "7.1.1")
     assert whisper.versions() == {
         "whisperx": "3.8.6",
         "torch": "2.8.0+cu128",
         "ffmpeg": "7.1.1",
     }
-
-
-def test_ffmpeg_version_parsing(monkeypatch):
-    out = SimpleNamespace(stdout="ffmpeg version 7.1.1 Copyright (c) 2000-2025 x\n")
-    monkeypatch.setattr(whisper.subprocess, "run", lambda *a, **k: out)
-    assert whisper._ffmpeg_version() == "7.1.1"
-
-
-def test_ffmpeg_version_unknown_on_odd_output(monkeypatch):
-    out = SimpleNamespace(stdout="something else\n")
-    monkeypatch.setattr(whisper.subprocess, "run", lambda *a, **k: out)
-    assert whisper._ffmpeg_version() == "unknown"
 
 
 # --- Transcriber ------------------------------------------------------------
