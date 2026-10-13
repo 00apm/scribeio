@@ -8,6 +8,7 @@ with exit code 1; anything else is a bug and keeps its traceback.
 from __future__ import annotations
 
 import re
+import shutil
 import sys
 from collections.abc import Callable
 from contextlib import ExitStack
@@ -397,6 +398,10 @@ def _parse_at(
     "--format", "fmt", type=click.Choice(["mp3", "m4a", "opus"]),
     help="Output format (default: master.format in the config, else mp3).",
 )  # fmt: skip
+@click.option(
+    "--tracks", "write_tracks", is_flag=True,
+    help="Also write each processed track to <name>_tracks/ (FLAC).",
+)  # fmt: skip
 def master(
     input_path: Path,
     config_path: Path | None,
@@ -409,6 +414,7 @@ def master(
     length: int | None,
     montage: bool,
     fmt: str | None,
+    write_tracks: bool,
 ) -> None:
     """Mix and master a Craig recording into one audio file.
 
@@ -424,6 +430,8 @@ def master(
         raise click.UsageError(f"{', '.join(used)} needs --preview")
     if at is not None and montage:
         raise click.UsageError("--at and --montage cannot be used together")
+    if write_tracks and preview:
+        raise click.UsageError("--tracks cannot be used with --preview")
 
     from scribe_rpg import ffmpeg
     from scribe_rpg.master import mix
@@ -464,8 +472,9 @@ def master(
             ex = _find_excerpt(rec, clean, length or 90, at, montage, progress)
             _write_preview(rec, ex, mcfg, folder / f"{name}_preview", progress)
         else:
+            tracks_dir = folder / f"{name}_tracks" if write_tracks else None
             _write_master(rec, mcfg, folder / f"{name}_master.{mcfg.format}",
-                          force, progress)  # fmt: skip
+                          tracks_dir, force, progress)  # fmt: skip
 
 
 def _find_excerpt(
@@ -516,16 +525,22 @@ def _write_master(
     rec: craig.Recording,
     mcfg: MasterConfig,
     out: Path,
+    tracks_dir: Path | None,
     force: bool,
     progress: Progress,
 ) -> None:
-    """Measure the loudness steps, then render the whole recording to `out`."""
+    """Measure the loudness steps, then render the whole recording to `out`.
+
+    With `tracks_dir`, the same run writes each processed track there, plus
+    the recording's info.txt, so the folder is a valid input itself.
+    """
     from scribe_rpg.master import mix
 
-    if out.exists() and not force:
-        raise ScribeError(
-            f"output already exists: {out.name} (use --force to overwrite)"
-        )
+    for path in [out, tracks_dir]:
+        if path is not None and path.exists() and not force:
+            raise ScribeError(
+                f"output already exists: {path.name} (use --force to overwrite)"
+            )
     plans = [
         mix.TrackPlan(t, mcfg.chain_for(t), stereo=mcfg.keeps_stereo(t))
         for t in rec.tracks
@@ -535,13 +550,20 @@ def _write_master(
             plans, mcfg.mix, mcfg.channels, _measured_printer(progress)
         )
     out.parent.mkdir(parents=True, exist_ok=True)
+    if tracks_dir is not None:
+        shutil.rmtree(tracks_dir, ignore_errors=True)  # --force: start empty
+        tracks_dir.mkdir()
+        if rec.info_txt is not None:
+            (tracks_dir / "info.txt").write_text(rec.info_txt, encoding="utf-8")
     with progress.tracks(1) as bar:
         bar.start(out.name)
         bar.set_phase("rendering")
         mix.render(plans, mcfg.mix, mix_gains, mcfg.channels, out, mcfg.format,
-                   mcfg.bitrate, bar.update)  # fmt: skip
+                   mcfg.bitrate, bar.update, tracks_dir=tracks_dir)  # fmt: skip
         bar.done(f"render {out.name}")
     progress.console.print(f"master: {out}", markup=False, soft_wrap=True)
+    if tracks_dir is not None:
+        progress.console.print(f"tracks: {tracks_dir}", markup=False, soft_wrap=True)
 
 
 def _measured_printer(progress: Progress) -> Callable[[str, list[Measured]], None]:

@@ -20,6 +20,8 @@ FLOAT = "aformat=sample_fmts=flt"
 # denormals (floats so small the CPU handles them ~100x slower); adenorm adds
 # a -351 dB offset, far below 16-bit resolution, so the output is unchanged.
 DENORM = "adenorm"
+# firequalizer's default delay: its output lags its input by `delay` seconds
+EQ_DELAY = 0.01
 
 Gains = dict[int, float | None]  # chain index of a loudness step -> dB (None: silent)
 
@@ -72,7 +74,19 @@ def chain_filter(steps: Sequence[Step], gains: Gains, upto: int | None = None) -
             parts.append(step_filter(step, gains[i]))
         else:
             parts += [step_filter(step), DENORM]
+            if step.type == "firequalizer":
+                parts.append(_undelay(step))
     return ",".join(parts)
+
+
+def _undelay(step: Step) -> str:
+    """Cut firequalizer's latency from the start of the track.
+
+    The eq's output lags its input by its ``delay``; without the cut every
+    voice with an eq would play that much later than the music.
+    """
+    delay = step.options.get("delay", EQ_DELAY)
+    return f"atrim=start={quote(delay)},asetpts=PTS-STARTPTS"
 
 
 def measure_filter(steps: Sequence[Step], gains: Gains, index: int) -> str:

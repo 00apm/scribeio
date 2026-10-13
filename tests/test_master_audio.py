@@ -1,5 +1,7 @@
 """Loudness measurement and filters on real (synthetic) audio through ffmpeg."""
 
+import re
+
 import pytest
 
 from scribe_rpg import ffmpeg
@@ -61,6 +63,18 @@ def test_highpass_80(tmp_path, freq, low, high):
     before = loudness(tone, [meter], {}, 0)
     after = loudness(tone, [hp, meter], {}, 1)
     assert low < before - after < high
+
+
+def test_eq_keeps_the_timing(tmp_path):
+    # a tone from 1.0 s: after the eq it must still start at 1.0 s
+    tone = make_flac(tmp_path / "a.flac", 3, freq=1000, on=[(1.0, 3.0)])
+    eq = Step("eq", "firequalizer", {"delay": 0.05})
+    graph = f"[0:a]{MONO},{chain_filter([eq], {})},silencedetect=n=-40dB:d=0.2"
+    done = ffmpeg.run(
+        ["-i", str(tone), "-filter_complex", graph, "-f", "null", "-"], "t"
+    )
+    start = re.search(r"silence_end: ([\d.]+)", done.stderr)
+    assert start is not None and float(start.group(1)) == pytest.approx(1.0, abs=0.01)
 
 
 def test_chain_leaves_no_denormals(tmp_path):

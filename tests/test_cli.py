@@ -11,12 +11,12 @@ import pytest
 from click.testing import CliRunner
 
 import scribe_rpg
-from scribe_rpg import ffmpeg
+from scribe_rpg import craig, ffmpeg
 from scribe_rpg.cli import main
 from scribe_rpg.errors import ScribeError
 from scribe_rpg.transcribe import models, whisper
 
-from helpers import craig_dir, craig_zip, make_flac, seg, silence, tone
+from helpers import craig_dir, craig_zip, info_txt, make_flac, seg, silence, tone
 
 LOCAL_DATE = datetime(2026, 1, 1, 18, 0, tzinfo=timezone.utc).astimezone()
 LOCAL_DATE = LOCAL_DATE.strftime("%Y-%m-%d")
@@ -717,6 +717,73 @@ def test_master_failed_render_leaves_nothing(tmp_path, monkeypatch):
     result = invoke("master", folder, *START_ARG)
     assert result.exit_code == 1 and "boom" in result.output
     assert not out.exists()
+
+
+def tracks_dir(tmp_path):
+    """master_dir plus a Craig info.txt (start time from it, no --start)."""
+    folder = master_dir(tmp_path / "rec" / "tracks")
+    (folder / "info.txt").write_text(info_txt(), encoding="utf-8")
+    return folder
+
+
+@pytest.mark.ffmpeg
+def test_master_tracks_writes_each_processed_track(tmp_path):
+    folder = tracks_dir(tmp_path)
+    result = invoke("master", folder, "--name", "s1", "--tracks")
+    assert result.exit_code == 0, result.output
+    written = tmp_path / "rec" / "s1_tracks"
+    names = sorted(p.name for p in folder.iterdir())
+    assert sorted(p.name for p in written.iterdir()) == names
+    info = (written / "info.txt").read_text(encoding="utf-8")
+    assert info == (folder / "info.txt").read_text(encoding="utf-8")
+    gm = written / "1-gm_account.flac"
+    assert ffmpeg.duration(gm) == pytest.approx(30, abs=0.01)
+    assert "s32" in audio_stream(gm)
+    assert (tmp_path / "rec" / "s1_master.mp3").exists()
+    # the folder is a valid input in its own right
+    with craig.open_recording(written, ["kenku"]) as rec:
+        assert len(rec.tracks) == 4
+    (tmp_path / "rec" / "s1_master.mp3").unlink()  # only the folder is in the way
+    again = invoke("master", folder, "--name", "s1", "--tracks")
+    assert again.exit_code == 1
+    assert "output already exists: s1_tracks" in again.output
+    forced = invoke("master", folder, "--name", "s1", "--tracks", "--force")
+    assert forced.exit_code == 0, forced.output
+
+
+@pytest.mark.ffmpeg
+def test_master_tracks_keep_the_processing_layout(tmp_path):
+    # in a stereo master a mono voice is still written mono; music stereo
+    folder = tracks_dir(tmp_path)
+    config = tmp_path / "scribe.yaml"
+    config.write_text("master:\n  channels: stereo\n", encoding="utf-8")
+    result = invoke("master", folder, "--name", "s1", "--tracks", "-c", config)
+    assert result.exit_code == 0, result.output
+    written = tmp_path / "rec" / "s1_tracks"
+    assert ", mono," in audio_stream(written / "1-gm_account.flac")
+    assert ", stereo," in audio_stream(written / "4-Kenku_FM_1234.flac")
+
+
+@pytest.mark.ffmpeg
+def test_master_tracks_failed_render_leaves_no_folder(tmp_path, monkeypatch):
+    folder = tracks_dir(tmp_path)
+    written = tmp_path / "rec" / "s1_tracks"
+
+    def fail(args, label, on_time=None):
+        (written / "1-gm_account.flac").write_bytes(b"half")
+        raise ScribeError(f"ffmpeg failed ({label}): boom")
+
+    monkeypatch.setattr(ffmpeg, "run_progress", fail)
+    result = invoke("master", folder, "--name", "s1", "--tracks")
+    assert result.exit_code == 1 and "boom" in result.output
+    assert not written.exists()
+
+
+def test_master_tracks_not_with_preview(tmp_path):
+    folder = master_dir(tmp_path / "rec" / "tracks")
+    result = invoke("master", folder, "--preview", "--tracks")
+    assert result.exit_code == 2
+    assert "--tracks cannot be used with --preview" in result.output
 
 
 @pytest.mark.ffmpeg

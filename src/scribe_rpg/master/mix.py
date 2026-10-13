@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import subprocess
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -86,20 +87,27 @@ def graph(
     mix_gains: Gains,
     channels: str,
     mix_upto: int | None = None,
+    split: bool = False,
 ) -> str:
-    """The whole filter graph, ending in the ``[out]`` label."""
-    return _graph(plans, channels, chain_filter(mix_steps, mix_gains, mix_upto)) + (
-        "[out]"
-    )
+    """The whole filter graph, ending in the ``[out]`` label.
+
+    With `split`, each track's processed audio is also labelled ``[k<i>]``
+    (``asplit`` after its chain, before any copy to stereo for the mix).
+    """
+    mix_chain = chain_filter(mix_steps, mix_gains, mix_upto)
+    return _graph(plans, channels, mix_chain, split) + "[out]"
 
 
-def _graph(plans: list[TrackPlan], channels: str, mix_chain: str) -> str:
+def _graph(
+    plans: list[TrackPlan], channels: str, mix_chain: str, split: bool = False
+) -> str:
     """Per-track chains, the amix, then `mix_chain` (no output label)."""
-    parts = [
-        f"[{i}:a]{prep(p, channels)},"
-        f"{chain_filter(p.steps, p.gains, p.upto)}{to_mix(p, channels)}[t{i}]"
-        for i, p in enumerate(plans)
-    ]
+    parts = []
+    for i, p in enumerate(plans):
+        track = f"[{i}:a]{prep(p, channels)},{chain_filter(p.steps, p.gains, p.upto)}"
+        if split:
+            track += f",asplit=2[k{i}][m{i}];[m{i}]anull"
+        parts.append(f"{track}{to_mix(p, channels)}[t{i}]")
     labels = "".join(f"[t{i}]" for i in range(len(plans)))
     amix = f"{labels}amix=inputs={len(plans)}:normalize=0:duration=longest"
     return ";".join(parts) + f";{amix},{mix_chain}"
@@ -166,30 +174,46 @@ def render(
     bitrate: str,
     on_progress: Callable[[float], None] | None = None,
     mix_upto: int | None = None,
+    tracks_dir: Path | None = None,
 ) -> None:
     """The final run: all tracks, chains, mix, mix chain, encode, to `out`.
 
-    `on_progress` gets percent done (0..100). If anything fails or the run is
-    interrupted, `out` is removed: a half-written file would otherwise block
-    the next run as "already exists".
+    `on_progress` gets percent done (0..100). With `tracks_dir` (an existing,
+    empty folder), the same run also writes each processed track there as
+    FLAC (32-bit), under its input file name. If anything fails or the run is
+    interrupted, `out` and `tracks_dir` are removed: half-written outputs
+    would otherwise block the next run as "already exists".
     """
+    # every output is cut to its input's length: filters such as the eq leave
+    # a short ring-out tail after the last sample
+    lengths = [ffmpeg.duration(p.track.path) for p in plans]
+    total = max(lengths)
     on_time = None
     if on_progress is not None:
-        total = max(ffmpeg.duration(p.track.path) for p in plans) or 1.0
         report = on_progress
 
         def on_time(seconds: float) -> None:
-            report(min(100.0, 100 * seconds / total))
+            report(min(100.0, 100 * seconds / (total or 1.0)))
 
+    split = tracks_dir is not None
     args = [
         *_inputs(plans),
-        "-filter_complex", graph(plans, mix_steps, mix_gains, channels, mix_upto),
-        "-map", "[out]", *encode_args(fmt, bitrate), "-y", str(out),
+        "-filter_complex",
+        graph(plans, mix_steps, mix_gains, channels, mix_upto, split),
+        "-map", "[out]", *encode_args(fmt, bitrate), "-t", f"{total:.6f}",
+        "-y", str(out),
     ]  # fmt: skip
+    if tracks_dir is not None:
+        for i, (p, length) in enumerate(zip(plans, lengths, strict=True)):
+            args += ["-map", f"[k{i}]", "-c:a", "flac", "-sample_fmt", "s32",
+                     "-t", f"{length:.6f}", "-y",
+                     str(tracks_dir / p.track.path.name)]  # fmt: skip
     try:
         ffmpeg.run_progress(args, f"render {out.name}", on_time)
     except BaseException:
         out.unlink(missing_ok=True)
+        if tracks_dir is not None:
+            shutil.rmtree(tracks_dir, ignore_errors=True)
         raise
 
 

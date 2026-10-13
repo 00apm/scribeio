@@ -67,6 +67,17 @@ def test_chain_filter_missing_gain():
         chain_filter([LOUD], {})
 
 
+def test_firequalizer_delay_is_compensated():
+    trim = "atrim=start={},asetpts=PTS-STARTPTS"
+    eq = Step("eq", "firequalizer", {"delay": 0.05})
+    assert chain_filter([eq], {}) == (
+        f"aformat=sample_fmts=flt,firequalizer=delay=0.05,adenorm,{trim.format(0.05)}"
+    )
+    # ffmpeg's default delay is 0.01 s
+    plain = Step("eq", "firequalizer", {})
+    assert chain_filter([plain], {}).endswith(f",adenorm,{trim.format(0.01)}")
+
+
 def test_measure_filter_dual_mono():
     steps = [Step("hp", "highpass", {"f": 80}), LOUD]
     assert measure_filter(steps, {}, 1) == (
