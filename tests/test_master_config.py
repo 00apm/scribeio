@@ -206,6 +206,14 @@ def test_merge_without_user_section():
             "  players:\n    a:\n      hiss: {type: lowpass}\n",
             "master.players.a.hiss: step is in no chain",
         ),
+        (
+            "  voice:\n    chain: [boost]\n    boost: {type: loudness}\n",
+            "master.voice.boost: loudness needs a target in LUFS, e.g. -19",
+        ),
+        (
+            "  music:\n    loudness: {target: loud}\n",
+            "master.music.loudness: loudness needs a target in LUFS, e.g. -19",
+        ),
         ("  players: [a]\n", "master.players: expected key: value pairs"),
         ("  players:\n    a: 3\n", "master.players.a: expected key: value pairs"),
     ],

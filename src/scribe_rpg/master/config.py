@@ -176,6 +176,11 @@ def _merge_stage(
             if option in settings:
                 raise fail(path, f"option {option!r} is not allowed")
         out[name] = {**(old or {}), **settings}
+        target = out[name].get("target")
+        if kind == "loudness" and (
+            not isinstance(target, (int, float)) or isinstance(target, bool)
+        ):
+            raise fail(path, "loudness needs a target in LUFS, e.g. -19")
     for name in out["chain"]:
         if name == "chain" or not isinstance(out.get(name), dict):
             raise fail(f"{where}.chain", f"unknown step {name!r}")
