@@ -2,6 +2,7 @@
 
 import pytest
 
+from scribe_rpg import ffmpeg
 from scribe_rpg.master.catalogue import Step
 from scribe_rpg.master.render import (
     chain_filter,
@@ -59,6 +60,19 @@ def test_highpass_80(tmp_path, freq, low, high):
     before = loudness(tone, [meter], {}, 0)
     after = loudness(tone, [hp, meter], {}, 1)
     assert low < before - after < high
+
+
+def test_chain_leaves_no_denormals(tmp_path):
+    # a short sound, then digital silence: the highpass tail decays into
+    # denormals (very slow floats) unless adenorm follows it
+    blip = make_flac(tmp_path / "a.flac", 3, on=[(0.5, 0.7)])
+    hp = Step("rumble", "highpass", {"f": 80})
+    stats = "astats=measure_perchannel=none:measure_overall=Number_of_denormals"
+    graph = f"[0:a]{MONO},{chain_filter([hp], {})},{stats}"
+    done = ffmpeg.run(
+        ["-i", str(blip), "-filter_complex", graph, "-f", "null", "-"], "t"
+    )
+    assert "Number of denormals: 0.000000" in done.stderr
 
 
 # --- mix and render ---------------------------------------------------------

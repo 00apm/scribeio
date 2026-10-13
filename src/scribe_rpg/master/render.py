@@ -16,6 +16,10 @@ from scribe_rpg.master.catalogue import Step, quote
 
 # Every chain starts in 32-bit float, so no step clips between steps.
 FLOAT = "aformat=sample_fmts=flt"
+# Follows every filter step: filter tails decaying over digital silence become
+# denormals (floats so small the CPU handles them ~100x slower); adenorm adds
+# a -351 dB offset, far below 16-bit resolution, so the output is unchanged.
+DENORM = "adenorm"
 
 Gains = dict[int, float | None]  # chain index of a loudness step -> dB (None: silent)
 
@@ -67,7 +71,7 @@ def chain_filter(steps: Sequence[Step], gains: Gains, upto: int | None = None) -
                 raise ValueError(f"{step.where or step.name}: loudness not measured")
             parts.append(step_filter(step, gains[i]))
         else:
-            parts.append(step_filter(step))
+            parts += [step_filter(step), DENORM]
     return ",".join(parts)
 
 

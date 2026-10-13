@@ -54,9 +54,11 @@ def test_loudness_with_and_without_gain():
 def test_chain_filter():
     steps = [Step("hp", "highpass", {"f": 80}), LOUD, Step("lim", "alimiter", {})]
     assert chain_filter(steps, {1: 2.0}) == (
-        "aformat=sample_fmts=flt,highpass=f=80,volume=2.00dB,alimiter"
+        "aformat=sample_fmts=flt,highpass=f=80,adenorm,volume=2.00dB,alimiter,adenorm"
     )
-    assert chain_filter(steps, {}, upto=1) == "aformat=sample_fmts=flt,highpass=f=80"
+    assert chain_filter(steps, {}, upto=1) == (
+        "aformat=sample_fmts=flt,highpass=f=80,adenorm"
+    )
     assert chain_filter([], {}) == "aformat=sample_fmts=flt"
 
 
@@ -68,7 +70,8 @@ def test_chain_filter_missing_gain():
 def test_measure_filter_dual_mono():
     steps = [Step("hp", "highpass", {"f": 80}), LOUD]
     assert measure_filter(steps, {}, 1) == (
-        "aformat=sample_fmts=flt,highpass=f=80,ebur128=dualmono=true:framelog=verbose"
+        "aformat=sample_fmts=flt,highpass=f=80,adenorm,"
+        "ebur128=dualmono=true:framelog=verbose"
     )
     mono = Step("level", "loudness", {"target": -23, "dual_mono": False})
     assert measure_filter([mono], {}, 0).endswith(
@@ -132,9 +135,9 @@ def test_mix_graph_two_voices_and_music_mono():
     limiter = [Step("limiter", "alimiter", {"limit": "-1dB"})]
     mono = "aformat=channel_layouts=mono,aformat=sample_fmts=flt"
     assert graph(plans, limiter, {}, "mono") == (
-        f"[0:a]{mono},highpass=f=80[t0];"
+        f"[0:a]{mono},highpass=f=80,adenorm[t0];"
         f"[1:a]{mono}[t1];"
         f"[2:a]{mono},volume=-3.00dB[t2];"
         "[t0][t1][t2]amix=inputs=3:normalize=0:duration=longest,"
-        "aformat=sample_fmts=flt,alimiter=limit=-1dB[out]"
+        "aformat=sample_fmts=flt,alimiter=limit=-1dB,adenorm[out]"
     )
