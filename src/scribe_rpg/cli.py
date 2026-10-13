@@ -153,7 +153,7 @@ def transcribe(
                 f"output already exists: {existing[0]} (use --force to overwrite)"
             )
         for t in rec.players:
-            if t.account not in cfg.speakers:
+            if craig.sanitize(t.account) not in cfg.speakers:
                 progress.warn(
                     f"unknown account {t.account}: "
                     "no speakers: entry, account name used"

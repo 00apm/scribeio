@@ -48,16 +48,26 @@ def craig_zip(folder: Path, tracks=TRACKS, start=START, name="session.zip") -> P
     return path
 
 
-def craig_dir(folder: Path, tracks=TRACKS, start=START, skip=()) -> Path:
+def craig_dir(
+    folder: Path, tracks=TRACKS, start=START, skip=(), info=True, names=None
+) -> Path:
     """Write a folder of processed tracks: info.txt + <n>-<account>.flac.
 
-    Accounts listed in `skip` get no file (to test missing tracks).
+    Accounts listed in `skip` get no file (to test missing tracks). `info`
+    False leaves out info.txt. `names` replaces the generated file names
+    (e.g. ``["Game Master.flac"]``).
     """
     folder.mkdir(parents=True, exist_ok=True)
-    (folder / "info.txt").write_text(info_txt(tracks, start), encoding="utf-8")
-    for n, (_, account) in enumerate(tracks, 1):
-        if account not in skip:
-            (folder / f"{n}-{account}.flac").write_bytes(b"fLaC fake")
+    if info:
+        (folder / "info.txt").write_text(info_txt(tracks, start), encoding="utf-8")
+    if names is None:
+        names = [
+            f"{n}-{account}.flac"
+            for n, (_, account) in enumerate(tracks, 1)
+            if account not in skip
+        ]
+    for name in names:
+        (folder / name).write_bytes(b"fLaC fake")
     return folder
 
 

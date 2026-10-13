@@ -1,12 +1,16 @@
 """Open a Craig recording, read its info.txt and identify the tracks.
 
-A recording is either the zip Craig produces or a folder of processed tracks:
+A recording is either the zip Craig produces or a folder of tracks:
 
     session.zip                      folder/
-      info.txt                         info.txt
-      <id>.aup        (ignored)        <n>-<account>.flac
+      info.txt                         info.txt        (optional)
+      <id>.aup        (ignored)        <n>-<account>.flac or <account>.flac
       <id>_data/<n>-<account>.flac
       raw.dat         (ignored)
+
+In a folder every FLAC is one track; its account is the file stem without a
+leading ``<n>-``. Config keys and music patterns match accounts after
+`sanitize`, applied to both sides.
 
 A zip is extracted to a temporary folder that is deleted when the
 `open_recording` context ends, also on errors and Ctrl+C.
@@ -25,7 +29,7 @@ from pathlib import Path
 
 from scribe_rpg.errors import ScribeError
 
-TRACK_FILE = re.compile(r"^(\d+)-(.+)\.flac$")
+TRACK_NUMBER = re.compile(r"^(\d+)-")
 ZIP_TRACK = re.compile(r"^[^/]+_data/[^/]+\.flac$")
 
 
@@ -50,10 +54,41 @@ def is_music(account: str, patterns: list[str]) -> bool:
         patterns: Substrings that mark music bots (``music_patterns``).
 
     Returns:
-        True if any pattern occurs in the account name, ignoring case.
+        True if any pattern occurs in the account name, ignoring case; both
+        are compared after `sanitize`.
     """
-    low = account.lower()
-    return any(p.lower() in low for p in patterns)
+    low = sanitize(account).lower()
+    return any(sanitize(p).lower() in low for p in patterns)
+
+
+def speaker_name(speakers: dict[str, str], account: str) -> str:
+    """The speaker name for `account`, or the account itself if not listed.
+
+    Args:
+        speakers: Sanitized account -> speaker name (``Config.speakers``).
+        account: Account as in the track file name.
+    """
+    return speakers.get(sanitize(account), account)
+
+
+def account_of(file: Path) -> str:
+    """Account of a track file: the stem without a leading ``<n>-``."""
+    return TRACK_NUMBER.sub("", file.stem, count=1)
+
+
+def dir_tracks(folder: Path) -> list[Path]:
+    """The ``*.flac`` files directly in `folder`.
+
+    Ordered by the leading track number (``10-x`` after ``2-y``); files
+    without a number come last, by name.
+    """
+
+    def key(f: Path) -> tuple[int, int, str]:
+        m = TRACK_NUMBER.match(f.name)
+        return (0, int(m.group(1)), f.name) if m else (1, 0, f.name)
+
+    flacs = [f for f in folder.iterdir() if f.suffix.lower() == ".flac"]
+    return sorted((f for f in flacs if f.is_file()), key=key)
 
 
 @dataclass(frozen=True)
@@ -76,7 +111,8 @@ class Track:
     """One audio track of a recording.
 
     Attributes:
-        account: Account name as in the file name (already sanitized by Craig).
+        account: Account as in the file name (sanitized by Craig; a track
+            from a folder may hold any characters, e.g. ``Game Master``).
         kind: ``"player"`` or ``"music"``.
         path: The FLAC file.
     """
@@ -94,11 +130,13 @@ class Recording:
         source: Zip or folder name only, never a full path.
         start: Recording start in the system's local time zone.
         tracks: All tracks, ordered by their number in the file name.
+        info_txt: Text of info.txt; None for a folder without one.
     """
 
     source: str
     start: datetime
     tracks: list[Track]
+    info_txt: str | None = None
 
     @property
     def players(self) -> list[Track]:
@@ -190,25 +228,35 @@ def _parse_time(value: str) -> datetime:
 
 
 @contextmanager
-def open_recording(path: Path, music_patterns: list[str]) -> Iterator[Recording]:
+def open_recording(
+    path: Path, music_patterns: list[str], start: datetime | None = None
+) -> Iterator[Recording]:
     """Open a Craig zip or a folder of tracks.
 
     Args:
-        path: The Craig zip, or a folder with info.txt and
-            ``<n>-<account>.flac`` files.
+        path: The Craig zip, or a folder of FLAC tracks (info.txt optional).
         music_patterns: Substrings that mark music bot tracks.
+        start: Session start; wins over info.txt. Required for a folder
+            without info.txt.
 
     Yields:
         The recording. Track paths stay valid until the context ends.
 
     Raises:
-        ScribeError: If the input is not a Craig recording, or (folder only)
-            a player track listed in info.txt has no file.
+        ScribeError: If the input is not a Craig recording, has no FLAC
+            files or no start time, or (folder only) a player track listed
+            in info.txt has no file.
     """
     path = Path(path)
     if path.is_dir():
+        info = path / "info.txt"
         yield _read(
-            path / "info.txt", path, path.resolve().name, music_patterns, complete=True
+            info if info.is_file() else None,
+            path,
+            path.resolve().name,
+            music_patterns,
+            start,
+            complete=True,
         )
         return
     if not zipfile.is_zipfile(path):
@@ -220,7 +268,7 @@ def open_recording(path: Path, music_patterns: list[str]) -> Iterator[Recording]
         root = Path(tmp)
         data_dir = _extract(path, root)
         yield _read(
-            root / "info.txt", data_dir, path.name, music_patterns, complete=False
+            root / "info.txt", data_dir, path.name, music_patterns, start, False
         )
 
 
@@ -244,37 +292,43 @@ def _extract(zip_path: Path, dest: Path) -> Path:
 
 
 def _read(
-    info_path: Path,
+    info_path: Path | None,
     track_dir: Path,
     source: str,
     music_patterns: list[str],
+    start: datetime | None,
     complete: bool,
 ) -> Recording:
-    """Build a Recording from info.txt and the track files in `track_dir`.
+    """Build a Recording from info.txt (if any) and the FLACs in `track_dir`.
 
     Args:
-        info_path: The info.txt file.
-        track_dir: Folder holding the ``<n>-<account>.flac`` files.
+        info_path: The info.txt file; None for a folder without one.
+        track_dir: Folder holding the FLAC tracks.
         source: Name shown in outputs (zip or folder name).
         music_patterns: Substrings that mark music bot tracks.
+        start: Given session start; wins over info.txt.
         complete: Require a file for every player listed in info.txt (folder
             input; a missing music track is fine).
     """
-    if not info_path.is_file():
-        raise ScribeError(f"{source}: info.txt not found")
-    info = parse_info(info_path.read_text(encoding="utf-8-sig"))
-    found = []
-    for f in track_dir.iterdir():
-        m = TRACK_FILE.match(f.name)
-        if m:
-            found.append((int(m.group(1)), m.group(2), f))
-    # Sort by the track number, not the name: "10-x" comes after "2-y".
-    tracks = [
-        Track(account, "music" if is_music(account, music_patterns) else "player", f)
-        for _, account, f in sorted(found)
-    ]
-    if complete:
-        present = {t.account for t in tracks}
+    files = dir_tracks(track_dir)
+    if not files:
+        raise ScribeError(f"{source}: no FLAC files")
+    tracks = []
+    for f in files:
+        account = account_of(f)
+        kind = "music" if is_music(account, music_patterns) else "player"
+        tracks.append(Track(account, kind, f))
+    text = info_path.read_text(encoding="utf-8-sig") if info_path else None
+    info = parse_info(text) if text is not None else None
+    if start is None:
+        if info is None:
+            raise ScribeError(
+                f"{source}: no info.txt; give the session start with "
+                '--start "YYYY-MM-DD HH:MM"'
+            )
+        start = info.start
+    if info is not None and complete:
+        present = {sanitize(t.account) for t in tracks}
         missing = [
             a
             for a in info.accounts
@@ -286,4 +340,4 @@ def _read(
             )
     if not any(t.kind == "player" for t in tracks):
         raise ScribeError(f"{source}: no player tracks found")
-    return Recording(source, info.start, tracks)
+    return Recording(source, start, tracks, text)

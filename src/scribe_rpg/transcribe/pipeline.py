@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from scribe_rpg.craig import sanitize, speaker_name
 from scribe_rpg.transcribe.cleanup import Dropped, apply_cleanup
 from scribe_rpg.transcribe.glossary import Glossary
 from scribe_rpg.transcribe.lines import Bleed, Line, build_lines, find_bleed
@@ -107,13 +108,13 @@ def _stats(
 ) -> list[TrackStats]:
     """Per-track counts, in the recording's track order."""
     stats = {
-        t.account: TrackStats(t.account, speakers.get(t.account, t.account), t.kind)
+        t.account: TrackStats(t.account, speaker_name(speakers, t.account), t.kind)
         for t in raw.tracks
     }
 
     def of(account: str) -> TrackStats:
         # A segment from an account missing in the track list still counts.
-        default = TrackStats(account, speakers.get(account, account), "player")
+        default = TrackStats(account, speaker_name(speakers, account), "player")
         return stats.setdefault(account, default)
 
     for s in kept:
@@ -132,7 +133,7 @@ def _warnings(raw: RawSession, speakers: dict[str, str]) -> list[str]:
     unknown = [
         t.account
         for t in raw.tracks
-        if t.kind == "player" and t.account not in speakers
+        if t.kind == "player" and sanitize(t.account) not in speakers
     ]
     if unknown:
         out.append(

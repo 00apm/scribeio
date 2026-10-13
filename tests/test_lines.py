@@ -75,6 +75,13 @@ def test_overlapping_speech():
     ]
 
 
+def test_speakers_key_matched_after_sanitizing():
+    lines = build_lines(
+        [seg("Game Master", 0.0, "witajcie")], {"Game_Master": "GM"}, 1.5
+    )
+    assert lines[0].speaker == "GM"
+
+
 def test_unknown_account_uses_account_name():
     lines = build_lines([seg("player_two", 0.0, "cześć")], NAMES, 1.5)
     assert lines[0].speaker == "player_two"
