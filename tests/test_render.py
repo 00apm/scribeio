@@ -4,7 +4,12 @@ import pytest
 
 from scribe_rpg import ffmpeg
 from scribe_rpg.master.catalogue import FILTERS, Step, quote
-from scribe_rpg.master.render import chain_filter, measure_filter, step_filter
+from scribe_rpg.master.render import (
+    chain_filter,
+    measure_filter,
+    parse_integrated,
+    step_filter,
+)
 
 LOUD = Step("level", "loudness", {"target": -23})
 
@@ -63,10 +68,12 @@ def test_chain_filter_missing_gain():
 def test_measure_filter_dual_mono():
     steps = [Step("hp", "highpass", {"f": 80}), LOUD]
     assert measure_filter(steps, {}, 1) == (
-        "aformat=sample_fmts=flt,highpass=f=80,ebur128=dualmono=true"
+        "aformat=sample_fmts=flt,highpass=f=80,ebur128=dualmono=true:framelog=verbose"
     )
     mono = Step("level", "loudness", {"target": -23, "dual_mono": False})
-    assert measure_filter([mono], {}, 0).endswith(",ebur128=dualmono=false")
+    assert measure_filter([mono], {}, 0).endswith(
+        ",ebur128=dualmono=false:framelog=verbose"
+    )
 
 
 @pytest.mark.ffmpeg
@@ -80,3 +87,30 @@ def test_quoted_text_is_accepted_by_ffmpeg():
          "-af", chain_filter(steps, {}), "-f", "null", "-"],
         "quoting",
     )  # fmt: skip
+
+
+# Captured from ffmpeg 7.1; the per-frame line's "I:" must not be read.
+SUMMARY = """\
+[Parsed_ebur128_1 @ 0] t: 2.99  M: -18.1 S: -18.1   I: -18.1 LUFS   LRA:  20.0 LU
+[Parsed_ebur128_1 @ 0] Summary:
+
+  Integrated loudness:
+    I:         -21.4 LUFS
+    Threshold: -31.4 LUFS
+
+  Loudness range:
+    LRA:        20.0 LU
+"""
+
+
+def test_parse_integrated_reads_the_summary():
+    assert parse_integrated(SUMMARY) == -21.4
+
+
+@pytest.mark.parametrize("value", ["-70.0", "-inf", "-91.3"])
+def test_parse_integrated_silence(value):
+    assert parse_integrated(SUMMARY.replace("-21.4", value)) is None
+
+
+def test_parse_integrated_without_summary():
+    assert parse_integrated("no ebur128 here") is None
