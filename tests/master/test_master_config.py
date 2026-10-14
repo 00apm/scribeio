@@ -195,6 +195,24 @@ def test_merge_without_user_section():
             "master.voice.eq: option 'dumpfile' is not allowed",
         ),
         (
+            # an option name carrying filter syntax would add filters
+            '  voice:\n    comp:\n      "ratio=2,firequalizer=dumpfile=x:fixed": 0\n',
+            "master.voice.comp: bad option name "
+            "'ratio=2,firequalizer=dumpfile=x:fixed'",
+        ),
+        (
+            "  voice:\n    comp: {Ratio: 2}\n",
+            "master.voice.comp: bad option name 'Ratio'",
+        ),
+        (
+            "  voice:\n    comp: {3: 2}\n",
+            "master.voice.comp: bad option name '3'",
+        ),
+        (
+            "  players:\n    a:\n      comp: {'ratio;x': 2}\n",
+            "master.players.a.comp: bad option name 'ratio;x'",
+        ),
+        (
             "  voice:\n    hiss: {type: lowpass}\n",
             "master.voice.hiss: step is in no chain",
         ),

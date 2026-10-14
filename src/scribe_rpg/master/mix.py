@@ -11,6 +11,7 @@ import os
 import re
 import shutil
 import subprocess
+import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -193,6 +194,12 @@ def mix_level(
     return parse_integrated(stderr), parse_peak(stderr)
 
 
+def partial_path(path: Path) -> Path:
+    """Where `path` is written until it is complete: ``s1_master.partial.mp3``,
+    ``s1_tracks.partial``. A leftover of a hard stop names itself."""
+    return path.with_name(f"{path.stem}.partial{path.suffix}")
+
+
 def render(
     plans: list[TrackPlan],
     mix_steps: list[Step],
@@ -206,43 +213,70 @@ def render(
 ) -> None:
     """The final run: all tracks, chains, mix, mix chain, encode, to `out`.
 
-    `on_progress` gets percent done (0..100). With `tracks_dir` (an existing,
-    empty folder), the same run also writes each processed track there as
-    FLAC (32-bit), under its input file name. If anything fails or the run is
-    interrupted, `out` and `tracks_dir` are removed: half-written outputs
-    would otherwise block the next run as "already exists".
+    `on_progress` gets percent done (0..100). With `tracks_dir`, the same run
+    also writes each processed track as FLAC (32-bit), under its input file
+    name, into ``partial_path(tracks_dir)`` (an existing folder; it may already
+    hold e.g. info.txt). Outputs are written under `partial_path` names and
+    replace `out` and `tracks_dir` only once the run succeeds; if it fails or
+    is interrupted, the partial outputs are removed and old ones are kept.
     """
-    # every output is cut to its input's length: filters such as the eq leave
-    # a short ring-out tail after the last sample
-    lengths = [ffmpeg.duration(p.track.path) for p in plans]
-    total = max(lengths)
-    on_time = None
-    if on_progress is not None:
-        report = on_progress
-
-        def on_time(seconds: float) -> None:
-            report(min(100.0, 100 * seconds / (total or 1.0)))
-
-    split = tracks_dir is not None
-    args = [
-        *_inputs(plans),
-        "-filter_complex",
-        graph(plans, mix_steps, mix_gains, channels, split),
-        "-map", "[out]", *encode_args(fmt, bitrate), "-t", f"{total:.6f}",
-        "-y", str(out),
-    ]  # fmt: skip
-    if tracks_dir is not None:
-        for i, (p, length) in enumerate(zip(plans, lengths, strict=True)):
-            args += ["-map", f"[k{i}]", "-c:a", "flac", "-sample_fmt", "s32",
-                     "-t", f"{length:.6f}", "-y",
-                     str(tracks_dir / p.track.path.name)]  # fmt: skip
+    part_out = partial_path(out)
+    part_dir = partial_path(tracks_dir) if tracks_dir is not None else None
     try:
+        # every output is cut to its input's length: filters such as the eq
+        # leave a short ring-out tail after the last sample
+        lengths = [ffmpeg.duration(p.track.path) for p in plans]
+        total = max(lengths)
+        on_time = None
+        if on_progress is not None:
+            report = on_progress
+
+            def on_time(seconds: float) -> None:
+                report(min(100.0, 100 * seconds / (total or 1.0)))
+
+        split = part_dir is not None
+        args = [
+            *_inputs(plans),
+            "-filter_complex",
+            graph(plans, mix_steps, mix_gains, channels, split),
+            "-map", "[out]", *encode_args(fmt, bitrate), "-t", f"{total:.6f}",
+            "-y", str(part_out),
+        ]  # fmt: skip
+        if part_dir is not None:
+            for i, (p, length) in enumerate(zip(plans, lengths, strict=True)):
+                args += ["-map", f"[k{i}]", "-c:a", "flac", "-sample_fmt", "s32",
+                         "-t", f"{length:.6f}", "-y",
+                         str(part_dir / p.track.path.name)]  # fmt: skip
         ffmpeg.run_progress(args, f"render {out.name}", on_time)
     except BaseException:
-        out.unlink(missing_ok=True)
-        if tracks_dir is not None:
-            shutil.rmtree(tracks_dir, ignore_errors=True)
+        discard(part_out)
+        if part_dir is not None:
+            discard(part_dir)
         raise
+    os.replace(part_out, out)
+    if tracks_dir is not None and part_dir is not None:
+        if tracks_dir.exists():
+            shutil.rmtree(tracks_dir)
+        part_dir.rename(tracks_dir)
+
+
+def discard(path: Path, wait: float = 2.0) -> None:
+    """Remove a file or folder if possible; never raises.
+
+    A killed ffmpeg started through a shim (Chocolatey, Scoop) may hold its
+    output files for a moment, so removal is retried for up to `wait` seconds.
+    """
+    deadline = time.monotonic() + wait
+    while path.exists():
+        try:
+            if path.is_dir():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+        except OSError:
+            if time.monotonic() >= deadline:
+                return
+            time.sleep(0.1)
 
 
 def check(cfg: MasterConfig) -> None:

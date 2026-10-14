@@ -1,6 +1,7 @@
 """Loudness measurement and filters on real (synthetic) audio through ffmpeg."""
 
 import re
+from pathlib import Path
 
 import pytest
 
@@ -157,13 +158,13 @@ def test_render_failure_leaves_no_file(tmp_path, monkeypatch, error):
     out = tmp_path / "o.mp3"
 
     def half_written(args, label, on_time=None):
-        out.write_bytes(b"half")
+        Path(args[-1]).write_bytes(b"half")
         raise error()
 
     monkeypatch.setattr(ffmpeg, "run_progress", half_written)
     with pytest.raises(error):
         mix.render(plans_for(a), [], {}, "mono", out, "mp3", "96k", None)
-    assert not out.exists()
+    assert [p.name for p in tmp_path.iterdir()] == [a.name]
 
 
 # --- config check -------------------------------------------------------------

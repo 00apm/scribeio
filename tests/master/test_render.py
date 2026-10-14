@@ -1,9 +1,12 @@
 """Filter text built from steps: quoting, loudness steps, measurement."""
 
+from pathlib import Path
+
 import pytest
 
 from scribe_rpg import ffmpeg
 from scribe_rpg.master.catalogue import FILTERS, Step, quote
+from scribe_rpg.master.mix import discard
 from scribe_rpg.master.render import (
     chain_filter,
     measure_filter,
@@ -209,3 +212,34 @@ def test_mix_graph_stereo_pans_mono_voices_after_their_chain():
         "[t0][t1]amix=inputs=2:normalize=0:duration=longest,"
         "aformat=sample_fmts=flt[out]"
     )
+
+
+def test_discard_retries_a_held_file(tmp_path, monkeypatch):
+    # a killed ffmpeg shim's child may hold the file for a moment
+    path = tmp_path / "x.partial.mp3"
+    path.write_bytes(b"half")
+    real = Path.unlink
+    tries = []
+
+    def held(self, missing_ok=False):
+        tries.append(self)
+        if len(tries) < 3:
+            raise PermissionError("in use")
+        real(self, missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", held)
+    discard(path)
+    assert not path.exists() and len(tries) == 3
+
+
+def test_discard_gives_up_without_raising(tmp_path, monkeypatch):
+    folder = tmp_path / "s1_tracks.partial"
+    folder.mkdir()
+
+    def held(path, *args, **kwargs):
+        raise PermissionError("in use")
+
+    monkeypatch.setattr("shutil.rmtree", held)
+    discard(folder, wait=0.2)  # no exception: the real error is what matters
+    assert folder.exists()
+    discard(tmp_path / "missing")  # nothing to do

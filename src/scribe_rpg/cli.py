@@ -8,7 +8,6 @@ with exit code 1; anything else is a bug and keeps its traceback.
 from __future__ import annotations
 
 import re
-import shutil
 import sys
 from collections.abc import Callable
 from contextlib import ExitStack
@@ -489,6 +488,10 @@ def master(
             progress.warn(f"players: {key}: not in this recording, ignored")
         name = name or rec.start.strftime("%Y-%m-%d")
         folder = out_dir or input_path.resolve().parent
+        if preview or write_tracks:
+            # the folder is replaced, so it must not be (or hold) the input
+            kind = "preview" if preview else "tracks"
+            _check_not_input(folder / f"{name}_{kind}", input_path)
         if preview:
             account = _solo_account(rec, solo) if solo is not None else None
             clean = cfg.settings["transcribe"]["cleanup"]
@@ -562,6 +565,19 @@ def _write_preview(
     progress.console.print(f"preview: {folder}", markup=False, soft_wrap=True)
 
 
+def _check_not_input(target: Path, input_path: Path) -> None:
+    """Refuse an output folder that is, or holds, the input.
+
+    Raises:
+        ScribeError: If writing `target` would delete the input.
+    """
+    if input_path.resolve().is_relative_to(target.resolve()):
+        raise ScribeError(
+            f"output folder {target.name} holds the input: use --name or -o "
+            "to write elsewhere"
+        )
+
+
 def _solo_account(rec: craig.Recording, solo: str) -> str:
     """The sanitized account `--solo` names among the voice tracks.
 
@@ -614,10 +630,11 @@ def _write_master(
     mix_gains = report.measure(plans, mcfg.mix, mcfg.channels, progress, verbose)
     out.parent.mkdir(parents=True, exist_ok=True)
     if tracks_dir is not None:
-        shutil.rmtree(tracks_dir, ignore_errors=True)  # --force: start empty
-        tracks_dir.mkdir()
+        part = mix.partial_path(tracks_dir)
+        mix.discard(part)  # a leftover of a run that was stopped hard
+        part.mkdir()
         if rec.info_txt is not None:
-            (tracks_dir / "info.txt").write_text(rec.info_txt, encoding="utf-8")
+            (part / "info.txt").write_text(rec.info_txt, encoding="utf-8")
     n = len(plans)
     with progress.bar(
         f"render {out.name} ({n} track{'s' if n != 1 else ''} + mix)"

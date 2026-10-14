@@ -20,6 +20,9 @@ BITRATES = {"mp3": "96k", "m4a": "64k", "opus": "48k"}
 CHANNELS = ("mono", "stereo")
 STAGES = ("voice", "music", "mix")
 _BITRATE = re.compile(r"^\d+k$")
+# An option name goes into the filter text as is (only values are quoted), so
+# it must be a plain name: anything else could add filters to the graph.
+_OPTION = re.compile(r"^[a-z][a-z0-9_]*$")
 
 Fail = Callable[[str, str], ScribeError]  # (config path, problem) -> error
 
@@ -200,6 +203,11 @@ def _merge_stage(
             raise fail(path, "a tweak cannot change `type`; use a new step name")
         if kind not in FILTERS | OPERATIONS:
             raise fail(path, f"unknown type {kind!r}")
+        for option in settings:
+            if option != "type" and not (
+                isinstance(option, str) and _OPTION.match(option)
+            ):
+                raise fail(path, f"bad option name {str(option)!r}")
         for option in WRITES_FILES.get(kind, ()):
             if option in settings:
                 raise fail(path, f"option {option!r} is not allowed")

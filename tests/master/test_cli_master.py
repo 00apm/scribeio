@@ -2,6 +2,7 @@
 
 import re
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -243,23 +244,91 @@ def test_master_format_option(tmp_path, fmt, codec):
     assert ffmpeg.duration(out) == pytest.approx(35, abs=0.1)
 
 
-@pytest.mark.ffmpeg
-def test_master_failed_render_leaves_nothing(tmp_path, monkeypatch):
-    folder = master_dir(tmp_path / "rec" / "tracks")
-    out = tmp_path / "rec" / "2026-02-03_master.mp3"
+def render_outputs(args):
+    """The files an ffmpeg render writes: the path after each ``-y``."""
+    return [Path(args[i + 1]) for i, a in enumerate(args) if a == "-y"]
 
+
+def fail_render(monkeypatch, written=None):
+    """Make the render half-write its outputs, then fail; measuring runs.
+
+    `written` (a list) gets the render's output paths.
+    """
     real = ffmpeg.run_progress
 
     def fail(args, label, on_time=None):
         if not label.startswith("render"):
             return real(args, label, on_time)
-        out.write_bytes(b"half")
+        for path in render_outputs(args):
+            path.write_bytes(b"half")
+            if written is not None:
+                written.append(path)
         raise ScribeError(f"ffmpeg failed ({label}): boom")
 
     monkeypatch.setattr(ffmpeg, "run_progress", fail)
+
+
+@pytest.mark.ffmpeg
+def test_master_failed_render_leaves_nothing(tmp_path, monkeypatch):
+    folder = master_dir(tmp_path / "rec" / "tracks")
+    written = []
+    fail_render(monkeypatch, written)
     result = invoke("master", folder, *START_ARG)
     assert result.exit_code == 1 and "boom" in result.output
-    assert not out.exists()
+    assert written and not any(p.exists() for p in written)
+    assert sorted(p.name for p in (tmp_path / "rec").iterdir()) == ["tracks"]
+
+
+@pytest.mark.ffmpeg
+def test_master_renders_under_partial_names(tmp_path, monkeypatch):
+    # a hard stop (closed window) leaves files that say they are unfinished
+    folder = tracks_dir(tmp_path)
+    seen = []
+    real = ffmpeg.run_progress
+
+    def spy(args, label, on_time=None):
+        if label.startswith("render"):
+            seen.extend(render_outputs(args))
+        return real(args, label, on_time)
+
+    monkeypatch.setattr(ffmpeg, "run_progress", spy)
+    result = invoke("master", folder, "--name", "s1", "--tracks")
+    assert result.exit_code == 0, result.output
+    rec = tmp_path / "rec"
+    assert seen[0] == rec / "s1_master.partial.mp3"
+    assert {p.parent for p in seen[1:]} == {rec / "s1_tracks.partial"}
+    assert sorted(p.name for p in rec.iterdir()) == [
+        "s1_master.mp3", "s1_tracks", "tracks",
+    ]  # fmt: skip
+
+
+@pytest.mark.ffmpeg
+def test_master_force_failed_render_keeps_old_outputs(tmp_path, monkeypatch):
+    folder = tracks_dir(tmp_path)
+    assert invoke("master", folder, "--name", "s1", "--tracks").exit_code == 0
+    rec = tmp_path / "rec"
+    old = (rec / "s1_master.mp3").read_bytes()
+    old_tracks = sorted(p.name for p in (rec / "s1_tracks").iterdir())
+    fail_render(monkeypatch)
+    result = invoke("master", folder, "--name", "s1", "--tracks", "--force")
+    assert result.exit_code == 1 and "boom" in result.output
+    assert (rec / "s1_master.mp3").read_bytes() == old
+    assert sorted(p.name for p in (rec / "s1_tracks").iterdir()) == old_tracks
+    assert sorted(p.name for p in rec.iterdir()) == [
+        "s1_master.mp3", "s1_tracks", "tracks",
+    ]  # fmt: skip
+
+
+@pytest.mark.ffmpeg
+def test_master_tracks_clears_a_leftover_partial_folder(tmp_path):
+    folder = tracks_dir(tmp_path)
+    leftover = tmp_path / "rec" / "s1_tracks.partial"
+    leftover.mkdir()
+    (leftover / "old.flac").write_bytes(b"half")
+    result = invoke("master", folder, "--name", "s1", "--tracks")
+    assert result.exit_code == 0, result.output
+    assert not leftover.exists()
+    assert not (tmp_path / "rec" / "s1_tracks" / "old.flac").exists()
 
 
 def tracks_dir(tmp_path):
@@ -310,20 +379,30 @@ def test_master_tracks_keep_the_processing_layout(tmp_path):
 @pytest.mark.ffmpeg
 def test_master_tracks_failed_render_leaves_no_folder(tmp_path, monkeypatch):
     folder = tracks_dir(tmp_path)
-    written = tmp_path / "rec" / "s1_tracks"
-
-    real = ffmpeg.run_progress
-
-    def fail(args, label, on_time=None):
-        if not label.startswith("render"):
-            return real(args, label, on_time)
-        (written / "1-gm_account.flac").write_bytes(b"half")
-        raise ScribeError(f"ffmpeg failed ({label}): boom")
-
-    monkeypatch.setattr(ffmpeg, "run_progress", fail)
+    fail_render(monkeypatch)
     result = invoke("master", folder, "--name", "s1", "--tracks")
     assert result.exit_code == 1 and "boom" in result.output
-    assert not written.exists()
+    assert sorted(p.name for p in (tmp_path / "rec").iterdir()) == ["tracks"]
+
+
+@pytest.mark.parametrize("extra", [("--tracks", "--force"), ("--tracks",)])
+def test_master_tracks_output_is_the_input(tmp_path, extra):
+    # re-mastering from a _tracks folder must not write over (delete) it
+    folder = master_dir(tmp_path / "rec" / "s1_tracks")
+    before = sorted(p.name for p in folder.iterdir())
+    result = invoke("master", folder, *START_ARG, "--name", "s1", *extra)
+    assert result.exit_code == 1
+    assert "output folder s1_tracks holds the input" in result.output
+    assert sorted(p.name for p in folder.iterdir()) == before
+
+
+def test_master_preview_output_is_the_input(tmp_path):
+    folder = master_dir(tmp_path / "rec" / "s1_preview")
+    before = sorted(p.name for p in folder.iterdir())
+    result = invoke("master", folder, *START_ARG, "--name", "s1", "--preview")
+    assert result.exit_code == 1
+    assert "output folder s1_preview holds the input" in result.output
+    assert sorted(p.name for p in folder.iterdir()) == before
 
 
 def test_master_tracks_not_with_preview(tmp_path):
