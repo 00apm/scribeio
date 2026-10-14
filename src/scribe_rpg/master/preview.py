@@ -10,7 +10,6 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TypeVar
@@ -58,8 +57,7 @@ def cut(
     per track, in parallel.
     """
     dest.mkdir(parents=True, exist_ok=True)
-    with ThreadPoolExecutor(max_workers=os.cpu_count() or 1) as pool:
-        return list(pool.map(lambda t: _cut_one(t, ranges, dest), tracks))
+    return ffmpeg.parallel(lambda t: _cut_one(t, ranges, dest), tracks)
 
 
 def _cut_one(track: craig.Track, ranges: list[tuple[int, int]], dest: Path) -> Path:
@@ -330,16 +328,11 @@ def _parallel(
     """
     live, label = labels
 
-    with progress.count(live, label, len(items)) as advance, _pool() as pool:
+    with progress.count(live, label, len(items)) as advance:
 
         def one(item: T) -> R:
             result = work(item)
             advance()
             return result
 
-        return list(pool.map(one, items))
-
-
-def _pool() -> ThreadPoolExecutor:
-    # one ffmpeg graph uses about one core
-    return ThreadPoolExecutor(max_workers=os.cpu_count() or 1)
+        return ffmpeg.parallel(one, items)

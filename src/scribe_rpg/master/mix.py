@@ -10,10 +10,8 @@ from __future__ import annotations
 import os
 import re
 import shutil
-import subprocess
 import time
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
@@ -153,8 +151,7 @@ def measure_all(
         if on_measured:
             on_measured(account, measured)
 
-    with ThreadPoolExecutor(max_workers=os.cpu_count() or 1) as pool:
-        list(pool.map(one, plans))
+    ffmpeg.parallel(one, plans)
     mix_gains: Gains = {}
     mix_measured = []
     found = passes(mix_steps)
@@ -290,8 +287,7 @@ def check(cfg: MasterConfig) -> None:
     """
     chains = [cfg.voice, cfg.music, cfg.mix, *cfg.players.values()]
     steps = {s.where: s for chain in chains for s in chain if s.type not in OPERATIONS}
-    with ThreadPoolExecutor(max_workers=os.cpu_count() or 1) as pool:
-        problems = list(pool.map(_problem, steps.values()))
+    problems = ffmpeg.parallel(_problem, list(steps.values()))
     for step, problem in zip(steps.values(), problems, strict=True):
         if problem is not None:
             raise ScribeError(f"{step.where} ({step.type}): {problem}")
@@ -299,12 +295,10 @@ def check(cfg: MasterConfig) -> None:
 
 def _problem(step: Step) -> str | None:
     """ffmpeg's complaint about `step`, or None if it runs."""
-    done = subprocess.run(
-        ["ffmpeg", "-hide_banner", "-nostdin", "-nostats",
-         "-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono", "-t", "0.1",
+    done = ffmpeg.attempt(
+        ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono", "-t", "0.1",
          "-af", f"aformat=sample_fmts=flt,{step_filter(step)}",
-         "-f", "null", "-"],
-        capture_output=True, text=True, encoding="utf-8", errors="replace",
+         "-f", "null", "-"]
     )  # fmt: skip
     if done.returncode == 0:
         return None

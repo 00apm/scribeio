@@ -1,5 +1,9 @@
 """Shared ffmpeg helpers: lookup, version, runs, decoding, duration."""
 
+import sys
+import threading
+import time
+
 import pytest
 
 from scribe_rpg import ffmpeg
@@ -117,3 +121,72 @@ def test_run_progress_returns_stderr():
     )  # fmt: skip
     assert "Summary:" in stderr
     assert seen and seen[-1] == pytest.approx(2, abs=0.1)
+
+
+# --- stopping: errors, Ctrl+C, chatty ffmpeg ---------------------------------
+
+
+def fake_ffmpeg(monkeypatch, script):
+    """Run `script` (Python) in place of ffmpeg; ffmpeg's arguments follow it."""
+    monkeypatch.setattr(ffmpeg, "_BASE", [sys.executable, "-c", script])
+
+
+def test_decode_with_a_flood_of_errors_does_not_hang(monkeypatch, tmp_path):
+    # a damaged FLAC: one error line per bad frame, far more than a pipe holds
+    fake_ffmpeg(
+        monkeypatch,
+        "import sys; sys.stderr.write(('bad frame' + chr(10)) * 200_000); "
+        "sys.stdout.buffer.write(bytes(64))",
+    )
+    chunks = []
+    worker = threading.Thread(
+        target=lambda: chunks.extend(ffmpeg.decode(tmp_path / "x.flac", 16000)),
+        daemon=True,
+    )
+    worker.start()
+    worker.join(timeout=20)
+    assert not worker.is_alive(), "decode hung"
+    assert sum(len(c) for c in chunks) == 16
+
+
+@pytest.mark.parametrize("code", [255, 0xC000013A])
+def test_ffmpeg_stopped_by_ctrl_c_is_an_interrupt(monkeypatch, code):
+    # Ctrl+C reaches ffmpeg too: 255 ("received signal"), or Windows' code
+    if code > 255 and sys.platform != "win32":
+        pytest.skip("exit codes above 255 exist only on Windows")
+    fake_ffmpeg(monkeypatch, f"import sys; sys.exit({code})")
+    with pytest.raises(KeyboardInterrupt):
+        ffmpeg.run([], "test")
+    with pytest.raises(KeyboardInterrupt):
+        ffmpeg.run_progress([], "test")
+
+
+def test_parallel_keeps_order():
+    assert ffmpeg.parallel(lambda x: x * 2, [3, 1, 2]) == [6, 2, 4]
+
+
+SLOW = ["-re", "-f", "lavfi", "-i", "anullsrc", "-t", "60", "-f", "null", "-"]
+
+
+@pytest.mark.ffmpeg
+@pytest.mark.parametrize("error", [ScribeError("boom"), KeyboardInterrupt()])
+def test_parallel_stops_at_the_first_error(monkeypatch, error):
+    # 2 workers, 6 items: item 0 fails while item 1 runs a 60 s ffmpeg;
+    # the queue must not start and the running ffmpeg must be killed
+    monkeypatch.setattr(ffmpeg, "workers", lambda: 2)
+    started = []
+
+    def work(i):
+        started.append(i)
+        if i == 0:
+            time.sleep(0.5)
+            raise error
+        ffmpeg.run(SLOW, f"slow {i}")
+
+    begin = time.monotonic()
+    with pytest.raises(type(error)):
+        ffmpeg.parallel(work, list(range(6)))
+    assert time.monotonic() - begin < 10
+    assert sorted(started) == [0, 1]
+    ffmpeg.run(["-f", "lavfi", "-i", "anullsrc", "-t", "0.1", "-f", "null", "-"],
+               "after")  # fmt: skip

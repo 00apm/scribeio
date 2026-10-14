@@ -8,8 +8,6 @@ through ffmpeg at a low rate; everything else is pure numpy.
 
 from __future__ import annotations
 
-import os
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -76,8 +74,7 @@ def activity(path: Path, frame_ms: int, energy_db: float) -> Activity:
 
 def activities(paths: list[Path], frame_ms: int, energy_db: float) -> list[Activity]:
     """`activity` of every track, in parallel (one ffmpeg per CPU), in order."""
-    with ThreadPoolExecutor(max_workers=os.cpu_count() or 1) as pool:
-        return list(pool.map(lambda p: activity(p, frame_ms, energy_db), paths))
+    return ffmpeg.parallel(lambda p: activity(p, frame_ms, energy_db), paths)
 
 
 def choose(
