@@ -37,7 +37,6 @@ if TYPE_CHECKING:
     # numpy at runtime only inside `master` / `transcribe`, never for `merge`
     from scribe_rpg.master.config import MasterConfig
     from scribe_rpg.master.excerpt import Excerpt
-    from scribe_rpg.master.render import Measured
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -406,6 +405,10 @@ def _parse_at(
     "--tracks", "write_tracks", is_flag=True,
     help="Also write each processed track to <name>_tracks/ (FLAC).",
 )  # fmt: skip
+@click.option(
+    "--verbose", is_flag=True,
+    help="Print each track's measured loudness and applied gain.",
+)  # fmt: skip
 def master(
     input_path: Path,
     config_path: Path | None,
@@ -420,6 +423,7 @@ def master(
     before_after: bool,
     fmt: str | None,
     write_tracks: bool,
+    verbose: bool,
 ) -> None:
     """Mix and master a Craig recording into one audio file.
 
@@ -477,11 +481,11 @@ def master(
             clean = cfg.settings["transcribe"]["cleanup"]
             ex = _find_excerpt(rec, clean, length or 90, at, montage, progress)
             _write_preview(rec, ex, mcfg, folder / f"{name}_preview",
-                           before_after, progress)  # fmt: skip
+                           before_after, verbose, progress)  # fmt: skip
         else:
             tracks_dir = folder / f"{name}_tracks" if write_tracks else None
             _write_master(rec, mcfg, folder / f"{name}_master.{mcfg.format}",
-                          tracks_dir, force, progress)  # fmt: skip
+                          tracks_dir, force, verbose, progress)  # fmt: skip
 
 
 def _find_excerpt(
@@ -513,6 +517,7 @@ def _write_preview(
     mcfg: MasterConfig,
     folder: Path,
     before_after: bool,
+    verbose: bool,
     progress: Progress,
 ) -> None:
     """Cut the excerpt out of every track, then write the listening files."""
@@ -525,9 +530,7 @@ def _write_preview(
         craig.Track(t.account, t.kind, p)
         for t, p in zip(rec.tracks, paths, strict=True)
     ]
-    preview.write_files(
-        cut, mcfg, folder, progress, _measured_printer(progress), before_after
-    )
+    preview.write_files(cut, mcfg, folder, progress, verbose, before_after)
     progress.console.print(f"preview: {folder}", markup=False, soft_wrap=True)
 
 
@@ -537,6 +540,7 @@ def _write_master(
     out: Path,
     tracks_dir: Path | None,
     force: bool,
+    verbose: bool,
     progress: Progress,
 ) -> None:
     """Measure the loudness steps, then render the whole recording to `out`.
@@ -544,7 +548,7 @@ def _write_master(
     With `tracks_dir`, the same run writes each processed track there, plus
     the recording's info.txt, so the folder is a valid input itself.
     """
-    from scribe_rpg.master import mix
+    from scribe_rpg.master import mix, report
 
     for path in [out, tracks_dir]:
         if path is not None and path.exists() and not force:
@@ -555,41 +559,22 @@ def _write_master(
         mix.TrackPlan(t, mcfg.chain_for(t), stereo=mcfg.keeps_stereo(t))
         for t in rec.tracks
     ]
-    with progress.step(f"measure {len(plans)} tracks"):
-        mix_gains = mix.measure_all(
-            plans, mcfg.mix, mcfg.channels, _measured_printer(progress)
-        )
+    mix_gains = report.measure(plans, mcfg.mix, mcfg.channels, progress, verbose)
     out.parent.mkdir(parents=True, exist_ok=True)
     if tracks_dir is not None:
         shutil.rmtree(tracks_dir, ignore_errors=True)  # --force: start empty
         tracks_dir.mkdir()
         if rec.info_txt is not None:
             (tracks_dir / "info.txt").write_text(rec.info_txt, encoding="utf-8")
-    with progress.tracks(1) as bar:
-        bar.start(out.name)
-        bar.set_phase("rendering")
+    n = len(plans)
+    with progress.bar(
+        f"render {out.name} ({n} track{'s' if n != 1 else ''} + mix)"
+    ) as update:
         mix.render(plans, mcfg.mix, mix_gains, mcfg.channels, out, mcfg.format,
-                   mcfg.bitrate, bar.update, tracks_dir=tracks_dir)  # fmt: skip
-        bar.done(f"render {out.name}")
+                   mcfg.bitrate, update, tracks_dir=tracks_dir)  # fmt: skip
     progress.console.print(f"master: {out}", markup=False, soft_wrap=True)
     if tracks_dir is not None:
         progress.console.print(f"tracks: {tracks_dir}", markup=False, soft_wrap=True)
-
-
-def _measured_printer(progress: Progress) -> Callable[[str, list[Measured]], None]:
-    """Print each track's loudness steps: level and gain; warn on silence."""
-
-    def show(account: str, measured: list[Measured]) -> None:
-        parts = []
-        for m in measured:
-            if m.loudness is None or m.gain is None:
-                progress.warn(f"{account}: silent, {m.step} applies no gain")
-            else:
-                parts.append(f"{m.step} {m.loudness:.1f} LUFS → {m.gain:+.1f} dB")
-        if parts:
-            progress.console.print(f"{account}: {', '.join(parts)}", markup=False)
-
-    return show
 
 
 def _show_excerpt(ex: Excerpt, forced: bool, progress: Progress) -> None:

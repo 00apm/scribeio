@@ -83,11 +83,14 @@ def run(args: list[str], label: str) -> subprocess.CompletedProcess[str]:
 
 def run_progress(
     args: list[str], label: str, on_time: Callable[[float], None] | None = None
-) -> None:
+) -> str:
     """Run ffmpeg like `run`, telling `on_time` the seconds written so far.
 
     Reads ffmpeg's ``-progress pipe:1`` lines; stderr is drained by a thread
     so a chatty ffmpeg cannot block. ffmpeg is killed if this is interrupted.
+
+    Returns:
+        ffmpeg's stderr (filters such as ebur128 report there).
 
     Raises:
         ScribeError: If ffmpeg exits non-zero; names `label` and the last
@@ -117,8 +120,10 @@ def run_progress(
         drain.join()
         proc.stdout.close()
         proc.stderr.close()
+    stderr_text = "".join(err)
     if code != 0:
-        raise ScribeError(f"ffmpeg failed ({label}): {_tail(''.join(err))}")
+        raise ScribeError(f"ffmpeg failed ({label}): {_tail(stderr_text)}")
+    return stderr_text
 
 
 def decode(

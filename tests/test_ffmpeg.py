@@ -105,3 +105,15 @@ def test_make_flac_on_ranges(tmp_path):
     ]
     # volume switches per frame (~21 ms), so the edges may leak a little
     assert rms[0] < 0.02 and rms[2] < 0.02 and rms[1] > 0.05
+
+
+@pytest.mark.ffmpeg
+def test_run_progress_returns_stderr():
+    seen = []
+    stderr = ffmpeg.run_progress(
+        ["-f", "lavfi", "-i", "sine=d=2", "-af", "ebur128=framelog=verbose",
+         "-f", "null", "-"],
+        "meter", seen.append,
+    )  # fmt: skip
+    assert "Summary:" in stderr
+    assert seen and seen[-1] == pytest.approx(2, abs=0.1)

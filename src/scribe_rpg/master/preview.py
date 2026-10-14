@@ -11,9 +11,10 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import TypeVar
 
 from scribe_rpg import craig, ffmpeg
-from scribe_rpg.master import mix
+from scribe_rpg.master import mix, report
 from scribe_rpg.master.catalogue import Step
 from scribe_rpg.master.config import MasterConfig
 from scribe_rpg.progress import Progress
@@ -24,6 +25,9 @@ FADE = 0.02  # seconds of fade at each montage join
 # would otherwise go above MATCH_PEAK (FLAC is integer: a peak above 0 clips).
 MATCH_TARGET = -19.0  # LUFS
 MATCH_PEAK = -1.0  # dBFS
+
+T = TypeVar("T")
+R = TypeVar("R")
 
 
 def fresh_folder(path: Path) -> Path:
@@ -202,7 +206,7 @@ def write_files(
     cfg: MasterConfig,
     dest: Path,
     progress: Progress,
-    on_measured: mix.OnMeasured | None = None,
+    verbose: bool = False,
     before_after: bool = False,
 ) -> list[Path]:
     """Write the listening files for the cut `tracks` into `dest`.
@@ -211,6 +215,7 @@ def write_files(
     reuses those gains for its prefix. Then each file's loudness and peak
     are measured, one common level is chosen (`common_level`) and every file
     is written matched to it. Files are measured and written in parallel.
+    With `verbose`, each track's measured levels are printed.
 
     Returns:
         The written paths, in file order.
@@ -218,8 +223,7 @@ def write_files(
     full = [
         mix.TrackPlan(t, cfg.chain_for(t), stereo=cfg.keeps_stereo(t)) for t in tracks
     ]
-    with progress.step(f"measure {len(full)} tracks"):
-        mix_gains = mix.measure_all(full, cfg.mix, cfg.channels, on_measured)
+    mix_gains = report.measure(full, cfg.mix, cfg.channels, progress, verbose)
     files = step_files(full, cfg, before_after)
     if not before_after:
         for account in own_chains(full, cfg):
@@ -230,8 +234,9 @@ def write_files(
     def level_of(f: PreviewFile) -> tuple[float | None, float | None]:
         return mix.mix_level(f.plans, f.mix_steps, mix_gains, f.channels, f.name)
 
-    with progress.step(f"measure {len(files)} files"), _pool() as pool:
-        levels = list(pool.map(level_of, files))
+    n = len(files)
+    measuring = ("preview: measuring", f"preview: measure {n} files")
+    levels = _parallel(progress, measuring, level_of, files)
     level = common_level(levels)
     lowered = " (lowered: the loudest peak stays at -1 dBFS)"
     note = lowered if level < MATCH_TARGET else ""
@@ -248,8 +253,31 @@ def write_files(
         return out
 
     loudness = [lv for lv, _ in levels]
-    with progress.step(f"write {len(files)} files"), _pool() as pool:
-        return list(pool.map(write, zip(files, loudness, strict=True)))
+    writing = ("preview: writing", f"preview: write {n} files")
+    return _parallel(progress, writing, write, list(zip(files, loudness, strict=True)))
+
+
+def _parallel(
+    progress: Progress,
+    labels: tuple[str, str],
+    work: Callable[[T], R],
+    items: list[T],
+) -> list[R]:
+    """`work` on every item in the pool, with a bar counting finished items.
+
+    Args:
+        labels: The bar's live text and its done line.
+    """
+    live, label = labels
+
+    with progress.count(live, label, len(items)) as advance, _pool() as pool:
+
+        def one(item: T) -> R:
+            result = work(item)
+            advance()
+            return result
+
+        return list(pool.map(one, items))
 
 
 def _pool() -> ThreadPoolExecutor:

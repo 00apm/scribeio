@@ -123,10 +123,22 @@ def test_master_renders_mp3(tmp_path):
     info = ffmpeg.run(["-i", str(out), "-f", "null", "-"], "probe").stderr
     assert "mono" in info
     assert "player_one" in result.output and "silent" in result.output
-    assert "gm_account: level" in result.output
+    assert "✔ measure gm_account (" in result.output
+    assert "LUFS →" not in result.output  # levels only with --verbose
+    assert "✔ render 2026-02-03_master.mp3 (4 tracks + mix) (" in result.output
     again = invoke("master", folder, *START_ARG)
     assert again.exit_code == 1 and "already exists" in again.output
     assert invoke("master", folder, *START_ARG, "--force").exit_code == 0
+
+
+@pytest.mark.ffmpeg
+def test_master_verbose_prints_levels(tmp_path):
+    folder = master_dir(tmp_path / "rec" / "tracks")
+    result = invoke("master", folder, *START_ARG, "--verbose")
+    assert result.exit_code == 0, result.output
+    level = r"level -?[\d.]+ LUFS → [+-][\d.]+ dB"
+    assert re.search(rf"✔ measure gm_account: {level}, loudness ", result.output)
+    assert "player_one" in result.output and "silent" in result.output
 
 
 @pytest.mark.ffmpeg
@@ -229,7 +241,11 @@ def test_master_failed_render_leaves_nothing(tmp_path, monkeypatch):
     folder = master_dir(tmp_path / "rec" / "tracks")
     out = tmp_path / "rec" / "2026-02-03_master.mp3"
 
+    real = ffmpeg.run_progress
+
     def fail(args, label, on_time=None):
+        if not label.startswith("render"):
+            return real(args, label, on_time)
         out.write_bytes(b"half")
         raise ScribeError(f"ffmpeg failed ({label}): boom")
 
@@ -289,7 +305,11 @@ def test_master_tracks_failed_render_leaves_no_folder(tmp_path, monkeypatch):
     folder = tracks_dir(tmp_path)
     written = tmp_path / "rec" / "s1_tracks"
 
+    real = ffmpeg.run_progress
+
     def fail(args, label, on_time=None):
+        if not label.startswith("render"):
+            return real(args, label, on_time)
         (written / "1-gm_account.flac").write_bytes(b"half")
         raise ScribeError(f"ffmpeg failed ({label}): boom")
 
@@ -338,14 +358,16 @@ def printed_level(output):
 
 @pytest.mark.ffmpeg
 def test_master_preview_writes_every_step(tmp_path):
-    result, preview = run_preview(tmp_path)
+    result, preview = run_preview(tmp_path, "--verbose")
     assert sorted(p.name for p in preview.iterdir()) == sorted([*STEP_FILES, "tracks"])
     levels = [lufs(preview / name) for name in STEP_FILES]
     assert max(levels) - min(levels) <= 0.5 and max(levels) <= -18.5
     for name in STEP_FILES[:-1]:
         assert flac_peak(preview / name) <= -0.9, name
     assert printed_level(result.output) == pytest.approx(-19.0)
-    assert re.search(r"gm_account: level -?[\d.]+ LUFS →", result.output)
+    assert re.search(r"✔ measure gm_account: level -?[\d.]+ LUFS →", result.output)
+    assert "✔ preview: measure 9 files (" in result.output
+    assert "✔ preview: write 9 files (" in result.output
     assert not (tmp_path / "rec" / "2026-02-03_master.mp3").exists()
 
 

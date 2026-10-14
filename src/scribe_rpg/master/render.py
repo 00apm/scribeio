@@ -7,7 +7,7 @@ output discarded (no temporary audio files).
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -24,6 +24,8 @@ DENORM = "adenorm"
 EQ_DELAY = 0.01
 
 Gains = dict[int, float | None]  # chain index of a loudness step -> dB (None: silent)
+# Told the phase of a measuring pass (e.g. "level 1/2") and its percent done
+OnPass = Callable[[str, float], None]
 
 # At or below this, BS.1770 gating found nothing to measure: a silent track.
 SILENT_LUFS = -70.0
@@ -118,14 +120,39 @@ def parse_peak(stderr: str) -> float | None:
     return float(match.group(1))
 
 
-def measure(inputs: list[str], graph: str, label: str) -> float | None:
-    """Run `graph` (ending in ebur128) on `inputs`; the integrated loudness."""
-    done = ffmpeg.run([*inputs, "-filter_complex", graph, "-f", "null", "-"], label)
-    return parse_integrated(done.stderr)
+def measure(
+    inputs: list[str],
+    graph: str,
+    label: str,
+    on_time: Callable[[float], None] | None = None,
+) -> float | None:
+    """Run `graph` (ending in ebur128) on `inputs`; the integrated loudness.
+
+    `on_time` gets the seconds measured so far.
+    """
+    args = [*inputs, "-filter_complex", graph, "-f", "null", "-"]
+    return parse_integrated(ffmpeg.run_progress(args, label, on_time))
+
+
+def passes(steps: Sequence[Step]) -> list[tuple[int, str]]:
+    """Index and phase text (``level 1/2``) of each loudness step."""
+    found = [i for i, s in enumerate(steps) if s.type == "loudness"]
+    n = len(found)
+    return [(i, f"{steps[i].name} {k}/{n}") for k, i in enumerate(found, 1)]
+
+
+def percent_of(on_pass: OnPass, phase: str, length: float) -> Callable[[float], None]:
+    """An `on_time` that reports `phase` and the percent of `length` done."""
+    on_pass(phase, 0.0)
+    return lambda seconds: on_pass(phase, min(100.0, 100 * seconds / (length or 1)))
 
 
 def track_gains(
-    path: Path, prep: str, steps: Sequence[Step], label: str
+    path: Path,
+    prep: str,
+    steps: Sequence[Step],
+    label: str,
+    on_pass: OnPass | None = None,
 ) -> tuple[Gains, list[Measured]]:
     """Measure the loudness steps of one track's chain, in order.
 
@@ -137,14 +164,19 @@ def track_gains(
         prep: Input filter for the track (channel layout).
         steps: The track's chain.
         label: Track name for error messages.
+        on_pass: Told the phase (``level 1/2``) and its percent done.
     """
     gains: Gains = {}
     measured = []
-    for i, step in enumerate(steps):
-        if step.type != "loudness":
-            continue
+    found = passes(steps)
+    length = ffmpeg.duration(path) if on_pass and found else 0.0
+    for i, phase in found:
+        step = steps[i]
+        on_time = percent_of(on_pass, phase, length) if on_pass else None
         graph = f"[0:a]{prep},{measure_filter(steps, gains, i)}"
-        level = measure(["-i", str(path)], graph, f"measure {label}, {step.name}")
+        level = measure(
+            ["-i", str(path)], graph, f"measure {label}, {step.name}", on_time
+        )
         gain = None if level is None else float(step.options["target"]) - level
         gains[i] = gain
         measured.append(Measured(step.name, level, gain))

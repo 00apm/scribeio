@@ -91,3 +91,50 @@ def test_download_bar_failure_prints_no_check():
             advance(100)
             raise OSError("connection reset")
     assert "✔" not in buf.getvalue()
+
+
+def test_rows_print_a_line_per_finished_row_and_the_summary():
+    p, buf = make()
+    with p.rows(["gm_account", "player [1]", "mix"], "measure 2 tracks") as rows:
+        rows.update("gm_account", "level 1/2", 50.0)
+        rows.done("gm_account", "measure gm_account: level -20.0 LUFS → +1.0 dB")
+        rows.update("player [1]", "loudness 2/2", 100.0)
+        rows.done("player [1]", "measure player [1]")
+    out = buf.getvalue()
+    assert "✔ measure gm_account: level -20.0 LUFS → +1.0 dB (" in out
+    assert "✔ measure player [1] (" in out
+    assert "✔ measure 2 tracks (" in out
+    assert "✔ mix" not in out  # never started, never done
+
+
+def test_rows_failure_prints_no_summary():
+    p, buf = make()
+    with pytest.raises(RuntimeError):
+        with p.rows(["a"], "measure 1 track"):
+            raise RuntimeError("x")
+    assert "✔" not in buf.getvalue()
+
+
+def test_count_bar_done_line():
+    p, buf = make()
+    with p.count("preview: writing", "preview: write 2 files", 2) as advance:
+        advance()
+        advance()
+    assert "✔ preview: write 2 files (" in buf.getvalue()
+
+
+def test_percent_bar_done_line():
+    p, buf = make()
+    with p.bar("render s.mp3 (2 tracks + mix)") as update:
+        update(50.0)
+    assert "✔ render s.mp3 (2 tracks + mix) (" in buf.getvalue()
+
+
+def test_row_clock_keeps_running_across_passes():
+    # each pass runs 0..100 %; rich freezes a finished task's clock
+    p, _ = make()
+    with p.rows(["a"], "measure 1 track") as rows:
+        rows.update("a", "l 1/2", 100.0)
+        rows.update("a", "l2 2/2", 0.0)
+        [task] = rows._live.tasks
+        assert task.finished_time is None

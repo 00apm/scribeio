@@ -14,6 +14,7 @@ import subprocess
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 
 from scribe_rpg import craig, ffmpeg
@@ -28,11 +29,15 @@ from scribe_rpg.master.render import (
     measure_filter,
     parse_integrated,
     parse_peak,
+    passes,
+    percent_of,
     step_filter,
     track_gains,
 )
 
 OnMeasured = Callable[[str, list[Measured]], None]
+# Told a row (account or "mix"), a pass's phase ("level 1/2") and percent done
+OnRowPass = Callable[[str, str, float], None]
 
 # ffmpeg's own name for a bad option ("... out of range [1 - 20]"), stripped
 # of its "[Parsed_x @ 0x...] " prefix
@@ -127,32 +132,39 @@ def measure_all(
     mix_steps: list[Step],
     channels: str,
     on_measured: OnMeasured | None = None,
+    on_pass: OnRowPass | None = None,
 ) -> Gains:
     """Measure every loudness step: tracks in parallel, then the mix.
 
     Fills ``plan.gains`` of every plan and returns the mix gains.
-    `on_measured` gets each track's (and the mix's) measurements, in order.
+    `on_measured` gets each track's measurements as soon as that track is
+    done (from its worker thread), then the mix's. `on_pass` is told, per
+    row (the account, or ``mix``), each pass's phase and percent done.
     """
 
-    def one(plan: TrackPlan) -> list[Measured]:
+    def one(plan: TrackPlan) -> None:
+        account = plan.track.account
+        row_pass = partial(on_pass, account) if on_pass else None
         prepared = prep(plan, channels)
         plan.gains, measured = track_gains(
-            plan.track.path, prepared, plan.steps[: plan.upto], plan.track.account
+            plan.track.path, prepared, plan.steps[: plan.upto], account, row_pass
         )
-        return measured
+        if on_measured:
+            on_measured(account, measured)
 
     with ThreadPoolExecutor(max_workers=os.cpu_count() or 1) as pool:
-        results = list(pool.map(one, plans))
-    if on_measured:
-        for plan, measured in zip(plans, results, strict=True):
-            on_measured(plan.track.account, measured)
+        list(pool.map(one, plans))
     mix_gains: Gains = {}
     mix_measured = []
-    for i, step in enumerate(mix_steps):
-        if step.type != "loudness":
-            continue
+    found = passes(mix_steps)
+    length = max(ffmpeg.duration(p.track.path) for p in plans) if found else 0.0
+    for i, phase in found:
+        step = mix_steps[i]
+        on_time = (
+            percent_of(partial(on_pass, "mix"), phase, length) if on_pass else None
+        )
         text = _graph(plans, channels, measure_filter(mix_steps, mix_gains, i))
-        level = measure(_inputs(plans), text, f"measure mix, {step.name}")
+        level = measure(_inputs(plans), text, f"measure mix, {step.name}", on_time)
         gain = None if level is None else float(step.options["target"]) - level
         mix_gains[i] = gain
         mix_measured.append(Measured(step.name, level, gain))

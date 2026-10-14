@@ -209,3 +209,37 @@ def test_check_reports_player_step(tmp_path):
             "      gate: {threshold: 7}\n",
         )
     assert str(e.value).startswith("master.players.player_one.gate (agate): ")
+
+
+# --- progress of the measuring passes ------------------------------------------
+
+
+def test_track_gains_reports_each_pass(tmp_path):
+    tone = make_flac(tmp_path / "a.flac", 5)
+    steps = [
+        Step("l", "loudness", {"target": -19}),
+        Step("hp", "highpass", {"f": 80}),
+        Step("l2", "loudness", {"target": -19}),
+    ]
+    seen = []
+    track_gains(tone, MONO, steps, "a", lambda phase, pct: seen.append((phase, pct)))
+    assert seen[0] == ("l 1/2", 0.0)
+    assert {phase for phase, _ in seen} == {"l 1/2", "l2 2/2"}
+    assert all(0 <= pct <= 100 for _, pct in seen)
+    assert seen[-1][0] == "l2 2/2" and seen[-1][1] > 90
+
+
+def test_measure_all_reports_tracks_then_the_mix(tmp_path):
+    from scribe_rpg.master import mix
+
+    a = make_flac(tmp_path / "a.flac", 3)
+    [plan] = plans_for(a)
+    plan.steps = [Step("l", "loudness", {"target": -19})]
+    rows, measured = [], []
+    mix.measure_all(
+        [plan], [Step("ml", "loudness", {"target": -19})], "mono",
+        lambda account, _: measured.append(account),
+        lambda row, phase, _: rows.append((row, phase)),
+    )  # fmt: skip
+    assert ("a", "l 1/1") in rows and ("mix", "ml 1/1") in rows
+    assert measured == ["a", "mix"]
