@@ -37,7 +37,7 @@ def test_default_chains():
         Step("loudness", "loudness", {"target": -36}, "master.music.loudness")
     ]
     assert [(s.name, s.type) for s in cfg.mix] == [("limiter", "alimiter")]
-    assert cfg.mix[0].options["level"] is False
+    assert cfg.mix[0].options == {"limit": "-1.5dB", "level": False}
     assert cfg.players == {}
 
 
