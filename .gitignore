@@ -8,7 +8,7 @@
 *.aup
 *.aup3
 
-# real-session excerpt, its config and its test: local only, never in git (spec §12.3)
+# real-session excerpt, its config and its test: local only, never in git
 tests/local/
 
 # python
@@ -16,9 +16,15 @@ __pycache__/
 *.pyc
 *.egg-info/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+build/
+dist/
 
-# local Claude Code settings and assistant instructions (private)
-.claude/settings.local.json
+# local LLM agent settings, instructions and work files
+.claude/
+.superpowers/
 AGENTS.md
 CLAUDE.md
 
