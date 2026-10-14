@@ -47,7 +47,7 @@ and the report.
 ## Usage
 
 ```
-scribe init [RECORDING] [-o DIR] [--language LANG] [--force]
+scribe init [RECORDING] [-o DIR] [--only master|transcribe] [--full] [--language LANG] [--force]
 scribe transcribe INPUT [-c CONFIG] [-g GLOSSARY] [-o DIR] [--name NAME] [--force] [--keep-fillers] [--yes]
 scribe merge JSON       [-c CONFIG] [-g GLOSSARY] [-o DIR] [--name NAME] [--keep-fillers]
 ```

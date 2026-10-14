@@ -65,3 +65,31 @@ def test_cli_import_does_not_load_numpy():
     code = "import sys, scribe_rpg.cli; print('numpy' in sys.modules)"
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
     assert out.stdout.strip() == "False", out.stderr
+
+
+def test_init_only_master(tmp_path):
+    zip_path = craig_zip(tmp_path / "rec")
+    result = invoke("init", zip_path, "--only", "master")
+    assert result.exit_code == 0, result.output
+    assert "created scribe.yaml in" in result.output
+    assert not (tmp_path / "rec" / "glossary.txt").exists()
+    next_steps = result.output.split("Next:")[1]
+    assert "scribe master" in next_steps and "scribe transcribe" not in next_steps
+
+
+def test_init_both_names_both_commands(tmp_path):
+    result = invoke("init", "-o", tmp_path)
+    next_steps = result.output.split("Next:")[1]
+    assert "scribe master" in next_steps and "scribe transcribe" in next_steps
+
+
+def test_init_full(tmp_path):
+    result = invoke("init", "-o", tmp_path, "--full", "--only", "transcribe")
+    assert result.exit_code == 0, result.output
+    text = (tmp_path / "scribe.yaml").read_text(encoding="utf-8")
+    assert "phrases:" in text and "master:" not in text
+
+
+def test_init_language_needs_transcription(tmp_path):
+    result = invoke("init", "-o", tmp_path, "--only", "master", "--language", "pl")
+    assert result.exit_code == 2 and "--language" in result.output

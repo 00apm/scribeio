@@ -661,22 +661,35 @@ def _show_excerpt(ex: Excerpt, forced: bool, progress: Progress) -> None:
     type=click.Path(file_okay=False, path_type=Path),
     help="Folder for the files (default: next to RECORDING, else here).",
 )
+@click.option(
+    "--only",
+    type=click.Choice(["master", "transcribe"]),
+    help="Only this command's settings (default: both; master needs no glossary).",
+)
+@click.option("--full", is_flag=True, help="Every setting with its default value.")
 @click.option("--language", help="Transcription language, e.g. pl (default: en).")
 @click.option("--force", is_flag=True, help="Overwrite an existing scribe.yaml.")
 def init_command(
-    source: Path | None, out_dir: Path | None, language: str | None, force: bool
-) -> None:  # fmt: skip
+    source: Path | None,
+    out_dir: Path | None,
+    only: init.Only,
+    full: bool,
+    language: str | None,
+    force: bool,
+) -> None:
     """Create scribe.yaml and glossary.txt to fill in.
 
-    With RECORDING (a Craig .zip, a track folder or a <name>.json), the
-    speakers section lists its Discord accounts, ready for their names.
-    scribe transcribe and scribe merge use scribe.yaml by themselves when it
-    is next to the recording or the .json.
+    The config is short: the settings people change. With RECORDING (a Craig
+    .zip, a track folder or a <name>.json), the speakers section lists its
+    Discord accounts, ready for their names. Every scribe command uses
+    scribe.yaml by itself when it is next to the recording or the .json.
     """
+    if language and only == "master":
+        raise click.UsageError("--language is for transcription, not --only master")
     progress = Progress()
     if out_dir is None:
         out_dir = source.resolve().parent if source else Path.cwd()
-    _create_config(source, out_dir, language, force, progress)
+    _create_config(source, out_dir, language, force, progress, only, full)
 
 
 def _interactive() -> bool:
@@ -700,13 +713,15 @@ def _create_config(
     language: str | None,
     force: bool,
     progress: Progress,
+    only: init.Only = None,
+    full: bool = False,
 ) -> None:
     """Write scribe.yaml (+ glossary.txt) from `source`; say what to do next."""
     speakers = music = None
     if source is not None:
         patterns = load_config().settings["input"]["music_patterns"]
         speakers, music = init.speakers_from(source, patterns)
-    written, kept = init.write(folder, speakers, music, language, force)
+    written, kept = init.write(folder, speakers, music, language, force, only, full)
     # soft_wrap: paths and the command are never broken across lines, so
     # they can be copied from the terminal.
     names = ", ".join(p.name for p in written)
@@ -717,13 +732,16 @@ def _create_config(
     target = f'"{source}"' if source is not None else "<recording>"
     # scribe finds scribe.yaml only next to the recording; elsewhere it needs -c.
     beside = source is not None and folder.resolve() == source.resolve().parent
-    if not beside:
-        target += f' -c "{folder / init.CONFIG_NAME}"'
-    out.print(
-        f"Next: edit the speakers (and glossary) in {init.CONFIG_NAME}, then run:",
-        markup=False,
-    )
-    out.print(f"  scribe transcribe {target}", markup=False, soft_wrap=True)
+    config = "" if beside else f' -c "{folder / init.CONFIG_NAME}"'
+    edit = "the settings" if only == "master" else "the speakers (and glossary)"
+    out.print(f"Next: edit {edit} in {init.CONFIG_NAME}, then run:", markup=False)
+    if only != "transcribe":
+        # a .json is transcription output: mastering needs the recording
+        is_json = source is not None and source.suffix.lower() == ".json"
+        recording = "<recording>" if is_json else target
+        out.print(f"  scribe master {recording}{config}", markup=False, soft_wrap=True)
+    if only != "master":
+        out.print(f"  scribe transcribe {target}{config}", markup=False, soft_wrap=True)
 
 
 def _glossary(cfg: Config) -> Glossary:

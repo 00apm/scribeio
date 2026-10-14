@@ -28,7 +28,7 @@ master:
     eq:       {type: firequalizer, delay: 0.05,
                gain_entry: "entry(80,0);entry(150,1.5);entry(300,0);entry(2500,0);entry(3300,3);entry(5000,3);entry(6000,0)"}
     loudness: {type: loudness, target: -19}         # final voice level
-    # Not in the chain: untested starting points, e.g. for one player's chain
+    # In no chain: untested starting points; name one in a chain to use it
     hum:      {type: bandreject, f: 50, w: 2, t: h} # mains hum (60 in the Americas)
     denoise:  {type: afftdn}                        # steady background hiss
     gate:     {type: agate, threshold: -40dB, range: -12dB}  # quieter between words

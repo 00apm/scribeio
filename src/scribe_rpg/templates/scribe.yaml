@@ -1,67 +1,30 @@
-# scribe config, made by `scribe init`. Every section and key is optional:
-# what you leave out comes from the built-in defaults. One file serves every
-# command, and scribe finds it by itself when it is next to the recording
-# (or the .json):
-#   scribe transcribe session.zip          # uses scribe.yaml from that folder
-#   scribe merge 2026-01-01.json
-#   scribe transcribe session.zip -c other.yaml
-# Sections merge with the defaults; lists replace them. Unknown keys are an
-# error, so typos are caught.
+# scribe config, made by `scribe init`. Every key is optional: what you leave
+# out comes from the built-in defaults (`scribe init --full` writes them all).
+# scribe uses this file by itself when it is next to the recording (or the
+# .json); elsewhere pass it with -c. Lists replace the defaults; unknown keys
+# are an error, so typos are caught.
 
 # Discord account -> name in the transcript. Write the account as Discord
-# shows it; scribe applies Craig's file-name rule itself (characters outside
-# A-Z a-z 0-9 _ - become _). Accounts not listed keep their account name and
-# are reported. Several accounts may map to one person.
+# shows it; accounts not listed keep their account name and are reported.
 speakers:
   gm.account: Game Master
   player.one: Player One
-  player.two: Player Two
-  player.two.old: Player Two   # several accounts may map to one person
+  player.one.old: Player One   # several accounts may map to one person
 
 input:
-  # Music bots: tracks whose account contains any of these (case-insensitive)
-  # are not transcribed. The list replaces the default, so keep kenku.
-  music_patterns: [kenku, jukebox]
+  music_patterns: [kenku]   # music bot tracks (substrings); add your bots here
+
+master:
+  channels: mono            # or stereo
+  format: mp3               # mp3 | m4a | opus
+  # music:
+  #   loudness: {type: loudness, target: -36}   # lower = quieter music
+  # players:                # per Discord account: changes over `voice`
+  #   player.one: {stereo: true}
+  #   player.two: {chain: [rumble, level, comp, eq, denoise, loudness]}
 
 transcribe:
-  # Glossary: names for Whisper + corrections. Path is relative to this file.
-  # `-g other.txt` on the command line wins over this.
-  glossary: glossary.txt
-
+  glossary: glossary.txt    # names for Whisper + corrections; relative to this file
   whisper:
     language: en            # any Whisper language code; tuned and tested: en, pl
-    # model: large-v3       # or medium, small, distil-large-v3, a local model folder
-    # device: cuda          # cpu works, but very slowly
-    # compute_type: default # float16 on GPU, float32 on CPU; or int8 to save memory
     # batch_size: 4         # lower it if you get "CUDA out of memory"
-    # align_model: null     # a wav2vec2 model for languages WhisperX has none for
-
-  # cleanup:                # removing hallucinations, hesitations and loops
-  #   energy_db: -50        # takes effect only on a new `scribe transcribe`
-  #   voiced_ratio: 0.5     # drop a segment when fewer of its words have sound
-  #   keep_fillers: false   # true keeps yyy / mmm / uh / um
-  #   # Known Whisper hallucinations: a segment of at most 6 words containing
-  #   # one of these (case-insensitive) is dropped. Add phrases Whisper invents
-  #   # in your sessions; a real line that short with the phrase goes too, so
-  #   # add only what your group rarely says. Works on `scribe merge` (no new
-  #   # transcription). The list replaces the default, so keep these:
-  #   phrases:
-  #     - dzięki za oglądanie
-  #     - dziękuję za oglądanie
-  #     - pta & tvp
-  #     - napisy stworzone
-  #     - napisy wykonane
-  #     - napisy przygotowane
-  #     - thank you
-  #     - thanks for watching
-  #     - thank you for watching
-  #     - please subscribe
-  #     - subtitles by
-  #     - amara.org
-  #     - do widzenia       # example of your own: mid-session hallucination
-
-  lines:
-    pause: 1.5              # seconds of silence that start a new line
-
-  # bleed:                  # same speech on two tracks (report only)
-  #   similarity: 0.85

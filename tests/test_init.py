@@ -1,6 +1,9 @@
 """Tests for creating scribe.yaml and glossary.txt from the templates."""
 
+from importlib.resources import files
+
 import pytest
+import yaml
 
 from scribe_rpg import init
 from scribe_rpg.config import load_config
@@ -101,3 +104,71 @@ def test_speakers_from_json(tmp_path):
     players, music = init.speakers_from(path, MUSIC)
     assert players == ["gm_account", "player_one"]
     assert music == ["Kenku_FM_1234"]
+
+
+def _load(tmp_path, text):
+    path = tmp_path / "scribe.yaml"
+    path.write_text(text, encoding="utf-8")
+    return load_config(path)
+
+
+def _keys(text):
+    """Top-level keys of a YAML text, in order."""
+    return [k for k in yaml.safe_load(text)]
+
+
+def test_short_template_lists_only_the_usual_keys():
+    text = init.render_config()
+    assert _keys(text) == ["speakers", "input", "master", "transcribe"]
+    assert "phrases" not in text and "--full" in text
+
+
+def test_render_only_master(tmp_path):
+    text = init.render_config(["gm.account", "player.one"], ["Kenku"], only="master")
+    assert _keys(text) == ["input", "master"]
+    assert '# accounts in this recording: "gm.account", "player.one"' in text
+    cfg = _load(tmp_path, text)
+    assert cfg.speakers == {} and cfg.glossary_path is None
+    assert cfg.settings["master"]["format"] == "mp3"
+
+
+def test_render_only_transcribe(tmp_path):
+    text = init.render_config(["gm.account"], only="transcribe", language="pl")
+    assert _keys(text) == ["speakers", "input", "transcribe"]
+    cfg = _load(tmp_path, text)
+    assert cfg.speakers == {"gm_account": "gm.account"}
+    assert cfg.settings["transcribe"]["whisper"]["language"] == "pl"
+
+
+def test_render_full_holds_every_default(tmp_path):
+    text = init.render_config(full=True, language="pl")
+    assert _keys(text) == ["speakers", "input", "master", "transcribe"]
+    defaults_text = files("scribe_rpg").joinpath("defaults.yaml").read_text("utf-8")
+    defaults = yaml.safe_load(defaults_text)
+    data = yaml.safe_load(text)
+    # steps in no chain are built in; a config defining one fails, so they
+    # are written as comments
+    voice = defaults["master"]["voice"]
+    for name in [k for k in voice if k not in [*voice["chain"], "chain", "stereo"]]:
+        del voice[name]
+        assert f"    # {name}:" in text
+    assert data["master"] == defaults["master"]
+    assert data["input"] == defaults["input"]
+    assert data["transcribe"].pop("glossary") == "glossary.txt"
+    assert data["transcribe"]["whisper"].pop("language") == "pl"
+    defaults["transcribe"]["whisper"].pop("language")
+    assert data["transcribe"] == defaults["transcribe"]
+    assert "every setting with its default" in text
+    assert _load(tmp_path, text).glossary_path == tmp_path / "glossary.txt"
+
+
+def test_render_full_only_master():
+    text = init.render_config(full=True, only="master")
+    assert _keys(text) == ["input", "master"]
+    assert "rumble:" in text
+
+
+def test_write_only_master_skips_glossary(tmp_path):
+    written, kept = init.write(tmp_path, only="master")
+    assert [p.name for p in written] == ["scribe.yaml"] and kept == []
+    assert not (tmp_path / "glossary.txt").exists()
