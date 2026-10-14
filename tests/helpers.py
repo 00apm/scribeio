@@ -1,4 +1,4 @@
-"""Builders for synthetic test data. Fake accounts and names only."""
+"""Shared test helpers: synthetic data (fake accounts and names only), `invoke`."""
 
 from __future__ import annotations
 
@@ -7,7 +7,9 @@ import zipfile
 from pathlib import Path
 
 import numpy as np
+from click.testing import CliRunner
 
+from scribe_rpg.cli import main
 from scribe_rpg.transcribe.session import RawSession, Segment, TrackInfo, Word
 
 START = "2026-01-01T18:00:00.000Z"
@@ -165,3 +167,8 @@ def make_flac(
         check=True,
     )  # fmt: skip
     return path
+
+
+def invoke(*args):
+    """Run the `scribe` command in-process; arguments may be paths."""
+    return CliRunner().invoke(main, [str(a) for a in args])

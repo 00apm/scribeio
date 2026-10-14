@@ -1,0 +1,4 @@
+# sdist: the whole test suite with its helpers and data, never the local-only tests
+graft tests
+prune tests/local
+global-exclude __pycache__ *.py[co]

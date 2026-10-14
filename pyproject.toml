@@ -40,6 +40,8 @@ scribe_rpg = ["defaults.yaml", "templates/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# tests in subfolders import the shared tests/helpers.py
+pythonpath = ["tests"]
 addopts = "-ra"
 markers = [
     "gpu: needs CUDA + WhisperX + the local excerpt in tests/local/ (deselect with -m 'not gpu')",
