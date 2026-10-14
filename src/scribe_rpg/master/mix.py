@@ -26,13 +26,11 @@ from scribe_rpg.master.render import (
     chain_filter,
     measure,
     measure_filter,
+    parse_integrated,
+    parse_peak,
     step_filter,
     track_gains,
 )
-
-# Appended to the mix chain of every preview file: all files end at the same
-# loudness, so they are compared by tone and dynamics, not volume.
-MATCH = Step("match", "loudness", {"target": -19, "dual_mono": True}, "preview")
 
 OnMeasured = Callable[[str, list[Measured]], None]
 
@@ -86,7 +84,6 @@ def graph(
     mix_steps: list[Step],
     mix_gains: Gains,
     channels: str,
-    mix_upto: int | None = None,
     split: bool = False,
 ) -> str:
     """The whole filter graph, ending in the ``[out]`` label.
@@ -94,7 +91,7 @@ def graph(
     With `split`, each track's processed audio is also labelled ``[k<i>]``
     (``asplit`` after its chain, before any copy to stereo for the mix).
     """
-    mix_chain = chain_filter(mix_steps, mix_gains, mix_upto)
+    mix_chain = chain_filter(mix_steps, mix_gains)
     return _graph(plans, channels, mix_chain, split) + "[out]"
 
 
@@ -164,6 +161,26 @@ def measure_all(
     return mix_gains
 
 
+def mix_level(
+    plans: list[TrackPlan],
+    mix_steps: list[Step],
+    mix_gains: Gains,
+    channels: str,
+    label: str,
+) -> tuple[float | None, float | None]:
+    """Loudness and sample peak of the mix, in one run (output discarded).
+
+    Returns:
+        (integrated loudness in LUFS, sample peak in dBFS); each None if
+        the mix is silent.
+    """
+    meter = "ebur128=peak=sample:dualmono=true:framelog=verbose"
+    text = _graph(plans, channels, f"{chain_filter(mix_steps, mix_gains)},{meter}")
+    args = [*_inputs(plans), "-filter_complex", text, "-f", "null", "-"]
+    stderr = ffmpeg.run(args, f"measure {label}").stderr
+    return parse_integrated(stderr), parse_peak(stderr)
+
+
 def render(
     plans: list[TrackPlan],
     mix_steps: list[Step],
@@ -173,7 +190,6 @@ def render(
     fmt: str,
     bitrate: str,
     on_progress: Callable[[float], None] | None = None,
-    mix_upto: int | None = None,
     tracks_dir: Path | None = None,
 ) -> None:
     """The final run: all tracks, chains, mix, mix chain, encode, to `out`.
@@ -199,7 +215,7 @@ def render(
     args = [
         *_inputs(plans),
         "-filter_complex",
-        graph(plans, mix_steps, mix_gains, channels, mix_upto, split),
+        graph(plans, mix_steps, mix_gains, channels, split),
         "-map", "[out]", *encode_args(fmt, bitrate), "-t", f"{total:.6f}",
         "-y", str(out),
     ]  # fmt: skip

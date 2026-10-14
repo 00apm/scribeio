@@ -28,6 +28,7 @@ Gains = dict[int, float | None]  # chain index of a loudness step -> dB (None: s
 # At or below this, BS.1770 gating found nothing to measure: a silent track.
 SILENT_LUFS = -70.0
 _INTEGRATED = re.compile(r"^\s*I:\s*(-?inf|-?\d+(?:\.\d+)?)\s*LUFS", re.MULTILINE)
+_PEAK = re.compile(r"^\s*Peak:\s*(-?inf|-?\d+(?:\.\d+)?)\s*dBFS", re.MULTILINE)
 
 
 @dataclass(frozen=True)
@@ -105,6 +106,16 @@ def parse_integrated(stderr: str) -> float | None:
         return None
     value = float(match.group(1))
     return None if value <= SILENT_LUFS else value
+
+
+def parse_peak(stderr: str) -> float | None:
+    """Sample peak (dBFS) from ebur128's summary (``peak=sample``); None if
+    silent or absent."""
+    _, found, summary = stderr.rpartition("Summary:")
+    match = _PEAK.search(summary) if found else None
+    if match is None or "inf" in match.group(1):
+        return None
+    return float(match.group(1))
 
 
 def measure(inputs: list[str], graph: str, label: str) -> float | None:

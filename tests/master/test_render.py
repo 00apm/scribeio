@@ -8,6 +8,7 @@ from scribe_rpg.master.render import (
     chain_filter,
     measure_filter,
     parse_integrated,
+    parse_peak,
     step_filter,
 )
 
@@ -128,6 +129,24 @@ def test_parse_integrated_silence(value):
 
 def test_parse_integrated_without_summary():
     assert parse_integrated("no ebur128 here") is None
+
+
+PEAK = (
+    SUMMARY
+    + """
+  Sample peak:
+    Peak:       -1.0 dBFS
+"""
+)
+
+
+def test_parse_peak_reads_the_summary():
+    assert parse_peak(PEAK) == -1.0
+
+
+def test_parse_peak_silence_or_absent():
+    assert parse_peak(PEAK.replace("-1.0 dBFS", "-inf dBFS")) is None
+    assert parse_peak("no ebur128 here") is None
 
 
 def test_mix_graph_two_voices_and_music_mono():

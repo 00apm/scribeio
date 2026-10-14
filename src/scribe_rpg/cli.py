@@ -395,6 +395,10 @@ def _parse_at(
     help="Preview: join each voice's most active stretch.",
 )  # fmt: skip
 @click.option(
+    "--before-after", is_flag=True,
+    help="Preview: only 00-original and the final file.",
+)  # fmt: skip
+@click.option(
     "--format", "fmt", type=click.Choice(["mp3", "m4a", "opus"]),
     help="Output format (default: master.format in the config, else mp3).",
 )  # fmt: skip
@@ -413,6 +417,7 @@ def master(
     at: int | None,
     length: int | None,
     montage: bool,
+    before_after: bool,
     fmt: str | None,
     write_tracks: bool,
 ) -> None:
@@ -422,10 +427,11 @@ def master(
     without info.txt it needs --start). Writes <name>_master.<format>: every
     track through its chain, mixed, the mix chain, encoded. With --preview,
     writes only <name>_preview/ for a short excerpt: tracks/ (the excerpt of
-    every track, unprocessed) and listening files at equal loudness.
+    every track, unprocessed) and a listening file per step, at one loudness.
     """
     used = [opt for opt, v in [("--at", at), ("--length", length)] if v is not None]
     used += ["--montage"] if montage else []
+    used += ["--before-after"] if before_after else []
     if used and not preview:
         raise click.UsageError(f"{', '.join(used)} needs --preview")
     if at is not None and montage:
@@ -470,7 +476,8 @@ def master(
         if preview:
             clean = cfg.settings["transcribe"]["cleanup"]
             ex = _find_excerpt(rec, clean, length or 90, at, montage, progress)
-            _write_preview(rec, ex, mcfg, folder / f"{name}_preview", progress)
+            _write_preview(rec, ex, mcfg, folder / f"{name}_preview",
+                           before_after, progress)  # fmt: skip
         else:
             tracks_dir = folder / f"{name}_tracks" if write_tracks else None
             _write_master(rec, mcfg, folder / f"{name}_master.{mcfg.format}",
@@ -505,6 +512,7 @@ def _write_preview(
     ex: Excerpt,
     mcfg: MasterConfig,
     folder: Path,
+    before_after: bool,
     progress: Progress,
 ) -> None:
     """Cut the excerpt out of every track, then write the listening files."""
@@ -517,7 +525,9 @@ def _write_preview(
         craig.Track(t.account, t.kind, p)
         for t, p in zip(rec.tracks, paths, strict=True)
     ]
-    preview.write_files(cut, mcfg, folder, progress)
+    preview.write_files(
+        cut, mcfg, folder, progress, _measured_printer(progress), before_after
+    )
     progress.console.print(f"preview: {folder}", markup=False, soft_wrap=True)
 
 

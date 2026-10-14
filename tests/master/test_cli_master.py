@@ -71,7 +71,8 @@ def test_master_preview_at_past_the_end(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "extra", [("--at", "00:01:00"), ("--length", "30"), ("--montage",)]
+    "extra",
+    [("--at", "00:01:00"), ("--length", "30"), ("--montage",), ("--before-after",)],
 )
 def test_master_preview_options_need_preview(tmp_path, extra):
     folder = craig_dir(tmp_path / "tracks")
@@ -305,13 +306,76 @@ def test_master_tracks_not_with_preview(tmp_path):
     assert "--tracks cannot be used with --preview" in result.output
 
 
-@pytest.mark.ffmpeg
-def test_master_preview_writes_matched_files(tmp_path):
+STEP_FILES = [
+    "00-original.flac", "01-voice-rumble.flac", "02-voice-level.flac",
+    "03-voice-comp.flac", "04-voice-eq.flac", "05-voice-loudness.flac",
+    "06-music-loudness.flac", "07-mix-limiter.flac", "08-final.mp3",
+]  # fmt: skip
+
+
+def flac_peak(path):
+    """Sample peak in dBFS (astats, all channels)."""
+    done = ffmpeg.run(
+        ["-i", str(path), "-af", "astats=measure_perchannel=none", "-f", "null", "-"],
+        "peak",
+    )
+    return float(re.findall(r"Peak level dB:\s*(-?[\d.]+)", done.stderr)[-1])
+
+
+def run_preview(tmp_path, *extra):
     folder = preview_dir(tmp_path / "rec" / "tracks")
-    result = invoke("master", folder, *START_ARG, "--preview", "--length", "20")
+    args = ("master", folder, *START_ARG, "--preview", "--length", "20", *extra)
+    result = invoke(*args)
     assert result.exit_code == 0, result.output
-    preview = tmp_path / "rec" / "2026-02-03_preview"
-    original, final = preview / "00-original.flac", preview / "08-final.mp3"
-    assert lufs(original) == pytest.approx(-19, abs=0.5)
-    assert lufs(final) == pytest.approx(-19, abs=0.5)
+    return result, tmp_path / "rec" / "2026-02-03_preview"
+
+
+def printed_level(output):
+    match = re.search(r"preview level: (-?[\d.]+) LUFS", output)
+    assert match is not None, output
+    return float(match.group(1))
+
+
+@pytest.mark.ffmpeg
+def test_master_preview_writes_every_step(tmp_path):
+    result, preview = run_preview(tmp_path)
+    assert sorted(p.name for p in preview.iterdir()) == sorted([*STEP_FILES, "tracks"])
+    levels = [lufs(preview / name) for name in STEP_FILES]
+    assert max(levels) - min(levels) <= 0.5 and max(levels) <= -18.5
+    for name in STEP_FILES[:-1]:
+        assert flac_peak(preview / name) <= -0.9, name
+    assert printed_level(result.output) == pytest.approx(-19.0)
+    assert re.search(r"gm_account: level -?[\d.]+ LUFS →", result.output)
     assert not (tmp_path / "rec" / "2026-02-03_master.mp3").exists()
+
+
+@pytest.mark.ffmpeg
+def test_master_preview_lowers_level_for_peaks(tmp_path, monkeypatch):
+    from scribe_rpg.master import preview as preview_module
+
+    # synthetic tones peak too close to their loudness to need lowering
+    monkeypatch.setattr(preview_module, "MATCH_PEAK", -30.0)
+    result, preview = run_preview(tmp_path)
+    level = printed_level(result.output)
+    assert level < -19 and "lowered" in result.output
+    levels = [lufs(preview / name) for name in STEP_FILES]
+    assert max(levels) - min(levels) <= 0.5
+    assert levels[0] == pytest.approx(level, abs=0.5)
+    for name in STEP_FILES[:-1]:
+        assert flac_peak(preview / name) <= -29.9, name
+
+
+@pytest.mark.ffmpeg
+def test_master_preview_before_after(tmp_path):
+    _, preview = run_preview(tmp_path, "--before-after")
+    names = sorted(p.name for p in preview.iterdir())
+    assert names == ["00-original.flac", "08-final.mp3", "tracks"]
+
+
+@pytest.mark.ffmpeg
+def test_master_preview_stereo(tmp_path):
+    config = tmp_path / "scribe.yaml"
+    config.write_text("master:\n  channels: stereo\n", encoding="utf-8")
+    _, preview = run_preview(tmp_path, "-c", config)
+    for name in STEP_FILES:
+        assert ", stereo," in audio_stream(preview / name), name
