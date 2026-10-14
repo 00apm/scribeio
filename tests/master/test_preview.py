@@ -48,6 +48,24 @@ def test_cut_one_range_keeps_names(tmp_path):
 
 
 @pytest.mark.ffmpeg
+def test_cut_seeks_after_decoding(tmp_path, monkeypatch):
+    # ffmpeg 4.4.2 (conda-forge, Windows) crashes seeking a FLAC on input
+    # (-ss before -i); seeking on output decodes up to the start instead
+    src = make_flac(tmp_path / "1-a.flac", 10)
+    seen = []
+    real = ffmpeg.run
+
+    def spy(args, label):
+        seen.append(args)
+        return real(args, label)
+
+    monkeypatch.setattr(ffmpeg, "run", spy)
+    cut([Track("a", "player", src)], [(2, 7)], tmp_path / "t")
+    [args] = seen
+    assert args.index("-i") < args.index("-ss")
+
+
+@pytest.mark.ffmpeg
 def test_cut_several_ranges_joined(tmp_path):
     a = make_flac(tmp_path / "1-a.flac", 10)
     b = make_flac(tmp_path / "2-b.flac", 10, channels=2)

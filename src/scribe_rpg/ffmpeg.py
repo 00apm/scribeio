@@ -107,7 +107,9 @@ def run(args: list[str], label: str) -> subprocess.CompletedProcess[str]:
     """
     done = attempt(args)
     if done.returncode != 0:
-        raise ScribeError(f"ffmpeg failed ({label}): {_tail(done.stderr)}")
+        raise ScribeError(
+            f"ffmpeg failed ({label}): {_tail(done.stderr, done.returncode)}"
+        )
     return done
 
 
@@ -148,7 +150,7 @@ def run_progress(
         proc.stderr.close()
     _check_interrupted(code)
     if code != 0:
-        raise ScribeError(f"ffmpeg failed ({label}): {_tail(stderr_text)}")
+        raise ScribeError(f"ffmpeg failed ({label}): {_tail(stderr_text, code)}")
     return stderr_text
 
 
@@ -189,7 +191,7 @@ def decode(
         proc.stderr.close()
     _check_interrupted(code)
     if code != 0:
-        raise ScribeError(f"ffmpeg failed (decode {path.name}): {_tail(err)}")
+        raise ScribeError(f"ffmpeg failed (decode {path.name}): {_tail(err, code)}")
 
 
 def duration(path: Path) -> float:
@@ -202,7 +204,8 @@ def duration(path: Path) -> float:
     done = attempt(["-i", str(path)])
     m = re.search(r"Duration: (\d+):(\d\d):(\d\d(?:\.\d+)?)", done.stderr)
     if m is None:
-        raise ScribeError(f"ffmpeg failed (duration {path.name}): {_tail(done.stderr)}")
+        reason = _tail(done.stderr, done.returncode)
+        raise ScribeError(f"ffmpeg failed (duration {path.name}): {reason}")
     h, mnt, s = m.groups()
     return int(h) * 3600 + int(mnt) * 60 + float(s)
 
@@ -220,10 +223,17 @@ def _read(stream: IO[bytes], size: int) -> bytes:
     return b"".join(parts)
 
 
-def _tail(stderr: str, lines: int = 5) -> str:
-    """The last non-empty lines of ffmpeg's stderr, joined with " | "."""
+def _tail(stderr: str, code: int, lines: int = 5) -> str:
+    """The last non-empty lines of ffmpeg's stderr, joined with " | ".
+
+    A crashed ffmpeg prints nothing: then its exit `code` is the only clue
+    (hex for Windows codes such as 0xC0000005, an access violation).
+    """
     kept = [line.strip() for line in stderr.splitlines() if line.strip()]
-    return " | ".join(kept[-lines:]) or "no error output"
+    if kept:
+        return " | ".join(kept[-lines:])
+    shown = f"{code:#x}" if code > 255 else str(code)
+    return f"no error output, exit code {shown}"
 
 
 def workers() -> int:

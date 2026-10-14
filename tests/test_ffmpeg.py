@@ -190,3 +190,12 @@ def test_parallel_stops_at_the_first_error(monkeypatch, error):
     assert sorted(started) == [0, 1]
     ffmpeg.run(["-f", "lavfi", "-i", "anullsrc", "-t", "0.1", "-f", "null", "-"],
                "after")  # fmt: skip
+
+
+def test_silent_crash_names_the_exit_code(monkeypatch):
+    # a crashing ffmpeg prints nothing; the exit code is the only clue
+    code = 0xC0000005 if sys.platform == "win32" else 139
+    fake_ffmpeg(monkeypatch, f"import sys; sys.exit({code})")
+    shown = f"{code:#x}" if code > 255 else str(code)
+    with pytest.raises(ScribeError, match=f"no error output, exit code {shown}"):
+        ffmpeg.run([], "test")
