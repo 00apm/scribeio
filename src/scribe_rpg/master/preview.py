@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
+import sys
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
@@ -14,6 +16,7 @@ from pathlib import Path
 from typing import TypeVar
 
 from scribe_rpg import craig, ffmpeg
+from scribe_rpg.errors import ScribeError
 from scribe_rpg.master import mix, report
 from scribe_rpg.master.catalogue import Step
 from scribe_rpg.master.config import MasterConfig
@@ -176,6 +179,54 @@ def step_files(
     return [*files, final]
 
 
+def solo_files(
+    plan: mix.TrackPlan, cfg: MasterConfig, before_after: bool = False
+) -> list[PreviewFile]:
+    """The listening files of one voice track alone (pure: nothing runs).
+
+    ``00-original``, then one cumulative file per step of the track's own
+    chain (``01-rumble.flac``), then ``NN-final.<format>``: the track after
+    its whole chain, no mix chain (like its ``--tracks`` file). Files keep
+    the channels the track is processed in: stereo only for a voice with
+    ``stereo: true`` in a stereo master, mono otherwise.
+    """
+    keeps_stereo = cfg.channels == "stereo" and plan.stereo
+    channels = "stereo" if keeps_stereo else "mono"
+    n = len(plan.steps)
+
+    def file(name: str, one: mix.TrackPlan, fmt: str = "flac") -> PreviewFile:
+        return PreviewFile(name, [one], [], fmt, channels)
+
+    original = file("00-original.flac", replace(plan, steps=[], upto=None))
+    final = file(
+        f"{n + 1:02d}-final.{cfg.format}", replace(plan, upto=None), cfg.format
+    )
+    if before_after:
+        return [original, final]
+    steps = [
+        file(f"{k:02d}-{step.name}.flac", replace(plan, upto=k))
+        for k, step in enumerate(plan.steps, 1)
+    ]
+    return [original, *steps, final]
+
+
+def open_folder(path: Path) -> None:
+    """Open `path` in the system file manager.
+
+    Raises:
+        ScribeError: If no file manager could be started.
+    """
+    try:
+        if sys.platform == "win32":
+            os.startfile(path)  # type: ignore[attr-defined,unused-ignore]
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(path)])
+        else:
+            subprocess.Popen(["xdg-open", str(path)])
+    except OSError as e:
+        raise ScribeError(f"could not open {path}: {e}") from e
+
+
 def own_chains(full: list[mix.TrackPlan], cfg: MasterConfig) -> list[str]:
     """Accounts of voice tracks whose chain differs from ``voice`` (by names)."""
     return [
@@ -208,6 +259,7 @@ def write_files(
     progress: Progress,
     verbose: bool = False,
     before_after: bool = False,
+    solo: str | None = None,
 ) -> list[Path]:
     """Write the listening files for the cut `tracks` into `dest`.
 
@@ -215,7 +267,9 @@ def write_files(
     reuses those gains for its prefix. Then each file's loudness and peak
     are measured, one common level is chosen (`common_level`) and every file
     is written matched to it. Files are measured and written in parallel.
-    With `verbose`, each track's measured levels are printed.
+    With `verbose`, each track's measured levels are printed. With `solo`
+    (the sanitized account of a voice track), only that track is measured
+    and written, through its own chain (`solo_files`).
 
     Returns:
         The written paths, in file order.
@@ -223,9 +277,15 @@ def write_files(
     full = [
         mix.TrackPlan(t, cfg.chain_for(t), stereo=cfg.keeps_stereo(t)) for t in tracks
     ]
-    mix_gains = report.measure(full, cfg.mix, cfg.channels, progress, verbose)
-    files = step_files(full, cfg, before_after)
-    if not before_after:
+    if solo is not None:
+        full = [p for p in full if craig.sanitize(p.track.account) == solo][:1]
+        # measured first: solo_files copies the plan with its gains
+        mix_gains = report.measure(full, [], cfg.channels, progress, verbose)
+        files = solo_files(full[0], cfg, before_after)
+    else:
+        mix_gains = report.measure(full, cfg.mix, cfg.channels, progress, verbose)
+        files = step_files(full, cfg, before_after)
+    if not before_after and solo is None:
         for account in own_chains(full, cfg):
             progress.console.print(
                 f"{account}: own chain, fully processed from file 01", markup=False

@@ -1,5 +1,8 @@
 """Preview files: cutting the excerpt, the per-step file list, the level."""
 
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -7,13 +10,16 @@ import pytest
 from scribe_rpg import ffmpeg
 from scribe_rpg.config import load_config
 from scribe_rpg.craig import Track
+from scribe_rpg.errors import ScribeError
 from scribe_rpg.master.config import resolve
 from scribe_rpg.master.mix import TrackPlan
 from scribe_rpg.master.preview import (
     common_level,
     cut,
     fresh_folder,
+    open_folder,
     own_chains,
+    solo_files,
     step_files,
 )
 
@@ -148,3 +154,74 @@ def test_step_files_before_after():
 )
 def test_common_level(levels, expected):
     assert common_level(levels) == pytest.approx(expected)
+
+
+# --- solo files (pure) ---------------------------------------------------------
+
+
+def cfg_from(tmp_path, text):
+    path = tmp_path / "scribe.yaml"
+    path.write_text("master:\n" + text, encoding="utf-8")
+    return resolve(load_config(path).settings["master"])
+
+
+def test_solo_files_default_chain():
+    [plan] = plans_for([Track("p1", "player", Path("p1.flac"))])
+    files = solo_files(plan, CFG)
+    assert names(files) == [
+        "00-original.flac", "01-rumble.flac", "02-level.flac", "03-comp.flac",
+        "04-eq.flac", "05-loudness.flac", "06-final.mp3",
+    ]  # fmt: skip
+    assert [len(f.plans) for f in files] == [1] * 7
+    assert files[0].plans[0].steps == []
+    assert [f.plans[0].upto for f in files[1:]] == [1, 2, 3, 4, 5, None]
+    assert all(f.mix_steps == [] for f in files)
+    assert files[-1].fmt == "mp3" and files[3].fmt == "flac"
+    assert {f.channels for f in files} == {"mono"}
+
+
+def test_solo_files_follow_the_track_channels(tmp_path):
+    text = "  channels: stereo\n  players:\n    p1:\n      stereo: true\n"
+    cfg = cfg_from(tmp_path, text)
+    tracks = [Track(a, "player", Path(f"{a}.flac")) for a in ("p1", "p2")]
+    p1, p2 = plans_for(tracks, cfg)
+    assert {f.channels for f in solo_files(p1, cfg)} == {"stereo"}
+    assert {f.channels for f in solo_files(p2, cfg)} == {"mono"}
+
+
+def test_solo_files_before_after():
+    [plan] = plans_for([Track("p1", "player", Path("p1.flac"))])
+    files = solo_files(plan, CFG, before_after=True)
+    assert names(files) == ["00-original.flac", "06-final.mp3"]
+
+
+# --- open_folder ------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "platform, command", [("darwin", "open"), ("linux", "xdg-open")]
+)
+def test_open_folder_runs_the_file_manager(monkeypatch, tmp_path, platform, command):
+    calls = []
+    monkeypatch.setattr(sys, "platform", platform)
+    monkeypatch.setattr(subprocess, "Popen", lambda args: calls.append(args))
+    open_folder(tmp_path)
+    assert calls == [[command, str(tmp_path)]]
+
+
+def test_open_folder_on_windows(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(os, "startfile", calls.append, raising=False)
+    open_folder(tmp_path)
+    assert calls == [tmp_path]
+
+
+def test_open_folder_failure_is_a_scribe_error(monkeypatch, tmp_path):
+    def fail(args):
+        raise OSError("no file manager")
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(subprocess, "Popen", fail)
+    with pytest.raises(ScribeError, match="could not open"):
+        open_folder(tmp_path)

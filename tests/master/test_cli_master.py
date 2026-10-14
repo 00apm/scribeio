@@ -72,7 +72,14 @@ def test_master_preview_at_past_the_end(tmp_path):
 
 @pytest.mark.parametrize(
     "extra",
-    [("--at", "00:01:00"), ("--length", "30"), ("--montage",), ("--before-after",)],
+    [
+        ("--at", "00:01:00"),
+        ("--length", "30"),
+        ("--montage",),
+        ("--before-after",),
+        ("--solo", "gm_account"),
+        ("--open",),
+    ],  # fmt: skip
 )
 def test_master_preview_options_need_preview(tmp_path, extra):
     folder = craig_dir(tmp_path / "tracks")
@@ -401,3 +408,60 @@ def test_master_preview_stereo(tmp_path):
     _, preview = run_preview(tmp_path, "-c", config)
     for name in STEP_FILES:
         assert ", stereo," in audio_stream(preview / name), name
+
+
+SOLO_FILES = [
+    "00-original.flac", "01-rumble.flac", "02-level.flac", "03-comp.flac",
+    "04-eq.flac", "05-loudness.flac", "06-final.mp3",
+]  # fmt: skip
+
+
+@pytest.mark.ffmpeg
+def test_master_preview_solo(tmp_path):
+    result, preview = run_preview(tmp_path, "--solo", "player_one")
+    assert sorted(p.name for p in preview.iterdir()) == sorted([*SOLO_FILES, "tracks"])
+    for name in SOLO_FILES:
+        assert ", mono," in audio_stream(preview / name), name
+    assert "✔ measure player_one (" in result.output
+    assert "✔ measure gm_account" not in result.output
+    # player_one speaks at 20-40 s and 60-80 s
+    start = re.search(r"excerpt: (\d\d:\d\d:\d\d), 20 s", result.output)
+    assert start is not None and start.group(1) in {"00:00:20", "00:01:00"}
+    assert len(list((preview / "tracks").iterdir())) == 4  # all cut, for Audacity
+
+
+@pytest.mark.ffmpeg
+def test_master_preview_solo_matches_sanitized_names(tmp_path):
+    _, preview = run_preview(tmp_path, "--solo", "Gra cz'1 Łucja")
+    assert (preview / "06-final.mp3").exists()
+
+
+def test_master_preview_solo_unknown_account(tmp_path):
+    folder = preview_dir(tmp_path / "rec" / "tracks")
+    result = invoke("master", folder, *START_ARG, "--preview", "--solo", "nobody")
+    assert result.exit_code == 1
+    assert "--solo: no voice track 'nobody'" in result.output
+    assert "gm_account" in result.output
+
+
+@pytest.mark.ffmpeg
+def test_master_preview_open(tmp_path, monkeypatch):
+    from scribe_rpg.master import preview as preview_module
+
+    opened = []
+    monkeypatch.setattr(preview_module, "open_folder", opened.append)
+    _, preview = run_preview(tmp_path, "--before-after", "--open")
+    assert opened == [preview]
+
+
+@pytest.mark.ffmpeg
+def test_master_preview_open_failure_is_a_warning(tmp_path, monkeypatch):
+    from scribe_rpg.master import preview as preview_module
+
+    def fail(path):
+        raise ScribeError(f"could not open {path}: no file manager")
+
+    monkeypatch.setattr(preview_module, "open_folder", fail)
+    result, preview = run_preview(tmp_path, "--before-after", "--open")
+    assert "⚠ could not open" in result.output
+    assert (preview / "08-final.mp3").exists()

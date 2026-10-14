@@ -398,6 +398,14 @@ def _parse_at(
     help="Preview: only 00-original and the final file.",
 )  # fmt: skip
 @click.option(
+    "--solo", metavar="ACCOUNT",
+    help="Preview: one voice track alone, through its own chain, no mix.",
+)  # fmt: skip
+@click.option(
+    "--open", "open_after", is_flag=True,
+    help="Preview: open the folder in the file manager when done.",
+)  # fmt: skip
+@click.option(
     "--format", "fmt", type=click.Choice(["mp3", "m4a", "opus"]),
     help="Output format (default: master.format in the config, else mp3).",
 )  # fmt: skip
@@ -421,6 +429,8 @@ def master(
     length: int | None,
     montage: bool,
     before_after: bool,
+    solo: str | None,
+    open_after: bool,
     fmt: str | None,
     write_tracks: bool,
     verbose: bool,
@@ -433,9 +443,11 @@ def master(
     writes only <name>_preview/ for a short excerpt: tracks/ (the excerpt of
     every track, unprocessed) and a listening file per step, at one loudness.
     """
-    used = [opt for opt, v in [("--at", at), ("--length", length)] if v is not None]
-    used += ["--montage"] if montage else []
-    used += ["--before-after"] if before_after else []
+    valued = [("--at", at), ("--length", length), ("--solo", solo)]
+    used = [opt for opt, v in valued if v is not None]
+    flags = [("--montage", montage), ("--before-after", before_after),
+             ("--open", open_after)]  # fmt: skip
+    used += [opt for opt, on in flags if on]
     if used and not preview:
         raise click.UsageError(f"{', '.join(used)} needs --preview")
     if at is not None and montage:
@@ -478,10 +490,15 @@ def master(
         name = name or rec.start.strftime("%Y-%m-%d")
         folder = out_dir or input_path.resolve().parent
         if preview:
+            account = _solo_account(rec, solo) if solo is not None else None
             clean = cfg.settings["transcribe"]["cleanup"]
-            ex = _find_excerpt(rec, clean, length or 90, at, montage, progress)
-            _write_preview(rec, ex, mcfg, folder / f"{name}_preview",
-                           before_after, verbose, progress)  # fmt: skip
+            ex = _find_excerpt(rec, clean, length or 90, at, montage, account,
+                               progress)  # fmt: skip
+            out = folder / f"{name}_preview"
+            _write_preview(rec, ex, mcfg, out, before_after, verbose, account,
+                           progress)  # fmt: skip
+            if open_after:
+                _open(out, progress)
         else:
             tracks_dir = folder / f"{name}_tracks" if write_tracks else None
             _write_master(rec, mcfg, folder / f"{name}_master.{mcfg.format}",
@@ -494,16 +511,26 @@ def _find_excerpt(
     length: int,
     at: int | None,
     montage: bool,
+    solo: str | None,
     progress: Progress,
 ) -> Excerpt:
-    """Measure every track's activity and choose the preview excerpt."""
+    """Measure every track's activity and choose the preview excerpt.
+
+    With `solo` (a sanitized account), only that voice counts: the window is
+    where it is most active (music still breaks ties).
+    """
     from scribe_rpg.master import excerpt
 
+    tracks = [
+        t
+        for t in rec.tracks
+        if solo is None or t.kind == "music" or craig.sanitize(t.account) == solo
+    ]
     with progress.step("find excerpt"):
         acts = excerpt.activities(
-            [t.path for t in rec.tracks], clean["frame_ms"], clean["energy_db"]
+            [t.path for t in tracks], clean["frame_ms"], clean["energy_db"]
         )
-        pairs = list(zip(rec.tracks, acts, strict=True))
+        pairs = list(zip(tracks, acts, strict=True))
         voice = {t.account: a for t, a in pairs if t.kind == "player"}
         music = [a for t, a in pairs if t.kind == "music"]
         ex = excerpt.choose(voice, music, length, at, montage)
@@ -518,6 +545,7 @@ def _write_preview(
     folder: Path,
     before_after: bool,
     verbose: bool,
+    solo: str | None,
     progress: Progress,
 ) -> None:
     """Cut the excerpt out of every track, then write the listening files."""
@@ -530,8 +558,32 @@ def _write_preview(
         craig.Track(t.account, t.kind, p)
         for t, p in zip(rec.tracks, paths, strict=True)
     ]
-    preview.write_files(cut, mcfg, folder, progress, verbose, before_after)
+    preview.write_files(cut, mcfg, folder, progress, verbose, before_after, solo)
     progress.console.print(f"preview: {folder}", markup=False, soft_wrap=True)
+
+
+def _solo_account(rec: craig.Recording, solo: str) -> str:
+    """The sanitized account `--solo` names among the voice tracks.
+
+    Raises:
+        ScribeError: If no voice track matches; lists the voice tracks.
+    """
+    wanted = craig.sanitize(solo)
+    accounts = [craig.sanitize(t.account) for t in rec.players]
+    if wanted not in accounts:
+        names = ", ".join(t.account for t in rec.players)
+        raise ScribeError(f"--solo: no voice track {solo!r}; voice tracks: {names}")
+    return wanted
+
+
+def _open(folder: Path, progress: Progress) -> None:
+    """Open the preview folder; a failure is only a warning."""
+    from scribe_rpg.master import preview
+
+    try:
+        preview.open_folder(folder)
+    except ScribeError as e:
+        progress.warn(str(e))
 
 
 def _write_master(
