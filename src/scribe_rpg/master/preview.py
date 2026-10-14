@@ -112,8 +112,10 @@ def step_files(
 
     File k is cumulative: every voice chain up to its step k, never one
     filter on raw audio. Numbers follow the config's chains, so a name is
-    stable: music files are skipped when no track is music, but their
-    numbers are not reused. A voice with its own chain (other step names
+    stable: voice (music) files are skipped when no track is a voice
+    (music), but their numbers are not reused. Voice files leave the music
+    out: it is still untreated there and would cover the voices; it joins
+    at its first music step. A voice with its own chain (other step names
     than ``voice``) is fully processed in every voice file.
 
     Args:
@@ -125,8 +127,9 @@ def step_files(
     def file(
         nn: int, name: str, upto: Callable[[mix.TrackPlan], int | None],
         mix_steps: list[Step], fmt: str = "flac",
+        among: list[mix.TrackPlan] = full,
     ) -> PreviewFile:  # fmt: skip
-        plans = [replace(p, upto=upto(p)) for p in full]
+        plans = [replace(p, upto=upto(p)) for p in among]
         return PreviewFile(f"{nn:02d}-{name}", plans, mix_steps, fmt, cfg.channels)
 
     def is_music(p: mix.TrackPlan) -> bool:
@@ -142,14 +145,14 @@ def step_files(
     if before_after:
         return [original, final]
     files = [original]
-    for k, step in enumerate(cfg.voice):
+    voices = [p for p in full if not is_music(p)]
+    for k, step in enumerate(cfg.voice if voices else []):
 
         def voice_upto(p: mix.TrackPlan, k: int = k) -> int | None:
-            if is_music(p):
-                return 0
             return k + 1 if _same_chain(p.steps, cfg.voice) else None
 
-        files.append(file(k + 1, f"voice-{step.name}.flac", voice_upto, []))
+        name = f"voice-{step.name}.flac"
+        files.append(file(k + 1, name, voice_upto, [], among=voices))
     if any(is_music(p) for p in full):
         for j, step in enumerate(cfg.music):
 

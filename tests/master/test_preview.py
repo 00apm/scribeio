@@ -94,12 +94,24 @@ def test_step_files_default_chain():
     ]  # fmt: skip
     original, comp, music = files[0], files[3], files[6]
     assert [p.steps for p in original.plans] == [[], [], []]
-    assert [p.upto for p in comp.plans] == [3, 3, 0]  # voices, voices, music
+    # voice files leave the (still untreated) music out; it joins at 06
+    assert [(p.track.kind, p.upto) for p in comp.plans] == [
+        ("player", 3), ("player", 3),
+    ]  # fmt: skip
+    assert len(original.plans) == 3
     assert comp.mix_steps == [] and comp.fmt == "flac"
     assert [p.upto for p in music.plans] == [None, None, 1]
     assert files[7].mix_steps == CFG.mix and files[7].fmt == "flac"
     assert files[8].mix_steps == CFG.mix and files[8].fmt == "mp3"
     assert all(f.channels == CFG.channels for f in files)
+
+
+def test_step_files_no_voice_keeps_numbers():
+    files = names(step_files(full_plans(0, 1), CFG))
+    assert files == [
+        "00-original.flac", "06-music-loudness.flac", "07-mix-limiter.flac",
+        "08-final.mp3",
+    ]  # fmt: skip
 
 
 def test_step_files_no_music_keeps_numbers():
