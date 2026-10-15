@@ -8,9 +8,13 @@ A recording is either the zip Craig produces or a folder of tracks:
       <id>_data/<n>-<account>.flac
       raw.dat         (ignored)
 
+Craig's FLAC download has the tracks at the top of the zip, without the
+project file and the ``*_data`` folder; both layouts are read.
+
 In a folder every FLAC is one track; its account is the file stem without a
-leading ``<n>-``. Config keys and music patterns match accounts after
-`sanitize`, applied to both sides.
+leading ``<n>-``. A folder with no FLACs but one ``*_data`` folder holding
+them is an extracted Craig zip and is read like the zip. Config keys and
+music patterns match accounts after `sanitize`, applied to both sides.
 
 A zip is extracted to a temporary folder that is deleted when the
 `open_recording` context ends, also on errors and Ctrl+C.
@@ -30,7 +34,16 @@ from pathlib import Path
 from scribe_rpg.errors import ScribeError
 
 TRACK_NUMBER = re.compile(r"^(\d+)-")
-ZIP_TRACK = re.compile(r"^[^/]+_data/[^/]+\.flac$")
+# A Craig download without FLAC tracks (AAC, Ogg)
+NO_FLAC = (
+    "no FLAC tracks; download the recording from Craig as FLAC or as an "
+    "Audacity project"
+)
+# Craig's other download formats and common audio files
+_OTHER_AUDIO = {".aac", ".ogg", ".opus", ".m4a", ".mp3", ".wav"}
+# A track in a Craig zip: in the *_data folder (Audacity, Audition
+# downloads) or at the top (FLAC download)
+ZIP_TRACK = re.compile(r"^(?:[^/]+_data/)?[^/]+\.flac$", re.IGNORECASE)
 
 
 def sanitize(name: str) -> str:
@@ -89,6 +102,18 @@ def dir_tracks(folder: Path) -> list[Path]:
 
     flacs = [f for f in folder.iterdir() if f.suffix.lower() == ".flac"]
     return sorted((f for f in flacs if f.is_file()), key=key)
+
+
+def track_dir(folder: Path) -> Path:
+    """The folder holding a track folder's FLACs.
+
+    That is `folder` itself, or, when it has no FLACs, its only ``*_data``
+    folder with FLACs (a Craig zip extracted as is).
+    """
+    if dir_tracks(folder):
+        return folder
+    data = [p for p in folder.glob("*_data") if p.is_dir() and dir_tracks(p)]
+    return data[0] if len(data) == 1 else folder
 
 
 @dataclass(frozen=True)
@@ -250,13 +275,18 @@ def open_recording(
     path = Path(path)
     if path.is_dir():
         info = path / "info.txt"
+        tracks = track_dir(path)
+        if info.is_file() and not dir_tracks(tracks) and _other_audio(path):
+            # an unpacked Craig download in another format (AAC, Ogg)
+            raise ScribeError(f"{path.resolve().name}: {NO_FLAC}")
         yield _read(
             info if info.is_file() else None,
-            path,
+            tracks,
             path.resolve().name,
             music_patterns,
             start,
-            complete=True,
+            # an extracted zip is Craig's own content, checked like the zip
+            complete=tracks == path,
         )
         return
     if not zipfile.is_zipfile(path):
@@ -272,10 +302,16 @@ def open_recording(
         )
 
 
-def _extract(zip_path: Path, dest: Path) -> Path:
-    """Extract info.txt and the FLAC tracks; return the ``*_data`` folder.
+def _other_audio(folder: Path) -> bool:
+    """Whether `folder` holds audio files that are not FLAC."""
+    return any(f.suffix.lower() in _OTHER_AUDIO for f in folder.iterdir())
 
-    The .aup project and raw.dat (raw data of every track) are skipped.
+
+def _extract(zip_path: Path, dest: Path) -> Path:
+    """Extract info.txt and the FLAC tracks; return the folder holding them.
+
+    The project file (.aup, .sesx) and raw.dat (raw data of every track) are
+    skipped.
     """
     with zipfile.ZipFile(zip_path) as zf:
         names = [n for n in zf.namelist() if n == "info.txt" or ZIP_TRACK.match(n)]
@@ -283,12 +319,11 @@ def _extract(zip_path: Path, dest: Path) -> Path:
             raise ScribeError(f"{zip_path.name}: not a Craig recording (no info.txt)")
         for name in names:
             zf.extract(name, dest)
-    data_dirs = sorted(p for p in dest.glob("*_data") if p.is_dir())
-    if len(data_dirs) != 1:
-        raise ScribeError(
-            f"{zip_path.name}: expected one *_data folder with FLAC tracks"
-        )
-    return data_dirs[0]
+    tracks = track_dir(dest)
+    if not dir_tracks(tracks):
+        # e.g. Craig's AAC or Ogg download, or two *_data folders
+        raise ScribeError(f"{zip_path.name}: {NO_FLAC}")
+    return tracks
 
 
 def _read(

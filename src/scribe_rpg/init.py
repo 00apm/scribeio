@@ -83,7 +83,8 @@ def speakers_from(
         players = [t.account for t in tracks if t.kind == "player"]
         return players, [t.account for t in tracks if t.kind == "music"]
     if source.is_dir():
-        names = [craig.account_of(f) for f in craig.dir_tracks(source)]
+        files = craig.dir_tracks(craig.track_dir(source))
+        names = [craig.account_of(f) for f in files]
         if not names:
             raise ScribeError(f"{source.name}: no FLAC files")
     else:

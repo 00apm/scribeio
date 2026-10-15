@@ -12,7 +12,7 @@ from scribe_rpg.errors import ScribeError
 from scribe_rpg.transcribe import session_json
 from scribe_rpg.transcribe.glossary import load_glossary, parse_glossary
 
-from helpers import craig_dir, craig_zip, raw_session
+from helpers import craig_dir, craig_unzipped, craig_zip, raw_session
 
 MUSIC = ["kenku"]
 
@@ -95,6 +95,12 @@ def test_speakers_from_zip(tmp_path):
     players, music = init.speakers_from(craig_zip(tmp_path), MUSIC)
     assert players == ["gm.account", "player.one"]
     assert music == ["Kenku FM#1234"]
+
+
+def test_speakers_from_unzipped_craig_folder(tmp_path):
+    players, music = init.speakers_from(craig_unzipped(tmp_path / "s"), MUSIC)
+    assert players == ["gm_account", "player_one"]
+    assert music == ["Kenku_FM_1234"]
 
 
 def test_speakers_from_track_folder_uses_file_names(tmp_path):
