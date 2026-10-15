@@ -141,6 +141,14 @@ def fake_ffmpeg(monkeypatch, script):
     monkeypatch.setattr(ffmpeg, "_BASE", [sys.executable, "-c", script])
 
 
+def exit_with(code):
+    """A script that exits with `code`; Python 3.10's sys.exit cannot give
+    Windows codes above 2**31 (it exits with 0xffffffff), ExitProcess can."""
+    if code > 255 and sys.platform == "win32":
+        return f"import ctypes; ctypes.windll.kernel32.ExitProcess({code})"
+    return f"import sys; sys.exit({code})"
+
+
 def test_decode_with_a_flood_of_errors_does_not_hang(monkeypatch, tmp_path):
     # a damaged FLAC: one error line per bad frame, far more than a pipe holds
     fake_ffmpeg(
@@ -164,7 +172,7 @@ def test_ffmpeg_stopped_by_ctrl_c_is_an_interrupt(monkeypatch, code):
     # Ctrl+C reaches ffmpeg too: 255 ("received signal"), or Windows' code
     if code > 255 and sys.platform != "win32":
         pytest.skip("exit codes above 255 exist only on Windows")
-    fake_ffmpeg(monkeypatch, f"import sys; sys.exit({code})")
+    fake_ffmpeg(monkeypatch, exit_with(code))
     with pytest.raises(KeyboardInterrupt):
         ffmpeg.run([], "test")
     with pytest.raises(KeyboardInterrupt):
@@ -205,7 +213,7 @@ def test_parallel_stops_at_the_first_error(monkeypatch, error):
 def test_silent_crash_names_the_exit_code(monkeypatch):
     # a crashing ffmpeg prints nothing; the exit code is the only clue
     code = 0xC0000005 if sys.platform == "win32" else 139
-    fake_ffmpeg(monkeypatch, f"import sys; sys.exit({code})")
+    fake_ffmpeg(monkeypatch, exit_with(code))
     shown = f"{code:#x}" if code > 255 else str(code)
     with pytest.raises(ScribeError, match=f"no error output, exit code {shown}"):
         ffmpeg.run([], "test")

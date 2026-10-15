@@ -130,6 +130,40 @@ def test_amix_sums_without_halving(tmp_path):
     assert file_loudness(out) - file_loudness(a) == pytest.approx(6.02, abs=0.2)
 
 
+def rms_db(path, start, end):
+    """RMS level in dBFS of `path` between `start` and `end` seconds."""
+    import re
+
+    from scribe_rpg import ffmpeg
+
+    done = ffmpeg.run(
+        ["-i", str(path), "-af",
+         f"atrim={start}:{end},astats=measure_perchannel=none",
+         "-f", "null", "-"],
+        "rms",
+    )  # fmt: skip
+    return float(re.findall(r"RMS level dB: (-?[\d.]+)", done.stderr)[-1])
+
+
+def test_amix_keeps_the_end_of_a_track_that_ends_first(tmp_path):
+    # ffmpeg 6.1's amix dropped the last ~1.5 s of the first input at its end
+    from scribe_rpg.master.mix import render
+
+    a = make_flac(tmp_path / "a.flac", 4, volume_db=-20)
+    b = make_flac(tmp_path / "b.flac", 8, volume_db=-20)
+    out = tmp_path / "sum.flac"
+    render(plans_for(a, b), [], {}, "mono", out, "flac", "", None)
+    both, alone = rms_db(out, 3.0, 3.9), rms_db(out, 5.0, 7.0)
+    assert both - alone == pytest.approx(6.02, abs=0.2)
+    assert ffmpeg_duration(out) == pytest.approx(8.0, abs=0.05)
+
+
+def ffmpeg_duration(path):
+    from scribe_rpg import ffmpeg
+
+    return ffmpeg.duration(path)
+
+
 def test_limiter_caps_the_mix(tmp_path):
     from scribe_rpg.master.mix import render
 

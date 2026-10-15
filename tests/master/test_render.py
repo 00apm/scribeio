@@ -184,9 +184,9 @@ def test_mix_graph_two_voices_and_music_mono():
     limiter = [Step("limiter", "alimiter", {"limit": "-1dB"})]
     mono = "aformat=sample_fmts=flt:channel_layouts=mono,aformat=sample_fmts=flt"
     assert graph(plans, limiter, {}, "mono") == (
-        f"[0:a]{mono},highpass=f=80,adenorm[t0];"
-        f"[1:a]{mono}[t1];"
-        f"[2:a]{mono},volume=-3.00dB[t2];"
+        f"[0:a]{mono},highpass=f=80,adenorm,apad=pad_dur=5[t0];"
+        f"[1:a]{mono},apad=pad_dur=5[t1];"
+        f"[2:a]{mono},volume=-3.00dB,apad=pad_dur=5[t2];"
         "[t0][t1][t2]amix=inputs=3:normalize=0:duration=longest,"
         "aformat=sample_fmts=flt,alimiter=limit=-1dB,adenorm[out]"
     )
@@ -223,8 +223,8 @@ def test_mix_graph_stereo_pans_mono_voices_after_their_chain():
     mono = "aformat=sample_fmts=flt:channel_layouts=mono,aformat=sample_fmts=flt"
     stereo = "aformat=sample_fmts=flt:channel_layouts=stereo,aformat=sample_fmts=flt"
     assert graph(plans, [], {}, "stereo") == (
-        f"[0:a]{mono},highpass=f=80,adenorm,pan=stereo|c0=c0|c1=c0[t0];"
-        f"[1:a]{stereo},highpass=f=80,adenorm[t1];"
+        f"[0:a]{mono},highpass=f=80,adenorm,pan=stereo|c0=c0|c1=c0,apad=pad_dur=5[t0];"
+        f"[1:a]{stereo},highpass=f=80,adenorm,apad=pad_dur=5[t1];"
         "[t0][t1]amix=inputs=2:normalize=0:duration=longest,"
         "aformat=sample_fmts=flt[out]"
     )

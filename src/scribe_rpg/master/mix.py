@@ -41,6 +41,11 @@ OnRowPass = Callable[[str, str, float], None]
 # ffmpeg's own name for a bad option ("... out of range [1 - 20]"), stripped
 # of its "[Parsed_x @ 0x...] " prefix
 _PREFIX = re.compile(r"^\[[^\]]*\]\s*")
+# Silence after each track before amix: ffmpeg 6.1's amix drops the last
+# ~1.5 s of an input at its end (7.1 does not). The pad is what gets lost;
+# the render cuts the mix to the longest track (-t), and loudness gating
+# ignores the silence in the measuring runs.
+MIX_PAD = "apad=pad_dur=5"
 
 
 @dataclass
@@ -108,7 +113,7 @@ def _graph(
         track = f"[{i}:a]{prep(p, channels)},{chain_filter(p.steps, p.gains, p.upto)}"
         if split:
             track += f",asplit=2[k{i}][m{i}];[m{i}]anull"
-        parts.append(f"{track}{to_mix(p, channels)}[t{i}]")
+        parts.append(f"{track}{to_mix(p, channels)},{MIX_PAD}[t{i}]")
     labels = "".join(f"[t{i}]" for i in range(len(plans)))
     amix = f"{labels}amix=inputs={len(plans)}:normalize=0:duration=longest"
     return ";".join(parts) + f";{amix},{mix_chain}"
