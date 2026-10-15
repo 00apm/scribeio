@@ -7,6 +7,7 @@ import pytest
 
 from scribe_rpg.config import load_config
 from scribe_rpg.errors import ScribeError
+from scribe_rpg.transcribe.glossary import load_glossary
 
 
 def write(folder: Path, text: str, name: str = "campaign.yaml") -> Path:
@@ -181,3 +182,78 @@ def test_optional_setting_rejects_other_types(tmp_path):
     text = "transcribe:\n  whisper:\n    align_model: 5\n"
     with pytest.raises(ScribeError, match=r"whisper\.align_model: expected text"):
         load_config(write(tmp_path, text))
+
+
+@pytest.mark.parametrize(
+    ("section", "key", "value"),
+    [
+        ("whisper", "batch_size", 0),
+        ("whisper", "batch_size", 2.5),
+        ("whisper", "prompt_max_tokens", -1),
+        ("cleanup", "frame_ms", 0),
+        ("cleanup", "energy_db", 3),
+        ("cleanup", "voiced_ratio", 2),
+        ("cleanup", "voiced_ratio", ".nan"),
+        ("cleanup", "phrase_max_words", -1),
+        ("cleanup", "loop_max_repeat", 0),
+        ("lines", "pause", -1),
+        ("bleed", "similarity", 1.5),
+        ("bleed", "min_overlap", -0.1),
+        ("bleed", "min_words", 0),
+    ],
+)
+def test_number_out_of_range(tmp_path, section, key, value):
+    path = write(tmp_path, f"transcribe:\n  {section}:\n    {key}: {value}\n")
+    with pytest.raises(
+        ScribeError, match=rf"campaign\.yaml: transcribe\.{section}\.{key}: "
+    ):
+        load_config(path)
+
+
+def test_numbers_at_range_ends_accepted(tmp_path):
+    text = """\
+        transcribe:
+          whisper: {batch_size: 1, prompt_max_tokens: 0}
+          cleanup: {energy_db: 0, voiced_ratio: 1, frame_ms: 12.5, loop_max_repeat: 1}
+          lines: {pause: 0}
+          bleed: {similarity: 0, min_overlap: 1}
+        """
+    load_config(write(tmp_path, text))
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "input:\n  music_patterns: [kenku, 2137]\n",
+        "input:\n  music_patterns: [kenku, '']\n",
+        "transcribe:\n  cleanup:\n    phrases: [thanks for watching, 404]\n",
+    ],
+)
+def test_list_items_must_be_text(tmp_path, text):
+    with pytest.raises(ScribeError, match=r"campaign\.yaml: .*: item 2: expected text"):
+        load_config(write(tmp_path, text))
+
+
+@pytest.mark.parametrize("device", ["cuda:0", "gpu", "CPU"])
+def test_device_is_cuda_or_cpu(tmp_path, device):
+    path = write(tmp_path, f"transcribe:\n  whisper:\n    device: {device}\n")
+    with pytest.raises(ScribeError, match=r"whisper\.device: expected cuda or cpu"):
+        load_config(path)
+
+
+def test_two_speaker_keys_for_one_account(tmp_path):
+    path = write(tmp_path, "speakers:\n  a.b: One\n  a b: Two\n")
+    with pytest.raises(
+        ScribeError, match=r"speakers: 'a\.b' and 'a b' are one account"
+    ):
+        load_config(path)
+
+
+@pytest.mark.parametrize("name", ["campaign.yaml", "glossary.txt"])
+def test_file_not_utf8_names_the_line(tmp_path, name):
+    (tmp_path / name).write_bytes("# ok\nmiasto: Łódź\n".encode("cp1250"))
+    with pytest.raises(ScribeError, match=rf"{name}:2: not UTF-8; save it as UTF-8"):
+        if name == "glossary.txt":
+            load_glossary(tmp_path / name)
+        else:
+            load_config(tmp_path / name)

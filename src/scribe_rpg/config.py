@@ -26,6 +26,25 @@ from scribe_rpg.craig import sanitize
 from scribe_rpg.errors import ScribeError
 from scribe_rpg.master.config import merge as merge_master
 
+# Allowed values of numeric settings: (lowest, highest, whole numbers only);
+# None leaves that end open. Checked at load time, before any slow work.
+_RANGES: dict[str, tuple[float | None, float | None, bool]] = {
+    "transcribe.whisper.batch_size": (1, None, True),
+    "transcribe.whisper.prompt_max_tokens": (0, None, True),
+    "transcribe.cleanup.energy_db": (None, 0, False),
+    "transcribe.cleanup.frame_ms": (1, None, False),
+    "transcribe.cleanup.voiced_ratio": (0, 1, False),
+    "transcribe.cleanup.phrase_max_words": (0, None, True),
+    "transcribe.cleanup.loop_min_words": (0, None, True),
+    "transcribe.cleanup.loop_max_repeat": (1, None, True),
+    "transcribe.lines.pause": (0, None, False),
+    "transcribe.bleed.similarity": (0, 1, False),
+    "transcribe.bleed.min_words": (1, None, True),
+    "transcribe.bleed.min_overlap": (0, 1, False),
+}
+# Text settings with a fixed set of values.
+_CHOICES = {"transcribe.whisper.device": ("cuda", "cpu")}
+
 
 @dataclass
 class Config:
@@ -86,10 +105,25 @@ def load_config(
     return Config(settings, speakers, glossary_path)
 
 
+def read_utf8(path: Path) -> str:
+    """Read a UTF-8 text file (a BOM is allowed).
+
+    Raises:
+        FileNotFoundError: If the file is missing.
+        ScribeError: If the file is not UTF-8, naming the first bad line.
+    """
+    data = path.read_bytes()
+    try:
+        return data.decode("utf-8-sig")
+    except UnicodeDecodeError as e:
+        line = data[: e.start].count(b"\n") + 1
+        raise ScribeError(f"{path.name}:{line}: not UTF-8; save it as UTF-8") from None
+
+
 def _read_yaml(path: Path) -> dict[str, Any]:
     """Read a YAML file; errors name the file."""
     try:
-        text = path.read_text(encoding="utf-8-sig")
+        text = read_utf8(path)
     except FileNotFoundError:
         raise ScribeError(f"config not found: {path.name}") from None
     return _parse_yaml(text, path.name)
@@ -144,6 +178,7 @@ def _merge(
             out[key] = _merge(base[key], value, label, name + ".")
         else:
             _check_type(base[key], value, label, name)
+            _check_value(value, label, name)
             out[key] = value
     return out
 
@@ -168,6 +203,35 @@ def _check_type(default: Any, value: Any, label: str, name: str) -> None:
     if not ok:
         expected = type(default).__name__
         raise ScribeError(f"{label}: {name}: expected {expected}, got {value!r}")
+    if isinstance(default, list):
+        # every list setting holds text (music patterns, phrases); an empty
+        # pattern would match every track
+        for i, item in enumerate(value, 1):
+            if not isinstance(item, str) or not item.strip():
+                raise ScribeError(
+                    f"{label}: {name}: item {i}: expected text, got {item!r}"
+                )
+
+
+def _check_value(value: Any, label: str, name: str) -> None:
+    """Check a setting against its range or its set of choices, if any."""
+    if name in _CHOICES and value not in _CHOICES[name]:
+        allowed = " or ".join(_CHOICES[name])
+        raise ScribeError(f"{label}: {name}: expected {allowed}, got {value!r}")
+    if name not in _RANGES:
+        return
+    low, high, whole = _RANGES[name]
+    if whole and not isinstance(value, int):
+        raise ScribeError(f"{label}: {name}: expected a whole number, got {value!r}")
+    # written so that NaN fails too
+    if not ((low is None or value >= low) and (high is None or value <= high)):
+        if high is None:
+            limits = f"at least {low}"
+        elif low is None:
+            limits = f"at most {high}"
+        else:
+            limits = f"from {low} to {high}"
+        raise ScribeError(f"{label}: {name}: expected {limits}, got {value!r}")
 
 
 def _speakers(raw: Any, label: str) -> dict[str, str]:
@@ -175,8 +239,16 @@ def _speakers(raw: Any, label: str) -> dict[str, str]:
     if not isinstance(raw, dict):
         raise ScribeError(f"{label}: speakers: expected account: name pairs")
     out = {}
+    keys: dict[str, str] = {}  # sanitized account -> key as written
     for account, name in raw.items():
         if not isinstance(name, str) or not name.strip():
             raise ScribeError(f"{label}: speakers: {account}: name missing")
-        out[sanitize(str(account))] = name.strip()
+        key = sanitize(str(account))
+        if key in keys:
+            raise ScribeError(
+                f"{label}: speakers: {keys[key]!r} and {str(account)!r} are one "
+                f"account ({key}); keep one"
+            )
+        keys[key] = str(account)
+        out[key] = name.strip()
     return out
