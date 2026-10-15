@@ -1,5 +1,7 @@
 """Tests for per-word voiced flags and per-segment levels."""
 
+import tracemalloc
+
 import numpy as np
 import pytest
 
@@ -23,6 +25,34 @@ def test_frame_levels_partial_last_frame():
 
 def test_frame_levels_empty_audio():
     assert len(frame_levels(silence(0), 50)) == 0
+
+
+def _padded_levels(audio, frame_ms, sample_rate=16_000):
+    """The original whole-track computation (float64, padded), for comparison."""
+    n = int(sample_rate * frame_ms / 1000)
+    x = np.asarray(audio, dtype=np.float64)
+    frames = np.pad(x, (0, (-len(x)) % n)).reshape(-1, n)
+    rms = np.sqrt(np.mean(frames**2, axis=1))
+    return np.maximum(20 * np.log10(np.maximum(rms, 1e-12)), -120.0)
+
+
+@pytest.mark.parametrize("seconds", [0.03, 1.0, 37.013])
+def test_frame_levels_equal_whole_track_computation(seconds):
+    rng = np.random.default_rng(0)
+    audio = (rng.standard_normal(int(16_000 * seconds)) * 0.05).astype(np.float32)
+    audio[: len(audio) // 3] = 0  # digital silence too
+    assert np.array_equal(frame_levels(audio, 50), _padded_levels(audio, 50))
+
+
+def test_frame_levels_memory_stays_small():
+    audio = np.full(16_000 * 600, 0.01, dtype=np.float32)  # 10 min, 38 MB
+    tracemalloc.start()
+    try:
+        frame_levels(audio, 50)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert peak < audio.nbytes / 4
 
 
 def test_words_in_tone_voiced_words_in_silence_not():
