@@ -40,6 +40,7 @@ def test_layout_and_utf8(tmp_path):
         "versions",
         "session",
         "whisper",
+        "warnings",
         "tracks",
         "segments",
     ]
@@ -94,6 +95,16 @@ def test_file_without_versions_still_reads(tmp_path):
     del data["versions"]
     path.write_text(json.dumps(data), encoding="utf-8")
     assert session_json.read(path).versions == {}
+
+
+def test_run_warnings_round_trip_and_default(tmp_path):
+    path = tmp_path / "s.json"
+    session_json.write(path, raw_session([], warnings=["runs on cpu"]))
+    assert session_json.read(path).warnings == ["runs on cpu"]
+    data = json.loads(path.read_text(encoding="utf-8"))
+    del data["warnings"]  # a file from before the field existed
+    path.write_text(json.dumps(data), encoding="utf-8")
+    assert session_json.read(path).warnings == []
 
 
 def test_unknown_format(tmp_path):

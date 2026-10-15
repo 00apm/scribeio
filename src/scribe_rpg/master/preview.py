@@ -16,7 +16,7 @@ from typing import TypeVar
 
 from scribe_rpg import craig, ffmpeg
 from scribe_rpg.errors import ScribeError
-from scribe_rpg.master import mix, report
+from scribe_rpg.master import measuring, mix
 from scribe_rpg.master.catalogue import Step
 from scribe_rpg.master.config import MasterConfig
 from scribe_rpg.progress import Progress
@@ -280,10 +280,10 @@ def write_files(
     if solo is not None:
         full = [p for p in full if craig.sanitize(p.track.account) == solo][:1]
         # measured first: solo_files copies the plan with its gains
-        mix_gains = report.measure(full, [], cfg.channels, progress, verbose)
+        mix_gains = measuring.measure(full, [], cfg.channels, progress, verbose)
         files = solo_files(full[0], cfg, before_after)
     else:
-        mix_gains = report.measure(full, cfg.mix, cfg.channels, progress, verbose)
+        mix_gains = measuring.measure(full, cfg.mix, cfg.channels, progress, verbose)
         files = step_files(full, cfg, before_after)
     if not before_after and solo is None:
         for account in own_chains(full, cfg):
@@ -295,8 +295,8 @@ def write_files(
         return mix.mix_level(f.plans, f.mix_steps, mix_gains, f.channels, f.name)
 
     n = len(files)
-    measuring = ("preview: measuring", f"preview: measure {n} files")
-    levels = _parallel(progress, measuring, level_of, files)
+    labels = ("preview: measuring", f"preview: measure {n} files")
+    levels = _parallel(progress, labels, level_of, files)
     level = common_level(levels)
     lowered = " (lowered: the loudest peak stays at -1 dBFS)"
     note = lowered if level < MATCH_TARGET else ""

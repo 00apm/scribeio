@@ -73,6 +73,10 @@ def fake_whisper(monkeypatch):
     monkeypatch.setattr(whisper, "load_audio", lambda path: audio)
     monkeypatch.setattr(whisper, "preflight", lambda cfg: [])
     monkeypatch.setattr(whisper, "versions", lambda: dict(VERSIONS))
+    FakeTranscriber.music_seconds = 15.0  # shorter than the voices
+    monkeypatch.setattr(
+        "scribe_rpg.ffmpeg.duration", lambda path: FakeTranscriber.music_seconds
+    )
     FakeTranscriber.models = [
         models.Model("Whisper model", "large-v3", "huggingface", True),
         models.Model("alignment model", "WAV2VEC2_ASR_BASE_960H", "torchaudio", True),
@@ -94,7 +98,7 @@ def campaign(tmp_path):
     folder.mkdir()
     glossary = folder / "glossary.txt"
     glossary.write_text("Vorgrad\nWorgrad* -> Vorgrad\n", encoding="utf-8")
-    config = folder / "campaign.yaml"
+    config = folder / "scribe.yaml"
     config.write_text(
         textwrap.dedent(
             """\
@@ -130,6 +134,30 @@ def test_transcribe_writes_three_outputs(tmp_path, fake_whisper, campaign):
     assert data["versions"] == VERSIONS
     assert [t["transcribed"] for t in data["tracks"]] == [True, True, False]
     assert fake_whisper.calls == ["gm_account", "player_one"]  # music never
+
+
+def test_duration_includes_the_music_track(tmp_path, fake_whisper, campaign):
+    fake_whisper.music_seconds = 60.0  # the bot joined first, left last
+    zip_path = craig_zip(tmp_path / "rec")
+    result = invoke("transcribe", zip_path, "-c", campaign, "--name", "s")
+    assert result.exit_code == 0, result.output
+    data = json.loads((tmp_path / "rec" / "s_transcript.json").read_text("utf-8"))
+    assert data["session"]["duration"] == 60.0
+
+
+def test_unreadable_music_track_only_warns(
+    tmp_path, fake_whisper, campaign, monkeypatch
+):
+    def fail(path):
+        raise ScribeError("ffmpeg failed (duration x.flac): Invalid data")
+
+    monkeypatch.setattr("scribe_rpg.ffmpeg.duration", fail)
+    zip_path = craig_zip(tmp_path / "rec")
+    result = invoke("transcribe", zip_path, "-c", campaign, "--name", "s")
+    assert result.exit_code == 0, result.output
+    assert "Kenku_FM_1234: length unknown, not in the duration" in result.output
+    data = json.loads((tmp_path / "rec" / "s_transcript.json").read_text("utf-8"))
+    assert data["session"]["duration"] == 20.0
 
 
 def test_outputs_contain_no_paths(tmp_path, fake_whisper, campaign):
@@ -176,6 +204,21 @@ def test_preflight_and_transcriber_warnings_shown(
     result = invoke("transcribe", craig_zip(tmp_path / "rec"), "-c", campaign)
     assert result.exit_code == 0, result.output
     assert "very slow" in result.output and "prompt length estimated" in result.output
+
+
+def test_run_warnings_reach_the_report_and_survive_merge(
+    tmp_path, fake_whisper, campaign, monkeypatch
+):
+    monkeypatch.setattr(whisper, "preflight", lambda cfg: ["runs on cpu: very slow"])
+    fake_whisper.extra_warnings = ["prompt length estimated"]
+    zip_path = craig_zip(tmp_path / "rec")
+    assert invoke("transcribe", zip_path, "-c", campaign, "--name", "s").exit_code == 0
+    report = tmp_path / "rec" / "s_transcript-report.md"
+    for _ in range(2):  # after transcribe, then after merge
+        text = report.read_text(encoding="utf-8").split("## Warnings")[1]
+        assert "- runs on cpu: very slow\n- prompt length estimated\n" in text
+        result = invoke("merge", tmp_path / "rec" / "s_transcript.json", "-c", campaign)
+        assert result.exit_code == 0, result.output
 
 
 def test_failure_mid_run_writes_nothing(tmp_path, fake_whisper, campaign):
@@ -485,3 +528,9 @@ def test_unexpected_error_keeps_its_traceback(tmp_path, fake_whisper, campaign):
     result = invoke("transcribe", craig_zip(tmp_path / "rec"), "-c", campaign)
     assert result.exit_code == 1
     assert isinstance(result.exception, RuntimeError)  # not turned into one line
+
+
+def test_music_tracks_are_named(tmp_path, fake_whisper, campaign):
+    result = invoke("transcribe", craig_zip(tmp_path / "rec"), "-c", campaign)
+    assert result.exit_code == 0, result.output
+    assert "music (not transcribed): Kenku_FM_1234\n" in result.output

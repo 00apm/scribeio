@@ -2,7 +2,7 @@
 
 The templates live in the package (``scribe_rpg/templates``), so
 `scribe init` works after a plain ``pip install``. Given a recording (or a
-``<name>.json``), the ``speakers`` section is prefilled with the accounts as
+``<name>_transcript.json``), the ``speakers`` section is prefilled with the accounts as
 Discord shows them; the user only writes the names next to them. The config
 holds the sections one use needs (``only``): short by default, or every
 setting copied from ``defaults.yaml`` (``full``).
@@ -67,7 +67,8 @@ def speakers_from(
     """Accounts of a recording or session JSON, split into players and music.
 
     Args:
-        source: Craig zip, track folder, or a ``<name>.json`` from transcribe.
+        source: Craig zip, track folder, or a ``<name>_transcript.json`` from
+            transcribe.
         music_patterns: Substrings that mark music bots.
 
     Returns:

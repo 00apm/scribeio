@@ -1,4 +1,4 @@
-"""Command-line interface: `scribe transcribe` and `scribe merge`.
+"""Command-line interface: `scribe transcribe`, `merge`, `master` and `init`.
 
 Commands stay thin: they read options, call the packages and report
 progress. Errors scribe expects (`ScribeError`) are shown as one red line
@@ -57,7 +57,7 @@ def _common(f: F) -> F:
         click.option(
             "-c", "--config", "config_path",
             type=click.Path(exists=True, dir_okay=False, path_type=Path),
-            help="Campaign config (YAML): speakers, glossary, settings.",
+            help="Config file (scribe.yaml): speakers, glossary, settings.",
         ),
         click.option(
             "-g", "--glossary", "glossary_path",
@@ -165,9 +165,9 @@ def transcribe(
 
     # Cheap checks first: fail in seconds, before unzipping or loading models.
     with progress.step("check ffmpeg, WhisperX, CUDA"):
-        warnings = whisper.preflight(wcfg)
+        run_warnings = whisper.preflight(wcfg)
         used_versions = whisper.versions()
-    for w in warnings:
+    for w in run_warnings:
         progress.warn(w)
     with progress.step("check models"):
         needed = models.needed(wcfg)
@@ -188,6 +188,7 @@ def transcribe(
             raise ScribeError(
                 f"output already exists: {existing[0]} (use --force to overwrite)"
             )
+        _print_music(rec, "not transcribed", progress)
         for t in rec.players:
             if craig.sanitize(t.account) not in cfg.speakers:
                 progress.warn(
@@ -200,13 +201,14 @@ def transcribe(
             transcriber = whisper.Transcriber(wcfg, gloss.names)
         for w in transcriber.warnings:
             progress.warn(w)
+        run_warnings += transcriber.warnings
         if transcriber.prompt_cut:
             cut = ", ".join(transcriber.prompt_cut)
             progress.warn(f"glossary names left out of the prompt: {cut}")
 
         cleanup = cfg.settings["transcribe"]["cleanup"]
         segments: list[Segment] = []
-        duration = 0.0
+        duration = _music_duration(rec, progress, run_warnings)
         with progress.tracks(len(rec.players)) as bar:
             for t in rec.players:
                 bar.start(t.account)
@@ -237,12 +239,47 @@ def transcribe(
             segments=segments,
             scribe=__version__,
             versions=used_versions,
+            warnings=run_warnings,
         )
         with progress.step(f"write {paths['md'].name}"):
             paths["md"].parent.mkdir(parents=True, exist_ok=True)
             session_json.write(paths["json"], raw)
             result = _merge_and_write(raw, cfg, gloss, paths)
     _summary(progress, paths, result)
+
+
+def _print_music(rec: craig.Recording, use: str, progress: Progress) -> None:
+    """Name the tracks `music_patterns` took for music bots, if any.
+
+    A player matched by a pattern by mistake is then visible at once.
+    """
+    music = [t.account for t in rec.tracks if t.kind == "music"]
+    if music:
+        line = f"music ({use}): {', '.join(music)}"
+        progress.console.print(line, markup=False, soft_wrap=True)
+
+
+def _music_duration(
+    rec: craig.Recording, progress: Progress, run_warnings: list[str]
+) -> float:
+    """Length of the longest music track, read before any transcription.
+
+    Music bots often join first and leave last, so they count for the
+    session's duration. A music track ffmpeg cannot read is only a warning
+    (added to `run_warnings`): it is never transcribed.
+    """
+    from scribe_rpg import ffmpeg
+
+    longest = 0.0
+    for t in rec.tracks:
+        if t.kind == "music":
+            try:
+                longest = max(longest, ffmpeg.duration(t.path))
+            except ScribeError as e:
+                warning = f"{t.account}: length unknown, not in the duration ({e})"
+                progress.warn(warning)
+                run_warnings.append(warning)
+    return longest
 
 
 @main.command(short_help="Rebuild transcript and report from a .json (no GPU).")
@@ -359,7 +396,7 @@ def _parse_at(
     "--config",
     "config_path",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    help="Campaign config (YAML): speakers, master settings.",
+    help="Config file (scribe.yaml): speakers, master settings.",
 )
 @click.option(
     "-o",
@@ -479,6 +516,7 @@ def master(
         with progress.step(f"open {input_path.name}"):
             patterns = cfg.settings["input"]["music_patterns"]
             rec = stack.enter_context(craig.open_recording(input_path, patterns, start))
+        _print_music(rec, "music chain", progress)
         for t in rec.players:
             if craig.sanitize(t.account) not in cfg.speakers:
                 progress.warn(
@@ -616,7 +654,7 @@ def _write_master(
     With `tracks_dir`, the same run writes each processed track there, plus
     the recording's info.txt, so the folder is a valid input itself.
     """
-    from scribe_rpg.master import mix, report
+    from scribe_rpg.master import measuring, mix
 
     for path in [out, tracks_dir]:
         if path is not None and path.exists() and not force:
@@ -627,7 +665,7 @@ def _write_master(
         mix.TrackPlan(t, mcfg.chain_for(t), stereo=mcfg.keeps_stereo(t))
         for t in rec.tracks
     ]
-    mix_gains = report.measure(plans, mcfg.mix, mcfg.channels, progress, verbose)
+    mix_gains = measuring.measure(plans, mcfg.mix, mcfg.channels, progress, verbose)
     out.parent.mkdir(parents=True, exist_ok=True)
     if tracks_dir is not None:
         part = mix.partial_path(tracks_dir)
@@ -697,7 +735,7 @@ def init_command(
     """Create scribe.yaml and glossary.txt to fill in.
 
     The config is short: the settings people change. With RECORDING (a Craig
-    .zip, a track folder or a <name>.json), the speakers section lists its
+    .zip, a track folder or a <name>_transcript.json), the speakers section lists its
     Discord accounts, ready for their names. Every scribe command uses
     scribe.yaml by itself when it is next to the recording or the .json.
     """

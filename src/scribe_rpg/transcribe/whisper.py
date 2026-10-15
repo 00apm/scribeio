@@ -34,7 +34,7 @@ INSTALL_HINT = (
     'WhisperX not installed: pip install "whisperx>=3.8.6,<4" '
     "(install torch with CUDA first; see README)"
 )
-Progress = Callable[[float], None]
+OnProgress = Callable[[float], None]
 
 
 def _whisperx() -> Any:
@@ -241,7 +241,7 @@ def _logprob(
 
 
 def _call(
-    func: Callable[..., Any], *args: Any, progress: Progress | None, **kwargs: Any
+    func: Callable[..., Any], *args: Any, progress: OnProgress | None, **kwargs: Any
 ) -> Any:
     """Call a WhisperX function, passing `progress` as progress_callback if possible.
 
@@ -437,7 +437,7 @@ class Transcriber:
         self,
         audio: Any,
         account: str,
-        on_progress: Progress | None = None,
+        on_progress: OnProgress | None = None,
         on_phase: Callable[[str], None] | None = None,
     ) -> list[Segment]:
         """Transcribe and align one track, one model on the GPU at a time.

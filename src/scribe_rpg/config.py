@@ -1,6 +1,6 @@
-"""Load the built-in defaults and an optional campaign config.
+"""Load the built-in defaults and an optional config file (scribe.yaml).
 
-One campaign config serves every command. It is sectioned like
+One config file serves every command. It is sectioned like
 ``defaults.yaml`` and every section is optional::
 
     speakers:      Discord account -> name (shared by all commands)
@@ -70,7 +70,7 @@ def load_config(
     """Build the settings for a run.
 
     Args:
-        path: Campaign config file (``-c``), or None for defaults only.
+        path: Config file (``-c``), or None for defaults only.
         glossary: Glossary file from ``-g``; wins over the config's key.
         keep_fillers: ``--keep-fillers`` flag.
 

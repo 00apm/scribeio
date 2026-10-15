@@ -580,3 +580,11 @@ def test_master_preview_names_voices_with_their_own_chain(tmp_path):
     result, _ = run_preview(tmp_path, "-c", config)
     assert "gm_account: own chain, fully processed from file 01" in result.output
     assert "player_one: own chain" not in result.output
+
+
+@pytest.mark.ffmpeg
+def test_master_names_music_tracks(tmp_path):
+    folder = master_dir(tmp_path / "rec" / "tracks")
+    result = invoke("master", folder, *START_ARG)
+    assert result.exit_code == 0, result.output
+    assert "music (music chain): Kenku_FM_1234\n" in result.output

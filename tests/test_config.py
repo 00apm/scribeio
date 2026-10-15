@@ -1,4 +1,4 @@
-"""Tests for loading the built-in defaults and a campaign config."""
+"""Tests for loading the built-in defaults and a config file."""
 
 import textwrap
 from pathlib import Path
@@ -10,7 +10,7 @@ from scribe_rpg.errors import ScribeError
 from scribe_rpg.transcribe.glossary import load_glossary
 
 
-def write(folder: Path, text: str, name: str = "campaign.yaml") -> Path:
+def write(folder: Path, text: str, name: str = "scribe.yaml") -> Path:
     path = folder / name
     path.write_text(textwrap.dedent(text), encoding="utf-8")
     return path
@@ -49,13 +49,13 @@ def test_list_replaces_not_appends(tmp_path):
 def test_unknown_key(tmp_path):
     with pytest.raises(
         ScribeError,
-        match=r"campaign\.yaml: transcribe\.whisper\.bach_size: unknown key",
+        match=r"scribe\.yaml: transcribe\.whisper\.bach_size: unknown key",
     ):
         load_config(write(tmp_path, "transcribe:\n  whisper:\n    bach_size: 2\n"))
 
 
 def test_unknown_top_level_key(tmp_path):
-    with pytest.raises(ScribeError, match=r"campaign\.yaml: speaker: unknown key"):
+    with pytest.raises(ScribeError, match=r"scribe\.yaml: speaker: unknown key"):
         load_config(write(tmp_path, "speaker:\n  gm.account: Game Master\n"))
 
 
@@ -88,7 +88,7 @@ def test_bool_not_accepted_for_number(tmp_path):
 
 def test_yaml_error_names_file_and_line(tmp_path):
     path = write(tmp_path, "transcribe:\n  whisper:\n    model: [unclosed\n")
-    with pytest.raises(ScribeError, match=r"campaign\.yaml:\d+"):
+    with pytest.raises(ScribeError, match=r"scribe\.yaml:\d+"):
         load_config(path)
 
 
@@ -129,7 +129,7 @@ def test_glossary_relative_to_config(tmp_path):
 
 
 def test_glossary_at_top_level_is_unknown(tmp_path):
-    with pytest.raises(ScribeError, match=r"campaign\.yaml: glossary: unknown key"):
+    with pytest.raises(ScribeError, match=r"scribe\.yaml: glossary: unknown key"):
         load_config(write(tmp_path, "glossary: names.txt\n"))
 
 
@@ -205,7 +205,7 @@ def test_optional_setting_rejects_other_types(tmp_path):
 def test_number_out_of_range(tmp_path, section, key, value):
     path = write(tmp_path, f"transcribe:\n  {section}:\n    {key}: {value}\n")
     with pytest.raises(
-        ScribeError, match=rf"campaign\.yaml: transcribe\.{section}\.{key}: "
+        ScribeError, match=rf"scribe\.yaml: transcribe\.{section}\.{key}: "
     ):
         load_config(path)
 
@@ -230,7 +230,7 @@ def test_numbers_at_range_ends_accepted(tmp_path):
     ],
 )
 def test_list_items_must_be_text(tmp_path, text):
-    with pytest.raises(ScribeError, match=r"campaign\.yaml: .*: item 2: expected text"):
+    with pytest.raises(ScribeError, match=r"scribe\.yaml: .*: item 2: expected text"):
         load_config(write(tmp_path, text))
 
 
@@ -249,7 +249,7 @@ def test_two_speaker_keys_for_one_account(tmp_path):
         load_config(path)
 
 
-@pytest.mark.parametrize("name", ["campaign.yaml", "glossary.txt"])
+@pytest.mark.parametrize("name", ["scribe.yaml", "glossary.txt"])
 def test_file_not_utf8_names_the_line(tmp_path, name):
     (tmp_path / name).write_bytes("# ok\nmiasto: Łódź\n".encode("cp1250"))
     with pytest.raises(ScribeError, match=rf"{name}:2: not UTF-8; save it as UTF-8"):
