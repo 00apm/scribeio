@@ -2,13 +2,44 @@
 # sections merge, lists replace. Every section is optional in the config, and
 # each command reads only its own sections:
 #   input       shared: reading Craig recordings
+#   master      `scribe master`
 #   transcribe  `scribe transcribe` and `scribe merge`
-#   master      `scribe master` (added with audio mastering)
 
 input:
   # Substrings (case-insensitive) that mark music bot tracks. Kenku is the
   # default bot; add other bots' names in your config (the list replaces this).
   music_patterns: [kenku]
+
+master:
+  channels: mono            # mono | stereo
+  format: mp3               # mp3 | m4a | opus
+  bitrate: null             # null = per format: mp3 96k, m4a 64k, opus 48k
+  # Each stage runs the steps in its `chain`, in order. Every other key is a
+  # step: an ffmpeg filter (type + the filter's options) or `loudness` (LUFS).
+  # A step not in a chain does nothing until a chain names it.
+  voice:                    # every voice track; per-player changes go in `players`
+    stereo: false           # true keeps a stereo mic stereo (with channels: stereo)
+    chain: [rumble, level, comp, eq, loudness]
+    rumble:   {type: highpass, f: 80}               # cuts desk thumps and mic rumble
+    level:    {type: loudness, target: -19}         # same level for every player
+    comp:     {type: acompressor, threshold: -15dB, ratio: 3, knee: 18dB,
+               attack: 15, release: 40}             # gently evens loud and quiet words
+    # warmth at 150 Hz, clarity at 3-5 kHz; entries are (Hz, dB), linear between
+    eq:       {type: firequalizer, delay: 0.05,
+               gain_entry: "entry(80,0);entry(150,1.5);entry(300,0);entry(2500,0);entry(3300,3);entry(5000,3);entry(6000,0)"}
+    loudness: {type: loudness, target: -19}         # final voice level
+    # In no chain: untested starting points; name one in a chain to use it
+    hum:      {type: bandreject, f: 50, w: 2, t: h} # mains hum (60 in the Americas)
+    denoise:  {type: afftdn}                        # steady background hiss
+    gate:     {type: agate, threshold: -40dB, range: -12dB}  # quieter between words
+    deess:    {type: deesser}                       # softens sharp "s" sounds
+  music:
+    chain: [loudness]
+    loudness: {type: loudness, target: -36}         # well under the voices
+  mix:
+    chain: [limiter]
+    limiter:  {type: alimiter, limit: -1.5dB, level: false}  # caps peaks; no auto gain
+  players: {}               # Discord account -> changes over `voice`, same keys
 
 transcribe:
   whisper:

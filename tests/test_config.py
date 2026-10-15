@@ -17,7 +17,7 @@ def write(folder: Path, text: str, name: str = "campaign.yaml") -> Path:
 
 def test_defaults_only():
     cfg = load_config()
-    assert set(cfg.settings) == {"input", "transcribe"}
+    assert set(cfg.settings) == {"input", "transcribe", "master"}
     assert cfg.settings["transcribe"]["whisper"]["model"] == "large-v3"
     assert cfg.settings["transcribe"]["whisper"]["language"] == "en"
     assert cfg.settings["transcribe"]["lines"]["pause"] == 1.5

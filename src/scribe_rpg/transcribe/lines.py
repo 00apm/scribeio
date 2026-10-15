@@ -20,6 +20,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
+from scribe_rpg.craig import speaker_name
 from scribe_rpg.transcribe.cleanup import normalize
 from scribe_rpg.transcribe.session import Segment, Word
 
@@ -87,7 +88,8 @@ def build_lines(
 
     Args:
         segments: Kept segments (any order, any tracks).
-        speakers: Account -> speaker name; unknown accounts keep their name.
+        speakers: Sanitized account -> speaker name; unknown accounts keep
+            their name.
         pause: Seconds of silence that start a new line for a speaker.
 
     Returns:
@@ -95,7 +97,7 @@ def build_lines(
     """
 
     def name(account: str) -> str:
-        return speakers.get(account, account)
+        return speaker_name(speakers, account)
 
     parts = _split_interjections(_utterances(segments, pause))
     parts.sort(key=lambda p: (p.start, p.end, name(p.account)))

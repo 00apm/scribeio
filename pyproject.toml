@@ -21,12 +21,13 @@ dependencies = [
     "click>=8.2",
     "rich>=13",
     "pyyaml>=6",
+    "numpy>=1.24",
 ]
 
 [project.optional-dependencies]
 # Install torch with CUDA first (README), so pip keeps the GPU build.
-transcribe = ["whisperx>=3.8.6,<4", "numpy>=1.24"]
-dev = ["pytest>=8", "numpy>=1.24", "mypy>=1.10", "types-PyYAML", "ruff>=0.6"]
+transcribe = ["whisperx>=3.8.6,<4"]
+dev = ["pytest>=8", "mypy>=1.10", "types-PyYAML", "ruff>=0.6"]
 
 [project.scripts]
 scribe = "scribe_rpg.cli:main"
@@ -39,10 +40,12 @@ scribe_rpg = ["defaults.yaml", "templates/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# tests in subfolders import the shared tests/helpers.py
+pythonpath = ["tests"]
 addopts = "-ra"
 markers = [
     "gpu: needs CUDA + WhisperX + the local excerpt in tests/local/ (deselect with -m 'not gpu')",
-    "ffmpeg: needs ffmpeg in PATH and WhisperX importable",
+    "ffmpeg: needs ffmpeg in PATH",
 ]
 
 [tool.ruff]

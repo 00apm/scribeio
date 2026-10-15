@@ -7,11 +7,14 @@ with exit code 1; anything else is a bug and keeps its traceback.
 
 from __future__ import annotations
 
+import re
+import shutil
 import sys
 from collections.abc import Callable
 from contextlib import ExitStack
+from datetime import datetime
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 import click
 
@@ -29,6 +32,11 @@ from scribe_rpg.transcribe import (
 )
 from scribe_rpg.transcribe.glossary import Glossary, load_glossary
 from scribe_rpg.transcribe.session import RawSession, Segment, TrackInfo
+
+if TYPE_CHECKING:
+    # numpy at runtime only inside `master` / `transcribe`, never for `merge`
+    from scribe_rpg.master.config import MasterConfig
+    from scribe_rpg.master.excerpt import Excerpt
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -72,6 +80,32 @@ def _common(f: F) -> F:
     return f
 
 
+def _parse_start(
+    ctx: click.Context, param: click.Parameter, value: str | None
+) -> datetime | None:
+    """Parse ``--start`` as local time; bad text is a usage error (exit 2)."""
+    if value is None:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d %H:%M").astimezone()
+    except ValueError:
+        raise click.BadParameter(
+            f'{value!r}: expected "YYYY-MM-DD HH:MM" (local time)'
+        ) from None
+
+
+def _start_option(f: F) -> F:
+    """The ``--start`` option: session start for input without info.txt."""
+    option = click.option(
+        "--start",
+        callback=_parse_start,
+        metavar='"YYYY-MM-DD HH:MM"',
+        help="Session start (local time); wins over info.txt. Needed for a "
+        "folder without info.txt.",
+    )
+    return option(f)
+
+
 @click.group(cls=_Group)
 @click.version_option(__version__, prog_name="scribe")
 def main() -> None:
@@ -83,6 +117,7 @@ def main() -> None:
     "input_path", metavar="INPUT", type=click.Path(exists=True, path_type=Path)
 )
 @_common
+@_start_option
 @click.option("--force", is_flag=True, help="Overwrite existing outputs.")
 @click.option(
     "-y", "--yes", is_flag=True, help="Download missing models without asking."
@@ -94,15 +129,18 @@ def transcribe(
     out_dir: Path | None,
     name: str | None,
     keep_fillers: bool,
+    start: datetime | None,
     force: bool,
     yes: bool,
 ) -> None:
     """Transcribe a Craig recording.
 
-    INPUT is the Craig .zip, or a folder with info.txt and <n>-<account>.flac
-    tracks. Writes <name>.md (transcript), <name>.json (raw data for
-    `scribe merge`) and "<name> - raport.md" (quality report). Needs WhisperX
-    (see README); an NVIDIA GPU is strongly recommended.
+    INPUT is the Craig .zip, or a folder of FLAC tracks (one per speaker;
+    without info.txt it needs --start). Writes <name>_transcript.md,
+    <name>_transcript.json (raw data for `scribe merge`) and
+    <name>_transcript-report.md (quality report); <name> is the session date
+    unless --name gives one. Needs WhisperX (see README); an NVIDIA GPU is
+    strongly recommended.
     """
     # Imported here: numpy is only needed for transcription, not for merge.
     from scribe_rpg.transcribe import energy
@@ -141,7 +179,7 @@ def transcribe(
     with ExitStack() as stack:
         with progress.step(f"open {input_path.name}"):
             patterns = cfg.settings["input"]["music_patterns"]
-            rec = stack.enter_context(craig.open_recording(input_path, patterns))
+            rec = stack.enter_context(craig.open_recording(input_path, patterns, start))
         paths = _paths(
             out_dir or input_path.resolve().parent,
             name or rec.start.strftime("%Y-%m-%d"),
@@ -152,7 +190,7 @@ def transcribe(
                 f"output already exists: {existing[0]} (use --force to overwrite)"
             )
         for t in rec.players:
-            if t.account not in cfg.speakers:
+            if craig.sanitize(t.account) not in cfg.speakers:
                 progress.warn(
                     f"unknown account {t.account}: "
                     "no speakers: entry, account name used"
@@ -223,10 +261,12 @@ def merge(
     name: str | None,
     keep_fillers: bool,
 ) -> None:
-    """Rebuild transcript and report from a <name>.json, without the GPU.
+    """Rebuild transcript and report from a .json, without the GPU.
 
-    Use it after changing speakers, glossary or cleanup settings. Overwrites
-    <name>.md and "<name> - raport.md"; never changes the .json.
+    JSON is a <name>_transcript.json from `scribe transcribe`. Use it after
+    changing speakers, glossary or cleanup settings. Overwrites
+    <name>_transcript.md and <name>_transcript-report.md; never changes the
+    .json.
     """
     progress = Progress()
     if config_path is None:
@@ -239,7 +279,7 @@ def merge(
     cfg = load_config(config_path, glossary_path, keep_fillers)
     gloss = _glossary(cfg)
     raw = session_json.read(json_path)
-    paths = _paths(out_dir or json_path.resolve().parent, name or json_path.stem)
+    paths = _paths(out_dir or json_path.resolve().parent, name or _json_name(json_path))
     with progress.step(f"merge {json_path.name}"):
         paths["md"].parent.mkdir(parents=True, exist_ok=True)
         result = _merge_and_write(raw, cfg, gloss, paths)
@@ -295,6 +335,318 @@ def _ensure_models(
     return wcfg
 
 
+AT = re.compile(r"(\d+):([0-5]\d):([0-5]\d)")
+
+
+def _parse_at(
+    ctx: click.Context, param: click.Parameter, value: str | None
+) -> int | None:
+    """Parse ``--at HH:MM:SS`` to seconds; bad text is a usage error."""
+    if value is None:
+        return None
+    m = AT.fullmatch(value)
+    if m is None:
+        raise click.BadParameter(f"{value!r}: expected HH:MM:SS")
+    h, mnt, sec = map(int, m.groups())
+    return h * 3600 + mnt * 60 + sec
+
+
+@main.command()
+@click.argument(
+    "input_path", metavar="INPUT", type=click.Path(exists=True, path_type=Path)
+)
+@click.option(
+    "-c",
+    "--config",
+    "config_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Campaign config (YAML): speakers, master settings.",
+)
+@click.option(
+    "-o",
+    "--output",
+    "out_dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    help="Output folder (default: next to the input).",
+)
+@click.option("--name", help="Output name (default: session date).")
+@_start_option
+@click.option("--force", is_flag=True, help="Overwrite existing outputs.")
+@click.option(
+    "--preview",
+    is_flag=True,
+    help="Write <name>_preview/ for a short excerpt instead of the full master.",
+)
+@click.option(
+    "--at",
+    callback=_parse_at,
+    metavar="HH:MM:SS",
+    help="Preview: excerpt start (default: found automatically).",
+)
+@click.option(
+    "--length",
+    type=click.IntRange(min=1),
+    metavar="SECONDS",
+    help="Preview: excerpt length (default 90).",
+)
+@click.option(
+    "--montage", is_flag=True,
+    help="Preview: join each voice's most active stretch.",
+)  # fmt: skip
+@click.option(
+    "--before-after", is_flag=True,
+    help="Preview: only 00-original and the final file.",
+)  # fmt: skip
+@click.option(
+    "--solo", metavar="ACCOUNT",
+    help="Preview: one voice track alone, through its own chain, no mix.",
+)  # fmt: skip
+@click.option(
+    "--open", "open_after", is_flag=True,
+    help="Preview: open the folder in the file manager when done.",
+)  # fmt: skip
+@click.option(
+    "--format", "fmt", type=click.Choice(["mp3", "m4a", "opus"]),
+    help="Output format (default: master.format in the config, else mp3).",
+)  # fmt: skip
+@click.option(
+    "--tracks", "write_tracks", is_flag=True,
+    help="Also write each processed track to <name>_tracks/ (FLAC).",
+)  # fmt: skip
+@click.option(
+    "--verbose", is_flag=True,
+    help="Print each track's measured loudness and applied gain.",
+)  # fmt: skip
+def master(
+    input_path: Path,
+    config_path: Path | None,
+    out_dir: Path | None,
+    name: str | None,
+    start: datetime | None,
+    force: bool,
+    preview: bool,
+    at: int | None,
+    length: int | None,
+    montage: bool,
+    before_after: bool,
+    solo: str | None,
+    open_after: bool,
+    fmt: str | None,
+    write_tracks: bool,
+    verbose: bool,
+) -> None:
+    """Mix and master a Craig recording into one audio file.
+
+    INPUT is the Craig .zip, or a folder of FLAC tracks (one per speaker;
+    without info.txt it needs --start). Writes <name>_master.<format>: every
+    track through its chain, mixed, the mix chain, encoded. With --preview,
+    writes only <name>_preview/ for a short excerpt: tracks/ (the excerpt of
+    every track, unprocessed) and a listening file per step, at one loudness.
+    """
+    valued = [("--at", at), ("--length", length), ("--solo", solo)]
+    used = [opt for opt, v in valued if v is not None]
+    flags = [("--montage", montage), ("--before-after", before_after),
+             ("--open", open_after)]  # fmt: skip
+    used += [opt for opt, on in flags if on]
+    if used and not preview:
+        raise click.UsageError(f"{', '.join(used)} needs --preview")
+    if at is not None and montage:
+        raise click.UsageError("--at and --montage cannot be used together")
+    if write_tracks and preview:
+        raise click.UsageError("--tracks cannot be used with --preview")
+
+    from scribe_rpg import ffmpeg
+    from scribe_rpg.master import mix
+    from scribe_rpg.master.config import resolve, unknown_players
+
+    progress = Progress()
+    if config_path is None:
+        config_path = _find_config(input_path.resolve().parent, progress)
+    if config_path is None:
+        progress.warn(
+            f"no config (-c, or {init.CONFIG_NAME} next to the recording): using "
+            "the default mastering settings"
+        )
+    cfg = load_config(config_path)
+    section = cfg.settings["master"]
+    # --format wins; the bitrate default then follows it unless the config set one
+    mcfg = resolve({**section, "format": fmt} if fmt else section)
+    ffmpeg.require()
+    if old := ffmpeg.version_warning():
+        progress.warn(old)
+    with progress.step("config check"):
+        mix.check(mcfg)
+    with ExitStack() as stack:
+        with progress.step(f"open {input_path.name}"):
+            patterns = cfg.settings["input"]["music_patterns"]
+            rec = stack.enter_context(craig.open_recording(input_path, patterns, start))
+        for t in rec.players:
+            if craig.sanitize(t.account) not in cfg.speakers:
+                progress.warn(
+                    f"unknown account {t.account}: no speakers: entry, voice chain used"
+                )
+        for key in unknown_players(mcfg, [t.account for t in rec.players]):
+            progress.warn(f"players: {key}: not in this recording, ignored")
+        name = name or rec.start.strftime("%Y-%m-%d")
+        folder = out_dir or input_path.resolve().parent
+        if preview:
+            account = _solo_account(rec, solo) if solo is not None else None
+            clean = cfg.settings["transcribe"]["cleanup"]
+            ex = _find_excerpt(rec, clean, length or 90, at, montage, account,
+                               progress)  # fmt: skip
+            out = folder / f"{name}_preview"
+            _write_preview(rec, ex, mcfg, out, before_after, verbose, account,
+                           progress)  # fmt: skip
+            if open_after:
+                _open(out, progress)
+        else:
+            tracks_dir = folder / f"{name}_tracks" if write_tracks else None
+            _write_master(rec, mcfg, folder / f"{name}_master.{mcfg.format}",
+                          tracks_dir, force, verbose, progress)  # fmt: skip
+
+
+def _find_excerpt(
+    rec: craig.Recording,
+    clean: dict[str, Any],
+    length: int,
+    at: int | None,
+    montage: bool,
+    solo: str | None,
+    progress: Progress,
+) -> Excerpt:
+    """Measure every track's activity and choose the preview excerpt.
+
+    With `solo` (a sanitized account), only that voice counts: the window is
+    where it is most active (music still breaks ties).
+    """
+    from scribe_rpg.master import excerpt
+
+    tracks = [
+        t
+        for t in rec.tracks
+        if solo is None or t.kind == "music" or craig.sanitize(t.account) == solo
+    ]
+    with progress.step("find excerpt"):
+        acts = excerpt.activities(
+            [t.path for t in tracks], clean["frame_ms"], clean["energy_db"]
+        )
+        pairs = list(zip(tracks, acts, strict=True))
+        voice = {t.account: a for t, a in pairs if t.kind == "player"}
+        music = [a for t, a in pairs if t.kind == "music"]
+        ex = excerpt.choose(voice, music, length, at, montage)
+    _show_excerpt(ex, montage, progress)
+    return ex
+
+
+def _write_preview(
+    rec: craig.Recording,
+    ex: Excerpt,
+    mcfg: MasterConfig,
+    folder: Path,
+    before_after: bool,
+    verbose: bool,
+    solo: str | None,
+    progress: Progress,
+) -> None:
+    """Cut the excerpt out of every track, then write the listening files."""
+    from scribe_rpg.master import preview
+
+    with progress.step(f"cut {len(rec.tracks)} tracks"):
+        preview.fresh_folder(folder)
+        paths = preview.cut(rec.tracks, ex.ranges, folder / "tracks")
+    cut = [
+        craig.Track(t.account, t.kind, p)
+        for t, p in zip(rec.tracks, paths, strict=True)
+    ]
+    preview.write_files(cut, mcfg, folder, progress, verbose, before_after, solo)
+    progress.console.print(f"preview: {folder}", markup=False, soft_wrap=True)
+
+
+def _solo_account(rec: craig.Recording, solo: str) -> str:
+    """The sanitized account `--solo` names among the voice tracks.
+
+    Raises:
+        ScribeError: If no voice track matches; lists the voice tracks.
+    """
+    wanted = craig.sanitize(solo)
+    accounts = [craig.sanitize(t.account) for t in rec.players]
+    if wanted not in accounts:
+        names = ", ".join(t.account for t in rec.players)
+        raise ScribeError(f"--solo: no voice track {solo!r}; voice tracks: {names}")
+    return wanted
+
+
+def _open(folder: Path, progress: Progress) -> None:
+    """Open the preview folder; a failure is only a warning."""
+    from scribe_rpg.master import preview
+
+    try:
+        preview.open_folder(folder)
+    except ScribeError as e:
+        progress.warn(str(e))
+
+
+def _write_master(
+    rec: craig.Recording,
+    mcfg: MasterConfig,
+    out: Path,
+    tracks_dir: Path | None,
+    force: bool,
+    verbose: bool,
+    progress: Progress,
+) -> None:
+    """Measure the loudness steps, then render the whole recording to `out`.
+
+    With `tracks_dir`, the same run writes each processed track there, plus
+    the recording's info.txt, so the folder is a valid input itself.
+    """
+    from scribe_rpg.master import mix, report
+
+    for path in [out, tracks_dir]:
+        if path is not None and path.exists() and not force:
+            raise ScribeError(
+                f"output already exists: {path.name} (use --force to overwrite)"
+            )
+    plans = [
+        mix.TrackPlan(t, mcfg.chain_for(t), stereo=mcfg.keeps_stereo(t))
+        for t in rec.tracks
+    ]
+    mix_gains = report.measure(plans, mcfg.mix, mcfg.channels, progress, verbose)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    if tracks_dir is not None:
+        shutil.rmtree(tracks_dir, ignore_errors=True)  # --force: start empty
+        tracks_dir.mkdir()
+        if rec.info_txt is not None:
+            (tracks_dir / "info.txt").write_text(rec.info_txt, encoding="utf-8")
+    n = len(plans)
+    with progress.bar(
+        f"render {out.name} ({n} track{'s' if n != 1 else ''} + mix)"
+    ) as update:
+        mix.render(plans, mcfg.mix, mix_gains, mcfg.channels, out, mcfg.format,
+                   mcfg.bitrate, update, tracks_dir=tracks_dir)  # fmt: skip
+    progress.console.print(f"master: {out}", markup=False, soft_wrap=True)
+    if tracks_dir is not None:
+        progress.console.print(f"tracks: {tracks_dir}", markup=False, soft_wrap=True)
+
+
+def _show_excerpt(ex: Excerpt, forced: bool, progress: Progress) -> None:
+    """Print the chosen excerpt, the montage notice and missing voices."""
+    from scribe_rpg.master.excerpt import hms
+
+    if ex.montage:
+        spans = ", ".join(f"{hms(s)}-{hms(e)}" for s, e in ex.ranges)
+        progress.console.print(f"excerpt (montage): {spans}", markup=False)
+        if not forced:
+            progress.warn(
+                "no stretch has every voice; montage of each voice's most active part"
+            )
+    else:
+        [(s, e)] = ex.ranges
+        progress.console.print(f"excerpt: {hms(s)}, {e - s} s", markup=False)
+    if ex.missing:
+        progress.warn(f"silent in the excerpt: {', '.join(ex.missing)}")
+
+
 @main.command(name="init")
 @click.argument(
     "source",
@@ -309,22 +661,35 @@ def _ensure_models(
     type=click.Path(file_okay=False, path_type=Path),
     help="Folder for the files (default: next to RECORDING, else here).",
 )
+@click.option(
+    "--only",
+    type=click.Choice(["master", "transcribe"]),
+    help="Only this command's settings (default: both; master needs no glossary).",
+)
+@click.option("--full", is_flag=True, help="Every setting with its default value.")
 @click.option("--language", help="Transcription language, e.g. pl (default: en).")
 @click.option("--force", is_flag=True, help="Overwrite an existing scribe.yaml.")
 def init_command(
-    source: Path | None, out_dir: Path | None, language: str | None, force: bool
-) -> None:  # fmt: skip
+    source: Path | None,
+    out_dir: Path | None,
+    only: init.Only,
+    full: bool,
+    language: str | None,
+    force: bool,
+) -> None:
     """Create scribe.yaml and glossary.txt to fill in.
 
-    With RECORDING (a Craig .zip, a track folder or a <name>.json), the
-    speakers section lists its Discord accounts, ready for their names.
-    scribe transcribe and scribe merge use scribe.yaml by themselves when it
-    is next to the recording or the .json.
+    The config is short: the settings people change. With RECORDING (a Craig
+    .zip, a track folder or a <name>.json), the speakers section lists its
+    Discord accounts, ready for their names. Every scribe command uses
+    scribe.yaml by itself when it is next to the recording or the .json.
     """
+    if language and only == "master":
+        raise click.UsageError("--language is for transcription, not --only master")
     progress = Progress()
     if out_dir is None:
         out_dir = source.resolve().parent if source else Path.cwd()
-    _create_config(source, out_dir, language, force, progress)
+    _create_config(source, out_dir, language, force, progress, only, full)
 
 
 def _interactive() -> bool:
@@ -348,13 +713,15 @@ def _create_config(
     language: str | None,
     force: bool,
     progress: Progress,
+    only: init.Only = None,
+    full: bool = False,
 ) -> None:
     """Write scribe.yaml (+ glossary.txt) from `source`; say what to do next."""
     speakers = music = None
     if source is not None:
         patterns = load_config().settings["input"]["music_patterns"]
         speakers, music = init.speakers_from(source, patterns)
-    written, kept = init.write(folder, speakers, music, language, force)
+    written, kept = init.write(folder, speakers, music, language, force, only, full)
     # soft_wrap: paths and the command are never broken across lines, so
     # they can be copied from the terminal.
     names = ", ".join(p.name for p in written)
@@ -365,13 +732,16 @@ def _create_config(
     target = f'"{source}"' if source is not None else "<recording>"
     # scribe finds scribe.yaml only next to the recording; elsewhere it needs -c.
     beside = source is not None and folder.resolve() == source.resolve().parent
-    if not beside:
-        target += f' -c "{folder / init.CONFIG_NAME}"'
-    out.print(
-        f"Next: edit the speakers (and glossary) in {init.CONFIG_NAME}, then run:",
-        markup=False,
-    )
-    out.print(f"  scribe transcribe {target}", markup=False, soft_wrap=True)
+    config = "" if beside else f' -c "{folder / init.CONFIG_NAME}"'
+    edit = "the settings" if only == "master" else "the speakers (and glossary)"
+    out.print(f"Next: edit {edit} in {init.CONFIG_NAME}, then run:", markup=False)
+    if only != "transcribe":
+        # a .json is transcription output: mastering needs the recording
+        is_json = source is not None and source.suffix.lower() == ".json"
+        recording = "<recording>" if is_json else target
+        out.print(f"  scribe master {recording}{config}", markup=False, soft_wrap=True)
+    if only != "master":
+        out.print(f"  scribe transcribe {target}{config}", markup=False, soft_wrap=True)
 
 
 def _glossary(cfg: Config) -> Glossary:
@@ -381,10 +751,16 @@ def _glossary(cfg: Config) -> Glossary:
 def _paths(out_dir: Path, name: str) -> dict[str, Path]:
     """The three output files for a session name."""
     return {
-        "md": out_dir / f"{name}.md",
-        "json": out_dir / f"{name}.json",
-        "report": out_dir / f"{name} - raport.md",
+        "md": out_dir / f"{name}_transcript.md",
+        "json": out_dir / f"{name}_transcript.json",
+        "report": out_dir / f"{name}_transcript-report.md",
     }
+
+
+def _json_name(json_path: Path) -> str:
+    """Session name of a .json: its stem without a trailing ``_transcript``."""
+    stem = json_path.stem
+    return stem.removesuffix("_transcript") or stem
 
 
 def _merge_and_write(

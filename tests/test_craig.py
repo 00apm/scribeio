@@ -2,19 +2,25 @@
 
 import zipfile
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
 from scribe_rpg.craig import (
+    account_of,
+    dir_tracks,
     is_music,
     open_recording,
     parse_info,
     read_info,
     sanitize,
+    speaker_name,
 )
 from scribe_rpg.errors import ScribeError
 
 from helpers import MUSIC, TRACKS, craig_dir, craig_zip, info_txt
+
+GIVEN = datetime(2026, 2, 3, 19, 30).astimezone()
 
 
 @pytest.mark.parametrize(
@@ -147,12 +153,81 @@ def test_dir_mode_missing_player_track(tmp_path):
             pass
 
 
-def test_dir_mode_without_info_txt(tmp_path):
-    folder = craig_dir(tmp_path / "tracks")
-    (folder / "info.txt").unlink()
-    with pytest.raises(ScribeError, match="info.txt"):
+def test_dir_mode_without_info_txt_needs_start(tmp_path):
+    folder = craig_dir(tmp_path / "tracks", info=False)
+    with pytest.raises(ScribeError) as err:
         with open_recording(folder, MUSIC):
             pass
+    assert str(err.value) == (
+        'tracks: no info.txt; give the session start with --start "YYYY-MM-DD HH:MM"'
+    )
+
+
+def test_dir_mode_without_info_txt_with_start(tmp_path):
+    folder = craig_dir(tmp_path / "tracks", info=False)
+    with open_recording(folder, MUSIC, start=GIVEN) as rec:
+        assert rec.start == GIVEN
+        assert rec.info_txt is None
+        assert [t.account for t in rec.players] == ["gm_account", "player_one"]
+
+
+def test_dir_mode_keeps_info_txt_text(tmp_path):
+    with open_recording(craig_dir(tmp_path / "tracks"), MUSIC) as rec:
+        assert rec.info_txt is not None and "Tracks:" in rec.info_txt
+
+
+def test_dir_mode_no_flac(tmp_path):
+    folder = craig_dir(tmp_path / "tracks", names=[])
+    with pytest.raises(ScribeError, match="^tracks: no FLAC files$"):
+        with open_recording(folder, MUSIC, start=GIVEN):
+            pass
+
+
+@pytest.mark.parametrize("make", ["zip", "dir"])
+def test_given_start_wins_over_info_txt(tmp_path, make):
+    path = craig_zip(tmp_path) if make == "zip" else craig_dir(tmp_path / "t")
+    with open_recording(path, MUSIC, start=GIVEN) as rec:
+        assert rec.start == GIVEN
+
+
+@pytest.mark.parametrize(
+    ("name", "account"),
+    [("3-gm_account.flac", "gm_account"), ("Game Master.flac", "Game Master"),
+     ("12-a-b.flac", "a-b")],
+)  # fmt: skip
+def test_account_of(name, account):
+    assert account_of(Path(name)) == account
+
+
+def test_dir_tracks_order(tmp_path):
+    names = ["Zed.flac", "10-c.flac", "2-b.flac", "1-a.flac", "notes.txt"]
+    folder = craig_dir(tmp_path / "t", info=False, names=names)
+    assert [f.name for f in dir_tracks(folder)] == [
+        "1-a.flac", "2-b.flac", "10-c.flac", "Zed.flac",
+    ]  # fmt: skip
+
+
+def test_dir_mode_stems_with_spaces(tmp_path):
+    names = ["Game Master.flac", "Kenku FM.flac"]
+    folder = craig_dir(tmp_path / "t", info=False, names=names)
+    with open_recording(folder, ["Kenku FM"], start=GIVEN) as rec:
+        assert [(t.account, t.kind) for t in rec.tracks] == [
+            ("Game Master", "player"), ("Kenku FM", "music"),
+        ]  # fmt: skip
+
+
+def test_dir_mode_info_txt_matches_sanitized_names(tmp_path):
+    tracks = [("Game Master#0 (000000000000000010)", "x")]
+    names = ["Game Master.flac"]
+    folder = craig_dir(tmp_path / "t", tracks=tracks, names=names)
+    with open_recording(folder, MUSIC) as rec:
+        assert [t.account for t in rec.players] == ["Game Master"]
+
+
+def test_speaker_name_compares_sanitized():
+    speakers = {"Game_Master": "GM"}
+    assert speaker_name(speakers, "Game Master") == "GM"
+    assert speaker_name(speakers, "player one") == "player one"
 
 
 def test_parse_info_keeps_names_as_discord_shows_them():

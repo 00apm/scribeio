@@ -1,12 +1,15 @@
-"""Builders for synthetic test data. Fake accounts and names only."""
+"""Shared test helpers: synthetic data (fake accounts and names only), `invoke`."""
 
 from __future__ import annotations
 
+import subprocess
 import zipfile
 from pathlib import Path
 
 import numpy as np
+from click.testing import CliRunner
 
+from scribe_rpg.cli import main
 from scribe_rpg.transcribe.session import RawSession, Segment, TrackInfo, Word
 
 START = "2026-01-01T18:00:00.000Z"
@@ -47,16 +50,26 @@ def craig_zip(folder: Path, tracks=TRACKS, start=START, name="session.zip") -> P
     return path
 
 
-def craig_dir(folder: Path, tracks=TRACKS, start=START, skip=()) -> Path:
+def craig_dir(
+    folder: Path, tracks=TRACKS, start=START, skip=(), info=True, names=None
+) -> Path:
     """Write a folder of processed tracks: info.txt + <n>-<account>.flac.
 
-    Accounts listed in `skip` get no file (to test missing tracks).
+    Accounts listed in `skip` get no file (to test missing tracks). `info`
+    False leaves out info.txt. `names` replaces the generated file names
+    (e.g. ``["Game Master.flac"]``).
     """
     folder.mkdir(parents=True, exist_ok=True)
-    (folder / "info.txt").write_text(info_txt(tracks, start), encoding="utf-8")
-    for n, (_, account) in enumerate(tracks, 1):
-        if account not in skip:
-            (folder / f"{n}-{account}.flac").write_bytes(b"fLaC fake")
+    if info:
+        (folder / "info.txt").write_text(info_txt(tracks, start), encoding="utf-8")
+    if names is None:
+        names = [
+            f"{n}-{account}.flac"
+            for n, (_, account) in enumerate(tracks, 1)
+            if account not in skip
+        ]
+    for name in names:
+        (folder / name).write_bytes(b"fLaC fake")
     return folder
 
 
@@ -120,3 +133,42 @@ def tone(seconds: float, amplitude: float = 0.1, sr: int = 16000) -> np.ndarray:
 def silence(seconds: float, sr: int = 16000) -> np.ndarray:
     """Digital silence at 16 kHz, like a Craig track when nobody talks."""
     return np.zeros(int(seconds * sr), dtype=np.float32)
+
+
+def make_flac(
+    path: Path,
+    seconds: float,
+    *,
+    freq: int = 440,
+    volume_db: float = -20,
+    on: list[tuple[float, float]] | None = None,
+    channels: int = 1,
+) -> Path:
+    """Write a 48 kHz FLAC sine with ffmpeg (needs ffmpeg in PATH).
+
+    `volume_db` is the tone's peak level in dBFS. `on` lists (start, end)
+    seconds where the tone sounds; digital silence elsewhere. None means the
+    tone sounds the whole time.
+    """
+    # lavfi's sine has amplitude 1/8; scale it to the requested peak
+    gain = 8 * 10 ** (volume_db / 20)
+    level = str(gain)
+    if on is not None:
+        terms = "+".join(f"between(t,{a},{b})" for a, b in on) or "0"
+        level = f"'if({terms},{gain},0)'"
+    subprocess.run(
+        [
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi",
+            "-i", f"sine=frequency={freq}:duration={seconds}:sample_rate=48000",
+            "-af", f"volume={level}:eval=frame", "-ac", str(channels),
+            "-c:a", "flac", str(path),
+        ],
+        check=True,
+    )  # fmt: skip
+    return path
+
+
+def invoke(*args):
+    """Run the `scribe` command in-process; arguments may be paths."""
+    return CliRunner().invoke(main, [str(a) for a in args])

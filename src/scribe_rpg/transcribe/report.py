@@ -1,4 +1,4 @@
-"""Write ``<name> - raport.md``: the quality report (in English).
+"""Write ``<name>_transcript-report.md``: the quality report (in English).
 
 Sections: versions used, per-track summary, warnings, every dropped segment
 grouped by reason, and possible bleed between tracks.

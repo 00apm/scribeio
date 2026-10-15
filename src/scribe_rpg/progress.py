@@ -3,7 +3,8 @@
 One line per finished step with a check mark and the elapsed time. While a
 step runs, a spinner with a ticking clock shows that work is going on. Tracks
 get a bar that also moves within a track and names the current phase;
-downloads get a bar counting bytes. Warnings are printed as they happen.
+work running in parallel gets one live row per item; downloads get a bar
+counting bytes. Warnings are printed as they happen.
 Text is printed literally: square brackets in names or timestamps are never
 read as rich markup.
 """
@@ -22,6 +23,7 @@ from rich.progress import (
     MofNCompleteColumn,
     SpinnerColumn,
     TaskID,
+    TaskProgressColumn,
     TextColumn,
     TimeElapsedColumn,
     TransferSpeedColumn,
@@ -92,6 +94,58 @@ class Progress:
         self.done(f"download {label}", time.monotonic() - t0)
 
     @contextmanager
+    def rows(self, labels: list[str], label: str) -> Iterator[Rows]:
+        """One live row per label for work running in parallel.
+
+        Each row shows its name, phase, a bar, percent and elapsed time; rows
+        start as ``waiting``. Afterwards prints ``✔ label (12.3s)``; nothing
+        if the block raises.
+        """
+        t0 = time.monotonic()
+        columns = (
+            TextColumn("  {task.description}"),
+            TextColumn("{task.fields[phase]}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+        )
+        with RichProgress(*columns, console=self.console, transient=True) as live:
+            yield Rows(self, live, labels)
+        self.done(label, time.monotonic() - t0)
+
+    @contextmanager
+    def count(self, live: str, label: str, total: int) -> Iterator[Callable[[], None]]:
+        """Show a bar counting `total` items as ``live  M/N``; yields
+        ``advance()``. Afterwards prints ``✔ label (12.3s)``."""
+        t0 = time.monotonic()
+        columns = (
+            TextColumn("{task.description}"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TimeElapsedColumn(),
+        )
+        with RichProgress(*columns, console=self.console, transient=True) as bar:
+            task = bar.add_task(escape(live), total=total)
+            yield lambda: bar.advance(task)
+        self.done(label, time.monotonic() - t0)
+
+    @contextmanager
+    def bar(self, label: str) -> Iterator[Callable[[float], None]]:
+        """Show a percent bar; yields ``update(percent)`` (0..100).
+        Afterwards prints ``✔ label (12.3s)``."""
+        t0 = time.monotonic()
+        columns = (
+            TextColumn("{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+        )
+        with RichProgress(*columns, console=self.console, transient=True) as bar:
+            task = bar.add_task(escape(label), total=100)
+            yield lambda percent: bar.update(task, completed=percent)
+        self.done(label, time.monotonic() - t0)
+
+    @contextmanager
     def tracks(self, total: int) -> Iterator[TrackBar]:
         """Show a bar over `total` tracks while the block runs."""
         columns = (
@@ -103,6 +157,39 @@ class Progress:
         with RichProgress(*columns, console=self.console) as bar:
             task = bar.add_task("transcribing", total=total)
             yield TrackBar(self, bar, task)
+
+
+class Rows:
+    """Handle for the live rows; see `Progress.rows`. Safe to call from
+    worker threads (rich locks its own updates)."""
+
+    def __init__(self, progress: Progress, live: RichProgress, labels: list[str]):
+        self._progress = progress
+        self._live = live
+        self._tasks = {
+            row: live.add_task(escape(row), total=100, start=False, phase="waiting")
+            for row in labels
+        }
+
+    def update(self, row: str, phase: str, percent: float) -> None:
+        """Show `row`'s current phase and percent done (starts its clock)."""
+        task = self._tasks.get(row)
+        if task is None:
+            return
+        self._live.start_task(task)  # only the first call starts the clock
+        # below 100: rich would freeze the clock of a finished task, and the
+        # row's next pass starts again at 0 (still shown as 100%)
+        completed = min(percent, 99.9)
+        self._live.update(task, phase=escape(phase), completed=completed)
+
+    def done(self, row: str, text: str) -> None:
+        """Remove `row` and print ``✔ text (time)`` with its elapsed time."""
+        task = self._tasks.pop(row, None)
+        if task is None:
+            return
+        elapsed = next(t.elapsed for t in self._live.tasks if t.id == task)
+        self._live.remove_task(task)
+        self._progress.done(text, elapsed or 0.0)
 
 
 class TrackBar:
