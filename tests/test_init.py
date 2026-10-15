@@ -1,5 +1,6 @@
 """Tests for creating scribe.yaml and glossary.txt from the templates."""
 
+import re
 from importlib.resources import files
 
 import pytest
@@ -9,7 +10,7 @@ from scribe_rpg import init
 from scribe_rpg.config import load_config
 from scribe_rpg.errors import ScribeError
 from scribe_rpg.transcribe import session_json
-from scribe_rpg.transcribe.glossary import load_glossary
+from scribe_rpg.transcribe.glossary import load_glossary, parse_glossary
 
 from helpers import craig_dir, craig_zip, raw_session
 
@@ -22,6 +23,17 @@ def test_templates_load_cleanly(tmp_path):
     assert cfg.speakers["gm_account"] == "Game Master"
     assert cfg.glossary_path == tmp_path / "glossary.txt"
     gloss = load_glossary(cfg.glossary_path)
+    # the examples are comments: a fresh glossary adds nothing to the prompt
+    assert gloss.names == []
+    assert gloss.correct("w Worgradzie") == "w Worgradzie"
+    assert "Worgrad* -> Vorgrad" in init.template("glossary.txt")
+
+
+def test_glossary_examples_work_once_uncommented():
+    text = init.template("glossary.txt")
+    # examples are commented out as "#Name" (no space after '#')
+    lines = [ln[1:] if re.match(r"#\S", ln) else ln for ln in text.splitlines()]
+    gloss = parse_glossary("\n".join(lines))
     assert gloss.names[:3] == ["Vorgrad", "Ostromir", "Czarna Wieża"]
     assert gloss.correct("w Worgradzie") == "w Vorgradzie"
 

@@ -24,6 +24,8 @@ from scribe_rpg.transcribe.session import Segment
 _HESITATION = re.compile(r"h+m+|u+h+m*|u+m+|e+r+m*")
 _YEM = re.compile(r"[yem]+")
 _DOUBLED = re.compile(r"(.)\1")
+# "Mm-hmm" / "Mm-hm" (normalized "mm hmm") is an answer, like "mhm".
+_MM_HMM = re.compile(r"\bm+ h+m+\b")
 
 
 @dataclass
@@ -49,9 +51,11 @@ def normalize(text: str) -> str:
 def is_filler(normalized: str) -> bool:
     """Tell whether normalized text is nothing but hesitations.
 
-    Answers such as "mhm", "aha", "tak", "no" and short words such as "my"
-    or "u" are not hesitations.
+    Answers such as "mhm", "mm hmm", "aha", "tak", "no" and short words such
+    as "my" or "u" are not hesitations.
     """
+    if _MM_HMM.search(normalized):
+        return False
     tokens = normalized.split()
     return bool(tokens) and all(_filler_token(t) for t in tokens)
 
