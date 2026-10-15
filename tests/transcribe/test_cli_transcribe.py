@@ -446,3 +446,42 @@ def test_merge_without_config_points_to_init(tmp_path, fake_whisper):
     )
     result = invoke("merge", tmp_path / "rec" / "s_transcript.json")
     assert "scribe init" in result.output
+
+
+def test_transcribe_uses_cleanup_frame_ms(tmp_path, fake_whisper):
+    # One 20 s frame: half tone, so the line over the silence counts as voiced
+    config = tmp_path / "scribe.yaml"
+    config.write_text(
+        "transcribe:\n  cleanup:\n    frame_ms: 20000\n", encoding="utf-8"
+    )
+    zip_path = craig_zip(tmp_path / "rec")
+    result = invoke("transcribe", zip_path, "-c", config, "--name", "s")
+    assert result.exit_code == 0, result.output
+    report = (tmp_path / "rec" / "s_transcript-report.md").read_text(encoding="utf-8")
+    assert "(0% voiced)" not in report
+
+
+def test_any_existing_output_needs_force(tmp_path, fake_whisper, campaign):
+    (tmp_path / "rec").mkdir()
+    (tmp_path / "rec" / "s_transcript-report.md").write_text("old", encoding="utf-8")
+    zip_path = craig_zip(tmp_path / "rec")
+    result = invoke("transcribe", zip_path, "-c", campaign, "--name", "s")
+    assert result.exit_code == 1 and "--force" in result.output
+    assert not (tmp_path / "rec" / "s_transcript.md").exists()
+
+
+def test_glossary_option_replaces_the_config_glossary(tmp_path, fake_whisper, campaign):
+    other = tmp_path / "other.txt"
+    other.write_text("Karak Varn\n", encoding="utf-8")
+    zip_path = craig_zip(tmp_path / "rec")
+    result = invoke("transcribe", zip_path, "-c", campaign, "-g", other, "--name", "s")
+    assert result.exit_code == 0, result.output
+    data = json.loads((tmp_path / "rec" / "s_transcript.json").read_text("utf-8"))
+    assert data["whisper"]["initial_prompt"] == "Karak Varn"
+
+
+def test_unexpected_error_keeps_its_traceback(tmp_path, fake_whisper, campaign):
+    fake_whisper.fail = RuntimeError("a bug")
+    result = invoke("transcribe", craig_zip(tmp_path / "rec"), "-c", campaign)
+    assert result.exit_code == 1
+    assert isinstance(result.exception, RuntimeError)  # not turned into one line

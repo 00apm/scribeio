@@ -1,6 +1,7 @@
 """Tests for the command line: what every command shares, and `scribe init`."""
 
 import subprocess
+from pathlib import Path
 
 import scribe_rpg
 from scribe_rpg.transcribe import session_json
@@ -56,7 +57,9 @@ def test_init_elsewhere_hints_config_option(tmp_path):
     zip_path = craig_zip(tmp_path / "rec")
     result = invoke("init", zip_path, "-o", tmp_path / "cfg")
     assert result.exit_code == 0, result.output
-    assert "-c" in result.output and "scribe.yaml" in result.output.split("Next:")[1]
+    config = tmp_path / "cfg" / "scribe.yaml"
+    assert f'  scribe master "{zip_path}" -c "{config}"\n' in result.output
+    assert f'  scribe transcribe "{zip_path}" -c "{config}"\n' in result.output
 
 
 def test_cli_import_does_not_load_numpy():
@@ -67,6 +70,23 @@ def test_cli_import_does_not_load_numpy():
     code = "import sys, scribe_rpg.cli; print('numpy' in sys.modules)"
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
     assert out.stdout.strip() == "False", out.stderr
+
+
+def test_master_modules_do_not_load_whisperx_or_torch():
+    # scribe master must work without the [transcribe] extra
+    import sys
+
+    import scribe_rpg.master as package
+
+    names = sorted(p.stem for p in Path(package.__file__).parent.glob("*.py"))
+    code = (
+        "import importlib, sys\n"
+        f"for name in {names!r}:\n"
+        "    importlib.import_module(f'scribe_rpg.master.{name}')\n"
+        "print(sorted({'whisperx', 'torch'} & set(sys.modules)))"
+    )
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert out.stdout.strip() == "[]", out.stderr
 
 
 def test_init_only_master(tmp_path):

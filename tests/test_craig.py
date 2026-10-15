@@ -73,6 +73,13 @@ def test_is_music_case_insensitive():
     assert not is_music("player_one", MUSIC)
 
 
+def test_is_music_sanitizes_both_sides():
+    # A pattern written as Discord shows it matches the file's account
+    assert is_music("Kenku_FM_1234", ["Kenku FM"])
+    assert is_music("dj_bot", ["dj.bot"])
+    assert is_music("dj.bot", ["dj_bot"])
+
+
 def test_zip_tracks_identified(tmp_path):
     with open_recording(craig_zip(tmp_path), MUSIC) as rec:
         assert rec.source == "session.zip"

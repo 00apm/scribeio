@@ -385,6 +385,7 @@ def test_master_tracks_failed_render_leaves_no_folder(tmp_path, monkeypatch):
     assert sorted(p.name for p in (tmp_path / "rec").iterdir()) == ["tracks"]
 
 
+@pytest.mark.ffmpeg
 @pytest.mark.parametrize("extra", [("--tracks", "--force"), ("--tracks",)])
 def test_master_tracks_output_is_the_input(tmp_path, extra):
     # re-mastering from a _tracks folder must not write over (delete) it
@@ -396,6 +397,7 @@ def test_master_tracks_output_is_the_input(tmp_path, extra):
     assert sorted(p.name for p in folder.iterdir()) == before
 
 
+@pytest.mark.ffmpeg
 def test_master_preview_output_is_the_input(tmp_path):
     folder = master_dir(tmp_path / "rec" / "s1_preview")
     before = sorted(p.name for p in folder.iterdir())
@@ -406,7 +408,7 @@ def test_master_preview_output_is_the_input(tmp_path):
 
 
 def test_master_tracks_not_with_preview(tmp_path):
-    folder = master_dir(tmp_path / "rec" / "tracks")
+    folder = craig_dir(tmp_path / "rec" / "tracks")  # fake bytes: no ffmpeg
     result = invoke("master", folder, "--preview", "--tracks")
     assert result.exit_code == 2
     assert "--tracks cannot be used with --preview" in result.output
@@ -515,12 +517,15 @@ def test_master_preview_solo_matches_sanitized_names(tmp_path):
     assert (preview / "06-final.mp3").exists()
 
 
+@pytest.mark.ffmpeg
 def test_master_preview_solo_unknown_account(tmp_path):
     folder = preview_dir(tmp_path / "rec" / "tracks")
     result = invoke("master", folder, *START_ARG, "--preview", "--solo", "nobody")
     assert result.exit_code == 1
-    assert "--solo: no voice track 'nobody'" in result.output
-    assert "gm_account" in result.output
+    assert (
+        "--solo: no voice track 'nobody'; "
+        "voice tracks: gm_account, player_one, Gra cz'1 Łucja"
+    ) in result.output
 
 
 @pytest.mark.ffmpeg
@@ -544,3 +549,34 @@ def test_master_preview_open_failure_is_a_warning(tmp_path, monkeypatch):
     result, preview = run_preview(tmp_path, "--before-after", "--open")
     assert "⚠ could not open" in result.output
     assert (preview / "08-final.mp3").exists()
+
+
+def test_master_without_ffmpeg_gives_install_hint(tmp_path, monkeypatch):
+    monkeypatch.setattr("scribe_rpg.ffmpeg.shutil.which", lambda name: None)
+    result = invoke("master", craig_dir(tmp_path / "tracks"))
+    assert result.exit_code == 1
+    assert "ffmpeg not found in PATH; install ffmpeg 6.1 or newer" in result.output
+
+
+@pytest.mark.ffmpeg
+def test_master_preview_names_voices_silent_in_the_excerpt(tmp_path):
+    # player_one never speaks, so even the montage misses it
+    folder = preview_dir(tmp_path / "rec" / "tracks")
+    make_flac(folder / "2-player_one.flac", 100, on=[])
+    result = invoke("master", folder, *START_ARG, "--preview", "--length", "20")
+    assert result.exit_code == 0, result.output
+    assert "excerpt (montage): " in result.output
+    assert "silent in the excerpt: player_one\n" in result.output
+
+
+@pytest.mark.ffmpeg
+def test_master_preview_names_voices_with_their_own_chain(tmp_path):
+    config = tmp_path / "rec" / "scribe.yaml"
+    config.parent.mkdir(parents=True)
+    config.write_text(
+        "master:\n  players:\n    gm_account:\n      chain: [rumble, loudness]\n",
+        encoding="utf-8",
+    )
+    result, _ = run_preview(tmp_path, "-c", config)
+    assert "gm_account: own chain, fully processed from file 01" in result.output
+    assert "player_one: own chain" not in result.output

@@ -107,6 +107,22 @@ def test_quoted_text_is_accepted_by_ffmpeg():
     )  # fmt: skip
 
 
+@pytest.mark.ffmpeg
+def test_quoted_text_reaches_the_filter_unchanged():
+    # Both unescape levels: a lone ":" would start a second option.
+    value = "a:b=1,c;d'e\\f[g]"
+    steps = [
+        Step("tag", "ametadata", {"mode": "add", "key": "k", "value": value}),
+        Step("show", "ametadata", {"mode": "print", "key": "k"}),
+    ]
+    done = ffmpeg.run(
+        ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono", "-t", "0.05",
+         "-af", chain_filter(steps, {}), "-f", "null", "-"],
+        "quoting",
+    )  # fmt: skip
+    assert f"] k={value}\n" in done.stderr
+
+
 # Captured from ffmpeg 7.1; the per-frame line's "I:" must not be read.
 SUMMARY = """\
 [Parsed_ebur128_1 @ 0] t: 2.99  M: -18.1 S: -18.1   I: -18.1 LUFS   LRA:  20.0 LU
