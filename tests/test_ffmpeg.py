@@ -45,13 +45,23 @@ def test_version_unknown_when_ffmpeg_fails(monkeypatch):
     assert ffmpeg.version() == "unknown"
 
 
-def test_version_warning_for_old_ffmpeg(monkeypatch):
-    monkeypatch.setattr(ffmpeg, "version", lambda: "4.3.1")
-    warning = ffmpeg.version_warning()
-    assert warning is not None and "4.3.1" in warning
+@pytest.mark.parametrize("found", ["4.4.2", "6.0.1"])
+def test_version_warning_for_old_ffmpeg(monkeypatch, found):
+    monkeypatch.setattr(ffmpeg, "version", lambda: found)
+    assert ffmpeg.version_warning() == (
+        f"ffmpeg {found} is older than 6.1, the oldest scribe supports; "
+        "mastering may fail"
+    )
 
 
-@pytest.mark.parametrize("found", ["7.1", "N-11234-gabc", "unknown"])
+def test_install_hint_has_no_version_cap():
+    # the "<8" cap was torchcodec's (WhisperX), not scribe's; mastering and
+    # transcription both ran on ffmpeg 9
+    assert "<8" not in ffmpeg.HINT and "6.1 or newer" in ffmpeg.HINT
+    assert "libmp3lame" in ffmpeg.HINT
+
+
+@pytest.mark.parametrize("found", ["6.1", "6.1.0", "7.1", "N-11234-gabc", "unknown"])
 def test_no_version_warning(monkeypatch, found):
     monkeypatch.setattr(ffmpeg, "version", lambda: found)
     assert ffmpeg.version_warning() is None

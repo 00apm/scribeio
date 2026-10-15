@@ -3,10 +3,12 @@
 import subprocess
 
 import scribe_rpg
+from scribe_rpg.transcribe import session_json
 
 from helpers import (
     craig_zip,
     invoke,
+    raw_session,
 )
 
 
@@ -93,3 +95,14 @@ def test_init_full(tmp_path):
 def test_init_language_needs_transcription(tmp_path):
     result = invoke("init", "-o", tmp_path, "--only", "master", "--language", "pl")
     assert result.exit_code == 2 and "--language" in result.output
+
+
+def test_init_from_json_hints_merge(tmp_path):
+    path = tmp_path / "2026-01-01_transcript.json"
+    session_json.write(path, raw_session([]))
+    result = invoke("init", path)
+    assert result.exit_code == 0, result.output
+    next_steps = result.output.split("Next:")[1]
+    assert f'scribe merge "{path}"' in next_steps
+    assert "scribe transcribe" not in next_steps
+    assert "scribe master <recording>" in next_steps

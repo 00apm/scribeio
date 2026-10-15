@@ -24,12 +24,13 @@ if TYPE_CHECKING:
     import numpy.typing as npt
 
 HINT = (
-    'ffmpeg not found in PATH; install it (conda install -c conda-forge "ffmpeg<8", '
-    "winget install ffmpeg, apt install ffmpeg or brew install ffmpeg)"
+    "ffmpeg not found in PATH; install ffmpeg 6.1 or newer with libmp3lame "
+    "(conda install -c conda-forge ffmpeg, winget install ffmpeg, "
+    "apt install ffmpeg or brew install ffmpeg)"
 )
-# amix normalize first appears in 4.4 (absent in 4.3's filter docs);
-# ebur128 dualmono and alimiter level already exist in 4.4.
-MIN_VERSION = (4, 4)
+# The oldest ffmpeg on a current LTS Linux (Ubuntu 24.04). The filters alone
+# would work from 4.4, but 4.4's Windows build crashes on a FLAC input seek.
+MIN_VERSION = (6, 1)
 
 _BASE = ["ffmpeg", "-hide_banner", "-nostdin", "-nostats"]
 # How ffmpeg ends when Ctrl+C reaches it too: 255 after "received signal";
@@ -76,7 +77,10 @@ def version_warning() -> str | None:
     if m is None or (int(m.group(1)), int(m.group(2))) >= MIN_VERSION:
         return None
     need = ".".join(map(str, MIN_VERSION))
-    return f"ffmpeg {found} is older than {need}; mastering filters may fail"
+    return (
+        f"ffmpeg {found} is older than {need}, the oldest scribe supports; "
+        "mastering may fail"
+    )
 
 
 def attempt(args: list[str]) -> subprocess.CompletedProcess[str]:

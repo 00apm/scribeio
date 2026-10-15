@@ -752,13 +752,15 @@ def _create_config(
     config = "" if beside else f' -c "{folder / init.CONFIG_NAME}"'
     edit = "the settings" if only == "master" else "the speakers (and glossary)"
     out.print(f"Next: edit {edit} in {init.CONFIG_NAME}, then run:", markup=False)
+    # a .json is transcription output: mastering needs the recording, and
+    # the transcript is rebuilt with merge
+    is_json = source is not None and source.suffix.lower() == ".json"
     if only != "transcribe":
-        # a .json is transcription output: mastering needs the recording
-        is_json = source is not None and source.suffix.lower() == ".json"
         recording = "<recording>" if is_json else target
         out.print(f"  scribe master {recording}{config}", markup=False, soft_wrap=True)
     if only != "master":
-        out.print(f"  scribe transcribe {target}{config}", markup=False, soft_wrap=True)
+        command = "merge" if is_json else "transcribe"
+        out.print(f"  scribe {command} {target}{config}", markup=False, soft_wrap=True)
 
 
 def _glossary(cfg: Config) -> Glossary:

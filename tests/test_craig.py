@@ -148,9 +148,14 @@ def test_dir_mode_music_may_be_absent(tmp_path):
 
 def test_dir_mode_missing_player_track(tmp_path):
     folder = craig_dir(tmp_path / "tracks", skip={"player_one"})
-    with pytest.raises(ScribeError, match="player_one"):
+    with pytest.raises(ScribeError) as err:
         with open_recording(folder, MUSIC):
             pass
+    # renamed tracks next to info.txt land here too: the message says how out
+    assert str(err.value) == (
+        "tracks: info.txt lists player_one, but no track file matches; keep "
+        "Craig's track names, or remove info.txt and give --start"
+    )
 
 
 def test_dir_mode_without_info_txt_needs_start(tmp_path):

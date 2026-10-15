@@ -335,8 +335,11 @@ def _read(
             if a not in present and not is_music(a, music_patterns)
         ]
         if missing:
+            # also hit by tracks renamed after the speaker next to info.txt
             raise ScribeError(
-                f"{source}: missing player track for {', '.join(missing)}"
+                f"{source}: info.txt lists {', '.join(missing)}, but no track "
+                "file matches; keep Craig's track names, or remove info.txt "
+                "and give --start"
             )
     if not any(t.kind == "player" for t in tracks):
         raise ScribeError(f"{source}: no player tracks found")
