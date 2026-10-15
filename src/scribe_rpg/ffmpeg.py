@@ -204,8 +204,11 @@ def duration(path: Path) -> float:
     Raises:
         ScribeError: If ffmpeg prints no duration (not an audio file).
     """
-    # `ffmpeg -i` without an output exits 1 by design, so no `run` here.
-    done = attempt(["-i", str(path)])
+    # An empty output, so ffmpeg exits normally: a bare `ffmpeg -i` ends on
+    # the "no output file" error, where ffmpeg 7.1 sometimes deadlocks and
+    # never exits (about 1 in 7000 launches). `attempt`, not `run`: a
+    # non-audio file is reported below with ffmpeg's own reason.
+    done = attempt(["-i", str(path), "-t", "0", "-f", "null", "-"])
     m = re.search(r"Duration: (\d+):(\d\d):(\d\d(?:\.\d+)?)", done.stderr)
     if m is None:
         reason = _tail(done.stderr, done.returncode)

@@ -109,6 +109,31 @@ def test_duration(tmp_path):
 
 
 @pytest.mark.ffmpeg
+def test_duration_ends_ffmpeg_normally(tmp_path, monkeypatch):
+    # ffmpeg 7.1 sometimes deadlocks on the "no output file" error exit
+    # (about 1 in 7000 launches here), so the duration read gives an output
+    codes = []
+    attempt = ffmpeg.attempt
+
+    def recording(args):
+        done = attempt(args)
+        codes.append(done.returncode)
+        return done
+
+    monkeypatch.setattr(ffmpeg, "attempt", recording)
+    ffmpeg.duration(make_flac(tmp_path / "a.flac", 2))
+    assert codes == [0]
+
+
+@pytest.mark.ffmpeg
+def test_duration_of_a_non_audio_file(tmp_path):
+    bad = tmp_path / "bad.flac"
+    bad.write_bytes(b"not audio")
+    with pytest.raises(ScribeError, match=r"ffmpeg failed \(duration bad.flac\)"):
+        ffmpeg.duration(bad)
+
+
+@pytest.mark.ffmpeg
 def test_make_flac_on_ranges(tmp_path):
     import numpy as np
 
