@@ -1,6 +1,7 @@
 """Loudness measurement and filters on real (synthetic) audio through ffmpeg."""
 
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -210,6 +211,40 @@ def test_check_reports_player_step(tmp_path):
             "      gate: {threshold: 7}\n",
         )
     assert str(e.value).startswith("master.players.player_one.gate (agate): ")
+
+
+def test_check_runs_the_eq_delay_cut(tmp_path):
+    # firequalizer takes an expression, the atrim scribe adds after it does not
+    with pytest.raises(ScribeError) as e:
+        checked(tmp_path, "  voice:\n    eq: {delay: 1/20}\n")
+    assert str(e.value).startswith("master.voice.eq (firequalizer): ")
+
+
+def test_check_bad_bitrate_names_the_reason(tmp_path):
+    with pytest.raises(ScribeError) as e:
+        checked(tmp_path, "  format: opus\n  bitrate: 1000k\n")
+    assert str(e.value).startswith("master.bitrate (opus 1000k): ")
+    assert "1000000" in str(e.value) and "256000" in str(e.value)
+
+
+def test_check_missing_encoder(tmp_path, monkeypatch):
+    real = ffmpeg.attempt
+
+    def no_lame(args):
+        if "libmp3lame" in args:
+            return subprocess.CompletedProcess(
+                args, 1, "", "[aost#0:0 @ 0000] Unknown encoder 'libmp3lame'\n"
+            )
+        return real(args)
+
+    monkeypatch.setattr(ffmpeg, "attempt", no_lame)
+    with pytest.raises(ScribeError) as e:
+        checked(tmp_path, "  format: mp3\n")
+    assert str(e.value) == (
+        "master.format (mp3): this ffmpeg has no libmp3lame encoder; install "
+        "an ffmpeg build with libmp3lame, or choose another master.format "
+        "(or --format)"
+    )
 
 
 # --- progress of the measuring passes ------------------------------------------

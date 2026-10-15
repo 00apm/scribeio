@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import subprocess
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -30,7 +31,6 @@ from scribe_rpg.master.render import (
     parse_peak,
     passes,
     percent_of,
-    step_filter,
     track_gains,
 )
 
@@ -282,8 +282,12 @@ def check(cfg: MasterConfig) -> None:
     ffmpeg checks option names and ranges itself; a bad one stops here, with
     the step's config path, instead of after minutes of measuring.
 
+    The encoder is tried too (format and bitrate), so a bitrate it refuses
+    or an ffmpeg build without it stops here as well.
+
     Raises:
-        ScribeError: ``<path> (<type>): <ffmpeg's message>``, first bad step.
+        ScribeError: ``<path> (<type>): <ffmpeg's message>``, first bad step;
+            then ``master.format`` / ``master.bitrate`` for the encoder.
     """
     chains = [cfg.voice, cfg.music, cfg.mix, *cfg.players.values()]
     steps = {s.where: s for chain in chains for s in chain if s.type not in OPERATIONS}
@@ -291,22 +295,58 @@ def check(cfg: MasterConfig) -> None:
     for step, problem in zip(steps.values(), problems, strict=True):
         if problem is not None:
             raise ScribeError(f"{step.where} ({step.type}): {problem}")
+    _check_encoder(cfg.format, cfg.bitrate)
+
+
+def _silence(args: list[str]) -> subprocess.CompletedProcess[str]:
+    """Run ffmpeg on 0.1 s of mono silence with `args` before the null output."""
+    return ffmpeg.attempt(
+        ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono", "-t", "0.1",
+         *args, "-f", "null", "-"]
+    )  # fmt: skip
 
 
 def _problem(step: Step) -> str | None:
     """ffmpeg's complaint about `step`, or None if it runs."""
-    done = ffmpeg.attempt(
-        ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono", "-t", "0.1",
-         "-af", f"aformat=sample_fmts=flt,{step_filter(step)}",
-         "-f", "null", "-"]
-    )  # fmt: skip
+    # chain_filter, as the render builds it (the eq's delay cut included)
+    done = _silence(["-af", chain_filter([step], {})])
     if done.returncode == 0:
         return None
-    lines = [_PREFIX.sub("", line).strip() for line in done.stderr.splitlines()]
-    lines = [line for line in lines if line]
+    lines = _lines(done.stderr)
     # the most specific line first: a range, then any option line, else the last
     for key in ("out of range", "option"):
         for line in lines:
             if key in line.lower():
                 return line
     return lines[-1] if lines else f"ffmpeg exited with {done.returncode}"
+
+
+def _check_encoder(fmt: str, bitrate: str) -> None:
+    """Encode the silence as the master will be encoded.
+
+    Raises:
+        ScribeError: If the encoder is missing or refuses the bitrate.
+    """
+    args = encode_args(fmt, bitrate)
+    # errors only: the stream info lines would come before the reason
+    done = _silence(["-loglevel", "error", *args])
+    if done.returncode == 0:
+        return
+    codec = args[1]  # "-c:a", codec, ...
+    if f"Unknown encoder '{codec}'" in done.stderr:
+        raise ScribeError(
+            f"master.format ({fmt}): this ffmpeg has no {codec} encoder; install "
+            f"an ffmpeg build with {codec}, or choose another master.format "
+            "(or --format)"
+        )
+    lines = _lines(done.stderr)
+    # the encoder's own complaint comes first (e.g. "The bit rate ... is
+    # unsupported"); the lines after it are ffmpeg's generic follow-ups
+    first = lines[0] if lines else f"ffmpeg exited with {done.returncode}"
+    raise ScribeError(f"master.bitrate ({fmt} {bitrate}): {first}")
+
+
+def _lines(stderr: str) -> list[str]:
+    """ffmpeg's non-empty error lines without their ``[name @ 0x...]`` prefix."""
+    lines = [_PREFIX.sub("", line).strip() for line in stderr.splitlines()]
+    return [line for line in lines if line]

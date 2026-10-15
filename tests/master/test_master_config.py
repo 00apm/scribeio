@@ -244,6 +244,27 @@ def test_merge_without_user_section():
             "  voice:\n    chain: [stereo]\n",
             "master.voice.chain: unknown step 'stereo'",
         ),
+        (
+            "  voice:\n    level: {targt: -30}\n",
+            "master.voice.level: loudness has only target and dual_mono, not 'targt'",
+        ),
+        (
+            "  voice:\n    level: {dual_mono: maybe}\n",
+            "master.voice.level: dual_mono: expected true or false",
+        ),
+        (
+            "  music:\n    loudness: {target: .nan}\n",
+            "master.music.loudness: loudness needs a target in LUFS, e.g. -19",
+        ),
+        (
+            "  voice:\n    chain: [x]\n    x: {type: {a: 1}}\n",
+            "master.voice.x: unknown type {'a': 1}",
+        ),
+        (
+            "  players:\n    gm.account: {}\n    gm_account: {}\n",
+            "master.players: 'gm.account' and 'gm_account' are one account "
+            "(gm_account); keep one",
+        ),
         ("  players: [a]\n", "master.players: expected key: value pairs"),
         ("  players:\n    a: 3\n", "master.players.a: expected key: value pairs"),
     ],
