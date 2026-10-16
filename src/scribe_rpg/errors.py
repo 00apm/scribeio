@@ -7,3 +7,10 @@ a traceback. Any other exception is a bug and keeps its traceback.
 
 class ScribeError(Exception):
     """A problem with the user's input, config, environment or outputs."""
+
+
+class InstallError(ScribeError):
+    """scribe or a tool it needs is not installed or not usable.
+
+    The CLI adds a pointer to ``scribe check`` after it.
+    """

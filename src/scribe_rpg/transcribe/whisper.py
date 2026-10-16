@@ -22,7 +22,7 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
-from scribe_rpg import ffmpeg
+from scribe_rpg import checks, ffmpeg
 from scribe_rpg.errors import ScribeError
 from scribe_rpg.transcribe.session import Segment, Word
 
@@ -60,7 +60,7 @@ def preflight(cfg: dict[str, Any]) -> list[str]:
             work on this machine (CUDA requested but unusable; float16 on CPU).
     """
     quiet_libraries()
-    ffmpeg.require()
+    checks.require(checks.ffmpeg_item())
     _whisperx()
     import torch
 

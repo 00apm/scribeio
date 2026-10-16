@@ -14,7 +14,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from scribe_rpg import ffmpeg
+from scribe_rpg import checks, ffmpeg
 from scribe_rpg.config import load_config
 from scribe_rpg.errors import ScribeError
 from scribe_rpg.transcribe import whisper
@@ -281,7 +281,7 @@ def fakes(monkeypatch):
     state.torch = fake_torch
     monkeypatch.setitem(sys.modules, "whisperx", fake_whisperx)
     monkeypatch.setitem(sys.modules, "torch", fake_torch)
-    monkeypatch.setattr(ffmpeg.shutil, "which", lambda name: "ffmpeg")
+    monkeypatch.setattr(checks.shutil, "which", lambda name: "ffmpeg")
     monkeypatch.setattr(
         whisper, "_installed_version", lambda pkg: state.whisperx_version
     )
@@ -302,8 +302,8 @@ def test_preflight_ok_on_gpu(fakes):
 
 
 def test_preflight_ffmpeg_missing(fakes, monkeypatch):
-    monkeypatch.setattr(ffmpeg.shutil, "which", lambda name: None)
-    with pytest.raises(ScribeError, match="ffmpeg not found"):
+    monkeypatch.setattr(checks.shutil, "which", lambda name: None)
+    with pytest.raises(ScribeError, match="ffmpeg: not found in PATH"):
         whisper.preflight(wcfg())
 
 

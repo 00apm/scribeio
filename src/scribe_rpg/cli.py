@@ -17,9 +17,9 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 import click
 
-from scribe_rpg import __version__, craig, init
+from scribe_rpg import __version__, checks, craig, init
 from scribe_rpg.config import Config, load_config
-from scribe_rpg.errors import ScribeError
+from scribe_rpg.errors import InstallError, ScribeError
 from scribe_rpg.progress import Progress
 from scribe_rpg.transcribe import (
     markdown,
@@ -41,13 +41,18 @@ F = TypeVar("F", bound=Callable[..., Any])
 
 
 class _Group(click.Group):
-    """Click group that reports ScribeError as one red line, exit code 1."""
+    """Click group that reports ScribeError in red, exit code 1.
+
+    An installation error is followed by a pointer to ``scribe check``.
+    """
 
     def invoke(self, ctx: click.Context) -> Any:
         try:
             return super().invoke(ctx)
         except ScribeError as e:
             click.secho(str(e), fg="red", err=True)
+            if isinstance(e, InstallError):
+                click.echo(checks.CHECK_HINT, err=True)
             ctx.exit(1)
 
 
@@ -516,7 +521,6 @@ def master(
     if write_tracks and preview:
         raise click.UsageError("--tracks cannot be used with --preview")
 
-    from scribe_rpg import ffmpeg
     from scribe_rpg.master import mix
     from scribe_rpg.master.config import resolve, unknown_players
 
@@ -532,9 +536,9 @@ def master(
     section = cfg.settings["master"]
     # --format wins; the bitrate default then follows it unless the config set one
     mcfg = resolve({**section, "format": fmt} if fmt else section)
-    ffmpeg.require()
-    if old := ffmpeg.version_warning():
-        progress.warn(old)
+    found = checks.require(checks.ffmpeg_item())
+    if found.status == "warning":
+        progress.warn(checks.line(found))
     with progress.step("config check"):
         mix.check(mcfg)
     with ExitStack() as stack:
