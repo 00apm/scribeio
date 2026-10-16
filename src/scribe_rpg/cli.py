@@ -163,19 +163,24 @@ def transcribe(
     gloss = _glossary(cfg)
     wcfg = cfg.settings["transcribe"]["whisper"]
 
-    # Cheap checks first: fail in seconds, before unzipping or loading models.
-    with progress.step("check ffmpeg, WhisperX, CUDA"):
-        run_warnings = whisper.preflight(wcfg)
-        used_versions = whisper.versions()
-    for w in run_warnings:
-        progress.warn(w)
-    with progress.step("check models"):
-        needed = models.needed(wcfg)
-    wcfg = _ensure_models(needed, wcfg, progress, yes)
-
     # The ExitStack keeps the zip's temp folder alive until outputs are written
-    # and removes it afterwards, also on errors and Ctrl+C.
+    # and removes it afterwards, also on errors and Ctrl+C. Known noisy library
+    # warnings go to the report instead of the screen; on a failure they are
+    # shown, as they may explain it.
     with ExitStack() as stack:
+        hidden = stack.enter_context(whisper.hidden_warnings())
+        stack.push(lambda kind, *_: _show_hidden_on_error(kind, hidden, progress))
+
+        # Cheap checks first: fail in seconds, before unzipping or loading models.
+        with progress.step("check ffmpeg, WhisperX, CUDA"):
+            run_warnings = whisper.preflight(wcfg)
+            used_versions = whisper.versions()
+        for w in run_warnings:
+            progress.warn(w)
+        with progress.step("check models"):
+            needed = models.needed(wcfg)
+        wcfg = _ensure_models(needed, wcfg, progress, yes)
+
         with progress.step(f"open {input_path.name}"):
             patterns = cfg.settings["input"]["music_patterns"]
             rec = stack.enter_context(craig.open_recording(input_path, patterns, start))
@@ -239,13 +244,33 @@ def transcribe(
             segments=segments,
             scribe=__version__,
             versions=used_versions,
-            warnings=run_warnings,
+            warnings=[*run_warnings, *hidden],
         )
         with progress.step(f"write {paths['md'].name}"):
             paths["md"].parent.mkdir(parents=True, exist_ok=True)
             session_json.write(paths["json"], raw)
             result = _merge_and_write(raw, cfg, gloss, paths)
     _summary(progress, paths, result)
+    if hidden:
+        s = "" if len(hidden) == 1 else "s"
+        progress.console.print(
+            f"{len(hidden)} library warning{s} hidden, listed in the report",
+            markup=False,
+        )
+
+
+def _show_hidden_on_error(
+    kind: type[BaseException] | None, hidden: list[str], progress: Progress
+) -> bool:
+    """Print the hidden library warnings if the run stops on an error.
+
+    Not on success, not on Ctrl+C. Returns False: the error goes on.
+    """
+    if hidden and kind is not None and issubclass(kind, Exception):
+        progress.console.print("library warnings (may explain the error):")
+        for w in hidden:
+            progress.console.print(f"  {w}", markup=False)
+    return False
 
 
 def _print_music(rec: craig.Recording, use: str, progress: Progress) -> None:

@@ -2,6 +2,7 @@
 
 import json
 import textwrap
+import warnings
 from datetime import datetime, timezone
 
 import numpy as np
@@ -32,12 +33,15 @@ class FakeTranscriber:
     calls: list[str] = []
     fail: Exception | None = None
     extra_warnings: list[str] = []
+    library_warnings: list[str] = []  # emitted like pyannote's, on loading
 
     def __init__(self, cfg, names):
         self.cfg = cfg
         self.initial_prompt = ", ".join(names)
         self.prompt_cut: list[str] = []
         self.warnings = list(FakeTranscriber.extra_warnings)
+        for text in FakeTranscriber.library_warnings:
+            warnings.warn(text, stacklevel=1)
 
     def transcribe(self, audio, account, on_progress=None, on_phase=None):
         if on_phase:
@@ -68,6 +72,7 @@ def fake_whisper(monkeypatch):
     FakeTranscriber.calls = []
     FakeTranscriber.fail = None
     FakeTranscriber.extra_warnings = []
+    FakeTranscriber.library_warnings = []
     audio = np.concatenate([tone(10.0), silence(10.0)])  # speech 0-10 s, then silence
     monkeypatch.setattr(whisper, "Transcriber", FakeTranscriber)
     monkeypatch.setattr(whisper, "load_audio", lambda path: audio)
@@ -219,6 +224,44 @@ def test_run_warnings_reach_the_report_and_survive_merge(
         assert "- runs on cpu: very slow\n- prompt length estimated\n" in text
         result = invoke("merge", tmp_path / "rec" / "s_transcript.json", "-c", campaign)
         assert result.exit_code == 0, result.output
+
+
+TORCHCODEC = (
+    "\ntorchcodec is not installed correctly so built-in audio decoding will "
+    "fail. Solutions are:\n* fix torchcodec installation."
+)
+
+
+def test_known_library_warnings_go_to_the_report(tmp_path, fake_whisper, campaign):
+    fake_whisper.library_warnings = [TORCHCODEC]
+    zip_path = craig_zip(tmp_path / "rec")
+    result = invoke("transcribe", zip_path, "-c", campaign, "--name", "s")
+    assert result.exit_code == 0, result.output
+    assert "torchcodec" not in result.output
+    assert "1 library warning hidden, listed in the report" in result.output
+    report = (tmp_path / "rec" / "s_transcript-report.md").read_text("utf-8")
+    assert (
+        "- library warning: torchcodec is not installed correctly so built-in "
+        "audio decoding will fail. Solutions are: * fix torchcodec installation.\n"
+    ) in report
+
+
+def test_no_hidden_line_without_library_warnings(tmp_path, fake_whisper, campaign):
+    result = invoke("transcribe", craig_zip(tmp_path / "rec"), "-c", campaign)
+    assert result.exit_code == 0, result.output
+    assert "library warning" not in result.output
+
+
+def test_hidden_library_warnings_shown_when_the_run_fails(
+    tmp_path, fake_whisper, campaign
+):
+    fake_whisper.library_warnings = [TORCHCODEC]
+    fake_whisper.fail = ScribeError("CUDA out of memory; try a smaller batch_size")
+    result = invoke("transcribe", craig_zip(tmp_path / "rec"), "-c", campaign)
+    assert result.exit_code == 1
+    hidden = result.output.index("library warnings (may explain the error):")
+    assert result.output.index("torchcodec is not installed") > hidden
+    assert result.output.index("smaller batch_size") > hidden
 
 
 def test_failure_mid_run_writes_nothing(tmp_path, fake_whisper, campaign):
