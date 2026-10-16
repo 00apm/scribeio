@@ -373,3 +373,18 @@ def test_online_without_whisperx_checks_reachability_only(
     write_config(tmp_path, "")
     lines, _ = online(tmp_path)
     assert network["sizes"] == [] and network["reached"] == ["huggingface.co"]
+
+
+def test_settings_heading_without_whisperx(ready, monkeypatch, tmp_path):
+    monkeypatch.setattr(checks, "whisperx_item", BROKEN["whisperx_broken"][1])
+    path = write_config(tmp_path, "")
+    lines, _ = check_report.report(None, tmp_path, online=False)
+    i = lines.index("Settings")
+    assert (
+        lines[i - 1] == "" and lines[i + 1] == f"  Settings checked: {path.resolve()}"
+    )
+
+
+def test_no_settings_heading_with_the_models_block(ready, tmp_path):
+    lines, _ = check_report.report(None, tmp_path, online=False)
+    assert "Settings" not in lines

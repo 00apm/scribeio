@@ -177,6 +177,8 @@ def model_lines(
             f"  ⚠ alignment {language}: damaged; replaced on the next transcription"
             for language in damaged
         ]
+    else:
+        lines.append("Settings")  # no Models block to hold the settings lines
     if checked.path is None:
         return [
             *lines,
