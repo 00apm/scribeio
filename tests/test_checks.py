@@ -1,9 +1,10 @@
 """Installation checks shared by `scribe check`, `transcribe` and `master`."""
 
+import http.client
 import subprocess
 import sys
 from email.message import Message
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from urllib.error import HTTPError, URLError
 
 import pytest
@@ -200,7 +201,9 @@ class BrokenFinder:
 
 @pytest.fixture
 def fake_whisperx(monkeypatch):
-    monkeypatch.setitem(sys.modules, "whisperx", SimpleNamespace())
+    # WhisperX imports lazily: torch and co. load with these two submodules
+    for name in ("whisperx", "whisperx.alignment", "whisperx.asr"):
+        monkeypatch.setitem(sys.modules, name, SimpleNamespace())
     monkeypatch.setattr(checks, "installed_version", lambda pkg: "3.8.6")
 
 
@@ -236,6 +239,24 @@ def test_whisperx_missing_dependency_is_broken(monkeypatch):
     monkeypatch.setattr(sys, "meta_path", [NoTorch(), *sys.meta_path])
     assert checks.whisperx_item().message.startswith(
         "installed but does not load (ModuleNotFoundError: No module named 'torch'"
+    )
+
+
+def test_whisperx_with_broken_torch(fake_whisperx, monkeypatch):  # Review Focus 3
+    class TorchDllFails:
+        def find_spec(self, name, path=None, target=None):
+            if name == "whisperx.alignment":
+                raise OSError("[WinError 126] c10.dll not found")
+
+    package = ModuleType("whisperx")
+    package.__path__ = []  # a package, so the finders are asked for its submodules
+    monkeypatch.setitem(sys.modules, "whisperx", package)
+    monkeypatch.delitem(sys.modules, "whisperx.alignment")
+    monkeypatch.setattr(sys, "meta_path", [TorchDllFails(), *sys.meta_path])
+    item = checks.whisperx_item()
+    assert (item.status, item.guide) == ("missing", "transcription")
+    assert item.message.startswith(
+        "installed but does not load (OSError: [WinError 126]"
     )
 
 
@@ -424,3 +445,27 @@ def test_sources_match_the_download_urls():
     from scribe_rpg.transcribe import models
 
     assert checks.SOURCES["download.pytorch.org"] == models.TORCHAUDIO_URL
+
+
+@pytest.mark.parametrize(
+    "error",
+    [http.client.BadStatusLine("HTTP/1.1 ???"), ValueError("bad proxy URL")],
+)
+def test_reach_never_fails_the_check(monkeypatch, error):
+    urlopen_doing(monkeypatch, error)
+    item = checks.reach("huggingface.co", "https://huggingface.co")
+    assert (item.status, item.guide) == ("warning", "connection")
+    assert item.message.startswith("not reachable: ")
+
+
+def test_encoder_when_ffmpeg_does_not_start(monkeypatch):
+    def attempt(args):
+        raise OSError("[WinError 193] %1 is not a valid Win32 application")
+
+    monkeypatch.setattr(ffmpeg, "attempt", attempt)
+    item = checks.encoder_item("mp3", "96k")
+    assert (item.status, item.guide) == ("missing", "ffmpeg")
+    assert item.message == (
+        "cannot be tried: ffmpeg does not start "
+        "([WinError 193] %1 is not a valid Win32 application)"
+    )

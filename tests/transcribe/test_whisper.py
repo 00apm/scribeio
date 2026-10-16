@@ -289,6 +289,8 @@ def fakes(monkeypatch):
     )
     state.torch = fake_torch
     monkeypatch.setitem(sys.modules, "whisperx", fake_whisperx)
+    monkeypatch.setitem(sys.modules, "whisperx.alignment", SimpleNamespace())
+    monkeypatch.setitem(sys.modules, "whisperx.asr", SimpleNamespace())
     monkeypatch.setitem(sys.modules, "torch", fake_torch)
     monkeypatch.setattr(checks.shutil, "which", lambda name: "ffmpeg")
     monkeypatch.setattr(

@@ -139,10 +139,17 @@ def encoder_item(fmt: str, bitrate: str) -> Item:
     name = f"{fmt} encoder"
     args = encode_args(fmt, bitrate)
     # errors only: the stream info lines would come before the reason
-    done = ffmpeg.attempt(
-        ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono", "-t", "0.1",
-         "-loglevel", "error", *args, "-f", "null", "-"]
-    )  # fmt: skip
+    try:
+        done = ffmpeg.attempt(
+            ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono", "-t", "0.1",
+             "-loglevel", "error", *args, "-f", "null", "-"]
+        )  # fmt: skip
+    except OSError as e:  # in PATH but does not start (a broken shim, a bad file)
+        return Item(
+            name, "missing",
+            message=f"cannot be tried: ffmpeg does not start ({_first_line(e)})",
+            guide="ffmpeg",
+        )  # fmt: skip
     if done.returncode == 0:
         return Item(name, "ok")
     codec = args[1]  # "-c:a", codec, ...
@@ -180,6 +187,11 @@ def whisperx_item() -> Item:
     """
     try:
         import whisperx  # noqa: F401
+
+        # WhisperX imports lazily: these load torch, torchaudio, transformers
+        # and faster-whisper, where a broken install shows (a few seconds)
+        import whisperx.alignment
+        import whisperx.asr  # noqa: F401
     except ModuleNotFoundError as e:
         if e.name == "whisperx":
             return Item(
@@ -308,6 +320,8 @@ def reach(host: str, url: str, timeout: float = 10.0) -> Item:
         return _unreachable(host, str(e.reason))
     except OSError as e:  # a timeout while reading the answer
         return _unreachable(host, str(e) or "timed out")
+    except Exception as e:  # a garbled answer, a bad proxy setting
+        return _unreachable(host, _first_line(e))
     return Item(host, "ok")
 
 
