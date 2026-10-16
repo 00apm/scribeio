@@ -88,13 +88,16 @@ def fakes(monkeypatch, tmp_path):
         )
     )
     torch = SimpleNamespace(hub=SimpleNamespace(get_dir=lambda: str(state.hub)))
+    hf_constants = SimpleNamespace(HF_HUB_CACHE=str(tmp_path / "hf"))
     for name, module in {
         "faster_whisper": faster_whisper,
         "faster_whisper.utils": fw_utils,
         "huggingface_hub": SimpleNamespace(
             snapshot_download=snapshot_download,
             HfApi=lambda: SimpleNamespace(model_info=model_info),
+            constants=hf_constants,
         ),
+        "huggingface_hub.constants": hf_constants,
         "whisperx": whisperx,
         "whisperx.alignment": alignment,
         "torchaudio": torchaudio,
@@ -372,3 +375,45 @@ def test_describe():
     assert models.describe(m, None) == "Whisper model large-v3 (size unknown)"
     damaged = models.Model("alignment model", "X", "torchaudio", False, damaged=True)
     assert "damaged" in models.describe(damaged, 377_000_000)
+
+
+# --- what is on disk --------------------------------------------------------------
+
+
+def test_cache_folder(fakes):
+    assert models.cache_folder() == fakes.hub.parent / "hf"
+
+
+def test_local_alignment_lists_cached_and_damaged(fakes):
+    torch_file(fakes)
+    assert models.local_alignment() == (["en"], [])
+    torch_file(fakes, valid=False)
+    assert models.local_alignment() == ([], ["en"])
+
+
+def test_local_alignment_huggingface_repo(fakes, tmp_path):
+    folder = tmp_path / "pl-model"
+    folder.mkdir()
+    (folder / "config.json").write_text("{}", encoding="utf-8")
+    (folder / "model.safetensors").write_bytes(b"x")
+    fakes.hf_cached["org/wav2vec2-polish"] = folder
+    assert models.local_alignment() == (["pl"], [])
+
+
+def test_nothing_on_disk_on_a_fresh_install(fakes):  # Review Focus 5
+    fakes.whisper_cached = set()
+    assert not fakes.hub.exists() and not models.cache_folder().exists()
+    assert models.cached_whisper_models() == []
+    assert models.local_alignment() == ([], [])
+
+
+@pytest.mark.parametrize(
+    "n, text",
+    [
+        (None, "size unknown"),
+        (360 * 1024**2, "360 MB"),
+        (int(2.9 * 1024**3), "2.9 GB"),
+    ],
+)
+def test_amount(n, text):
+    assert models.amount(n) == text
