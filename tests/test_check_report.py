@@ -388,3 +388,39 @@ def test_settings_heading_without_whisperx(ready, monkeypatch, tmp_path):
 def test_no_settings_heading_with_the_models_block(ready, tmp_path):
     lines, _ = check_report.report(None, tmp_path, online=False)
     assert "Settings" not in lines
+
+
+def test_settings_error_names_the_file_once(ready, tmp_path, monkeypatch):
+    path = write_config(tmp_path, "master: [\n")
+    monkeypatch.chdir(tmp_path)
+    lines, _ = check_report.report(Path("scribe.yaml"), tmp_path, online=False)
+    [bad] = [s for s in lines if s.startswith("  ⚠ Settings checked: ")]
+    assert bad.startswith(f"  ⚠ Settings checked: {path}:2: invalid YAML")
+    assert bad.count("scribe.yaml") == 1
+
+
+def test_unknown_model_error_shows_the_full_path(ready, tmp_path, monkeypatch):
+    path = write_config(tmp_path, "transcribe:\n  whisper:\n    model: no-such-model\n")
+    monkeypatch.chdir(tmp_path)
+    lines, _ = check_report.report(Path("scribe.yaml"), tmp_path, online=False)
+    assert f"  ⚠ Settings checked: {path}: unknown Whisper model" in "\n".join(lines)
+
+
+def test_settings_path_kept_as_given_not_resolved(ready, tmp_path, monkeypatch):
+    # resolve() turns a mapped network drive (Z:\) into \server\share\...
+    path = write_config(tmp_path, "")
+    monkeypatch.setattr(Path, "resolve", lambda self, strict=False: Path("X:/unc"))
+    lines, _ = check_report.report(None, tmp_path, online=False)
+    assert f"  Settings checked: {path.absolute()}" in lines
+
+
+def test_online_no_size_lookups_when_the_source_is_unreachable(
+    ready, network, tmp_path
+):
+    network["down"] = {"huggingface.co"}
+    write_config(tmp_path, "")
+    lines, code = online(tmp_path)
+    assert code == 0 and network["sizes"] == []
+    [needs] = [s for s in lines if s.startswith("    needs")]
+    assert "(size unknown, downloaded on first transcription)" in needs
+    assert lines.index("Connection") > lines.index(needs)  # layout unchanged

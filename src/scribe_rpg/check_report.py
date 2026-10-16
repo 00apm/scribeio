@@ -25,6 +25,8 @@ if TYPE_CHECKING:
 SYMBOLS = {"ok": "✔", "missing": "✘", "warning": "⚠", "info": "ℹ"}
 NOT_INSTALLED = "not installed (audio cleanup only)"
 NONE_YET = "none yet: downloaded on your first transcription"
+# Model source -> the host its downloads come from (checks.SOURCES)
+SOURCE_HOSTS = {"huggingface": "huggingface.co", "torchaudio": "download.pytorch.org"}
 
 
 @dataclass
@@ -153,6 +155,7 @@ def model_lines(
     whisperx: bool,
     needed: tuple[list[Model], str],
     online: bool = False,
+    reachable: frozenset[str] = frozenset(),
 ) -> list[str]:
     """The models on disk (with WhisperX loaded) and the settings checked.
 
@@ -162,6 +165,8 @@ def model_lines(
         whisperx: True if WhisperX loaded; models are listed only then.
         needed: `needed_models` for these settings.
         online: Add the download size of the missing models.
+        reachable: Model sources that answered; sizes are looked up only
+            there (a dropped connection would stall each lookup).
     """
     from scribe_rpg.transcribe import models
 
@@ -186,12 +191,19 @@ def model_lines(
             "  To set up a session: go to the folder with your recording and run "
             "scribe init",
         ]
-    if checked.error:
-        return [*lines, f"  ⚠ Settings checked: {checked.path}: {checked.error}"]
+    # absolute(), not resolve(): a mapped drive (Z:\) would become \\server\...
+    path = checked.path.absolute()
     found, error = needed
+    error = checked.error or error
     if error:
-        return [*lines, f"  ⚠ Settings checked: {checked.path}: {error}"]
-    lines.append(f"  Settings checked: {checked.path.resolve()}")
+        # config errors start with the file name ("scribe.yaml:3: ..."):
+        # the full path takes its place, so the name is not said twice
+        if error.startswith(path.name):
+            text = str(path) + error.removeprefix(path.name)
+        else:
+            text = f"{path}: {error}"
+        return [*lines, f"  ⚠ Settings checked: {text}"]
+    lines.append(f"  Settings checked: {path}")
     if not found:  # without WhisperX the models cannot be named
         return lines
 
@@ -199,19 +211,26 @@ def model_lines(
         name = f"alignment {m.language}" if m.kind == "alignment model" else m.name
         if m.cached:
             return f"{name} ✔"
-        size = f"{models.amount(models.size(m))}, " if online else ""
+        size = ""
+        if online:
+            nbytes = models.size(m) if SOURCE_HOSTS.get(m.source) in reachable else None
+            size = f"{models.amount(nbytes)}, "
         return f"{name} ↓ ({size}downloaded on first transcription)"
 
     return [*lines, "    needs " + ", ".join(need(m) for m in found)]
 
 
-def connection_lines(needed: list[Model]) -> list[str]:
+def connection_items(needed: list[Model]) -> list[Item]:
     """Whether the model sources answer: Hugging Face always, PyTorch's
     download site when a needed alignment model comes from there."""
     hosts = ["huggingface.co"]
     if any(m.source == "torchaudio" for m in needed):
         hosts.append("download.pytorch.org")
-    items = [checks.reach(host, checks.SOURCES[host]) for host in hosts]
+    return [checks.reach(host, checks.SOURCES[host]) for host in hosts]
+
+
+def connection_lines(items: list[Item]) -> list[str]:
+    """The Connection block, with a hint when a source does not answer."""
     lines = ["Connection"]
     lines += ["  " + SYMBOLS[i.status] + " " + checks.line(i) for i in items]
     if any(i.status != "ok" for i in items):
@@ -236,6 +255,9 @@ def report(config: Path | None, cwd: Path, online: bool) -> tuple[list[str], int
     transcription = transcription_group(checked.settings, audio.items[0])
     whisperx = transcription.items[0].status != "missing"
     needed = needed_models(checked, whisperx)
+    # tested first, so the size lookups skip a source that does not answer
+    connection = connection_items(needed[0]) if online else []
+    reachable = frozenset(i.name for i in connection if i.status == "ok")
     lines = [
         header(),
         "",
@@ -243,9 +265,9 @@ def report(config: Path | None, cwd: Path, online: bool) -> tuple[list[str], int
         "",
         *group_lines(transcription),
         "",
-        *model_lines(checked, cwd, whisperx, needed, online),
+        *model_lines(checked, cwd, whisperx, needed, online, reachable),
     ]
     if online:
-        lines += ["", *connection_lines(needed[0])]
+        lines += ["", *connection_lines(connection)]
     code = 1 if "not ready" in (audio.verdict, transcription.verdict) else 0
     return lines, code
