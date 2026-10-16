@@ -12,8 +12,10 @@ inside functions.
 
 from __future__ import annotations
 
+import os
 import zipfile
 from dataclasses import dataclass
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -29,6 +31,16 @@ WHISPER_FILES = [
     "model.bin",
     "tokenizer.json",
     "vocabulary.*",
+]
+# Files transformers loads for a wav2vec2 alignment model, besides one
+# weights file. Repos often hold more (flax weights, a language model).
+ALIGN_FILES = [
+    "config.json",
+    "preprocessor_config.json",
+    "vocab.json",
+    "special_tokens_map.json",
+    "tokenizer_config.json",
+    "added_tokens.json",
 ]
 TORCHAUDIO_URL = "https://download.pytorch.org/torchaudio/models/"
 # Preferred order when suggesting another downloaded Whisper model.
@@ -183,10 +195,24 @@ def size(model: Model) -> int | None:
             import huggingface_hub
 
             info = huggingface_hub.HfApi().model_info(model.repo, files_metadata=True)
-            return sum(f.size or 0 for f in info.siblings or []) or None
+            files = {f.rfilename: f.size or 0 for f in info.siblings or []}
+            patterns = _patterns(model, files)
+            used = [n for n in files if any(fnmatch(n, p) for p in patterns)]
+            return sum(files[n] for n in used) or None
     except Exception:  # size is only informative; never block on it
         return None
     return None
+
+
+def _patterns(model: Model, files: dict[str, int]) -> list[str]:
+    """The repo files a model loads: Whisper's list, or alignment files plus
+    the one weights file transformers picks (safetensors over .bin)."""
+    if model.kind == "Whisper model":
+        return WHISPER_FILES
+    weights = (
+        "model.safetensors" if "model.safetensors" in files else "pytorch_model.bin"
+    )
+    return [*ALIGN_FILES, weights]
 
 
 def label(model: Model) -> str:
@@ -219,6 +245,10 @@ def download(model: Model, progress: Progress) -> None:
         else:
             import whisperx
 
+            # Without this, transformers fetches a repo's .bin weights and
+            # then, in the background, a converted .safetensors copy from a
+            # pull request on the Hub: the same model twice (+1.2 GB for pl).
+            os.environ.setdefault("DISABLE_SAFETENSORS_CONVERSION", "true")
             # Loading on the CPU fetches exactly the files WhisperX needs.
             whisperx.load_align_model(
                 language_code=model.language, device="cpu", model_name=model.repo
