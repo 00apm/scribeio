@@ -198,7 +198,7 @@ def model_lines(
         if m.cached:
             return f"{name} ✔"
         size = f"{models.amount(models.size(m))}, " if online else ""
-        return f"{name} – ({size}downloaded on first transcription)"
+        return f"{name} ↓ ({size}downloaded on first transcription)"
 
     return [*lines, "    needs " + ", ".join(need(m) for m in found)]
 

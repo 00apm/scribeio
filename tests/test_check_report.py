@@ -197,7 +197,7 @@ def test_settings_from_cwd(ready, tmp_path):
     lines, _ = check_report.report(None, tmp_path, online=False)
     assert f"  Settings checked: {path.resolve()}" in lines
     assert (
-        "    needs large-v3 ✔, alignment pl – (downloaded on first transcription)"
+        "    needs large-v3 ✔, alignment pl ↓ (downloaded on first transcription)"
         in lines
     )
 
@@ -313,7 +313,7 @@ def test_online_sizes_of_missing_models(ready, network, tmp_path):
     lines, code = online(tmp_path)
     assert code == 0
     assert (
-        "    needs large-v3 ✔, alignment pl – (1.2 GB, downloaded on first "
+        "    needs large-v3 ✔, alignment pl ↓ (1.2 GB, downloaded on first "
         "transcription)" in lines
     )
     assert network["sizes"] == ["org/x"]  # models on disk are not looked up
