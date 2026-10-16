@@ -13,7 +13,7 @@ import sys
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from scribe_rpg import ffmpeg
 from scribe_rpg.errors import InstallError
@@ -154,3 +154,127 @@ def encoder_item(fmt: str, bitrate: str) -> Item:
     # unsupported"); the lines after it are ffmpeg's generic follow-ups
     first = lines[0] if lines else f"ffmpeg exited with {done.returncode}"
     return Item(name, "warning", bitrate, first)
+
+
+TESTED = "3.8.6"
+TESTED_MIN = (3, 8, 6)  # older versions lack APIs scribe uses
+TESTED_BELOW = (4, 0, 0)  # a new major version may change the API
+WHISPERX_NOT_INSTALLED = (
+    "not installed, so scribe cannot transcribe (audio cleanup works)"
+)
+ON_CPU = "set to run on the CPU: very slow"
+
+
+def _first_line(e: BaseException) -> str:
+    text = str(e).strip()
+    return text.splitlines()[0] if text else type(e).__name__
+
+
+def whisperx_item() -> Item:
+    """WhisperX importable, with its version; untested versions warned about.
+
+    An install that fails to import for another reason than WhisperX itself
+    missing (a DLL that does not load, a missing dependency) is broken.
+    """
+    try:
+        import whisperx  # noqa: F401
+    except ModuleNotFoundError as e:
+        if e.name == "whisperx":
+            return Item(
+                "WhisperX", "missing",
+                message=WHISPERX_NOT_INSTALLED, guide="transcription",
+            )  # fmt: skip
+        return _broken_whisperx(e)
+    except Exception as e:
+        return _broken_whisperx(e)
+    found = installed_version("whisperx")
+    parsed = parse_version(found)
+    if parsed and not TESTED_MIN <= parsed < TESTED_BELOW:
+        return Item(
+            "WhisperX", "warning", found,
+            f"outside the tested range (>=3.8.6,<4; tested {TESTED}); "
+            "transcription may fail",
+        )  # fmt: skip
+    return Item("WhisperX", "ok", found)
+
+
+def _broken_whisperx(e: Exception) -> Item:
+    return Item(
+        "WhisperX", "missing",
+        message=f"installed but does not load ({type(e).__name__}: {_first_line(e)})",
+        guide="transcription",
+    )  # fmt: skip
+
+
+def torch_item(device: str) -> Item:
+    """PyTorch's version and whether it is a CUDA build.
+
+    Args:
+        device: ``transcribe.whisper.device``; with ``cpu`` the item is info.
+    """
+    import torch
+
+    found = installed_version("torch")
+    cuda_build = torch.version.cuda is not None
+    detail = f"{found}, CUDA build" if cuda_build else found
+    if device == "cpu":
+        return Item("PyTorch", "info", detail, ON_CPU)
+    if not cuda_build:
+        return Item(
+            "PyTorch", "missing", found,
+            "a CPU-only build, so transcription would take hours", "pytorch-cuda",
+        )  # fmt: skip
+    return Item("PyTorch", "ok", detail)
+
+
+def gpu_item(device: str) -> Item:
+    """The GPU PyTorch sees, with its memory, or why it sees none.
+
+    Args:
+        device: ``transcribe.whisper.device``; with ``cpu`` the item is info
+            and PyTorch is not asked.
+    """
+    if device == "cpu":
+        return Item("GPU", "info", message=ON_CPU)
+    import torch
+
+    try:
+        if torch.cuda.is_available():
+            name = torch.cuda.get_device_name(0)
+            memory = torch.cuda.get_device_properties(0).total_memory / 1024**3
+            return Item("GPU", "ok", f"{name}, {memory:.0f} GB")
+        reason = _no_gpu_reason(torch)
+    except Exception as e:
+        reason = _first_line(e)
+    return Item(
+        "GPU", "missing",
+        message=f"not seen ({reason}); transcription would take hours on the CPU",
+        guide="gpu",
+    )  # fmt: skip
+
+
+def _no_gpu_reason(torch: Any) -> str:
+    """Why CUDA is not available: torch's own error when it gives one."""
+    if torch.version.cuda is None:
+        return "PyTorch is a CPU-only build"
+    try:
+        torch.cuda.init()
+    except Exception as e:
+        return _first_line(e)
+    return "no CUDA device found"
+
+
+def audio_library_item(ffmpeg_version: str) -> Item | None:
+    """Info about the warning WhisperX's audio library prints with ffmpeg 8+.
+
+    Returns:
+        The item for ffmpeg 8 or newer; None otherwise or for an unreadable
+        version.
+    """
+    parsed = parse_version(ffmpeg_version)
+    if parsed is None or parsed[0] < 8:
+        return None
+    return Item(
+        "ffmpeg", "info", str(parsed[0]),
+        "WhisperX's audio library prints a warning; harmless",
+    )  # fmt: skip

@@ -1,6 +1,7 @@
 """Tests for `scribe transcribe` and `scribe merge`, with a fake transcriber."""
 
 import json
+import sys
 import textwrap
 import warnings
 from datetime import datetime, timezone
@@ -9,6 +10,7 @@ import numpy as np
 import pytest
 from click.testing import CliRunner
 
+from scribe_rpg import checks, ffmpeg
 from scribe_rpg.cli import main
 from scribe_rpg.errors import ScribeError
 from scribe_rpg.transcribe import models, whisper
@@ -25,6 +27,7 @@ from helpers import (
 LOCAL_DATE = datetime(2026, 1, 1, 18, 0, tzinfo=timezone.utc).astimezone()
 LOCAL_DATE = LOCAL_DATE.strftime("%Y-%m-%d")
 VERSIONS = {"whisperx": "3.8.6", "torch": "2.8.0+cu128", "ffmpeg": "7.1"}
+REAL_PREFLIGHT = whisper.preflight
 
 
 class FakeTranscriber:
@@ -199,6 +202,19 @@ def test_preflight_failure_stops_before_unzipping(
     assert result.exit_code == 1 and "ffmpeg not found" in result.output
     assert "open session.zip" not in result.output
     assert fake_whisper.calls == []
+
+
+def test_whisperx_missing_points_to_scribe_check(
+    tmp_path, fake_whisper, campaign, monkeypatch
+):
+    monkeypatch.setattr(whisper, "preflight", REAL_PREFLIGHT)
+    monkeypatch.setitem(sys.modules, "whisperx", None)
+    monkeypatch.setattr(checks.shutil, "which", lambda name: "ffmpeg")
+    monkeypatch.setattr(ffmpeg, "version", lambda: "7.1")
+    result = invoke("transcribe", craig_zip(tmp_path / "rec"), "-c", campaign)
+    assert result.exit_code == 1
+    assert "WhisperX: not installed" in result.output
+    assert result.output.rstrip().endswith(checks.CHECK_HINT)
 
 
 def test_preflight_and_transcriber_warnings_shown(

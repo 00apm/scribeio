@@ -1,6 +1,8 @@
 """Installation checks shared by `scribe check`, `transcribe` and `master`."""
 
 import subprocess
+import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -180,3 +182,181 @@ def test_encoder_crash_without_output(monkeypatch):
 @pytest.mark.ffmpeg
 def test_encoder_probe_with_real_ffmpeg():
     assert checks.encoder_item("flac", "").status == "ok"
+
+
+# --- WhisperX, PyTorch, GPU -------------------------------------------------
+
+
+class BrokenFinder:
+    """An import finder that fails like a WhisperX whose DLLs do not load."""
+
+    def find_spec(self, name, path=None, target=None):
+        if name == "whisperx":
+            raise OSError("DLL load failed\nmore")
+        return None
+
+
+@pytest.fixture
+def fake_whisperx(monkeypatch):
+    monkeypatch.setitem(sys.modules, "whisperx", SimpleNamespace())
+    monkeypatch.setattr(checks, "installed_version", lambda pkg: "3.8.6")
+
+
+def test_whisperx_ok(fake_whisperx):
+    assert checks.whisperx_item() == Item("WhisperX", "ok", "3.8.6")
+
+
+def test_whisperx_not_installed(monkeypatch):
+    monkeypatch.setitem(sys.modules, "whisperx", None)
+    item = checks.whisperx_item()
+    assert (item.status, item.message, item.guide) == (
+        "missing",
+        checks.WHISPERX_NOT_INSTALLED,
+        "transcription",
+    )
+
+
+def test_whisperx_broken_install(monkeypatch):  # Review Focus 3
+    monkeypatch.delitem(sys.modules, "whisperx", raising=False)
+    monkeypatch.setattr(sys, "meta_path", [BrokenFinder(), *sys.meta_path])
+    item = checks.whisperx_item()
+    assert (item.status, item.guide) == ("missing", "transcription")
+    assert item.message == "installed but does not load (OSError: DLL load failed)"
+
+
+def test_whisperx_missing_dependency_is_broken(monkeypatch):
+    class NoTorch:
+        def find_spec(self, name, path=None, target=None):
+            if name == "whisperx":
+                raise ModuleNotFoundError("No module named 'torch'", name="torch")
+
+    monkeypatch.delitem(sys.modules, "whisperx", raising=False)
+    monkeypatch.setattr(sys, "meta_path", [NoTorch(), *sys.meta_path])
+    assert checks.whisperx_item().message.startswith(
+        "installed but does not load (ModuleNotFoundError: No module named 'torch'"
+    )
+
+
+@pytest.mark.parametrize("found", ["3.4.2", "4.0.0"])
+def test_whisperx_untested_version(fake_whisperx, monkeypatch, found):
+    monkeypatch.setattr(checks, "installed_version", lambda pkg: found)
+    assert checks.whisperx_item() == Item(
+        "WhisperX",
+        "warning",
+        found,
+        "outside the tested range (>=3.8.6,<4; tested 3.8.6); transcription may fail",
+    )
+
+
+@pytest.mark.parametrize("found", ["3.9.1", "unknown"])
+def test_whisperx_newer_3x_or_unknown_is_ok(fake_whisperx, monkeypatch, found):
+    monkeypatch.setattr(checks, "installed_version", lambda pkg: found)
+    assert checks.whisperx_item().status == "ok"
+
+
+@pytest.fixture
+def fake_torch(monkeypatch):
+    state = SimpleNamespace(
+        available=True,
+        init_error=None,
+        properties_error=None,
+    )
+
+    def init():
+        if state.init_error:
+            raise state.init_error
+
+    def get_device_properties(index):
+        if state.properties_error:
+            raise state.properties_error
+        return SimpleNamespace(total_memory=8 * 1024**3)
+
+    torch = SimpleNamespace(
+        version=SimpleNamespace(cuda="12.8"),
+        cuda=SimpleNamespace(
+            is_available=lambda: state.available,
+            init=init,
+            get_device_name=lambda index=None: "NVIDIA RTX",
+            get_device_properties=get_device_properties,
+        ),
+    )
+    state.torch = torch
+    monkeypatch.setitem(sys.modules, "torch", torch)
+    monkeypatch.setattr(checks, "installed_version", lambda pkg: "2.8.0")
+    return state
+
+
+def test_torch_cuda_build(fake_torch):
+    assert checks.torch_item("cuda") == Item("PyTorch", "ok", "2.8.0, CUDA build")
+
+
+def test_torch_cpu_only_build(fake_torch):
+    fake_torch.torch.version.cuda = None
+    assert checks.torch_item("cuda") == Item(
+        "PyTorch",
+        "missing",
+        "2.8.0",
+        "a CPU-only build, so transcription would take hours",
+        "pytorch-cuda",
+    )
+
+
+def test_torch_cpu_device_is_info(fake_torch):
+    fake_torch.torch.version.cuda = None
+    assert checks.torch_item("cpu") == Item(
+        "PyTorch", "info", "2.8.0", "set to run on the CPU: very slow"
+    )
+
+
+def test_gpu_found(fake_torch):
+    assert checks.gpu_item("cuda") == Item("GPU", "ok", "NVIDIA RTX, 8 GB")
+
+
+def test_gpu_not_seen_gives_torch_reason(fake_torch):
+    fake_torch.available = False
+    fake_torch.init_error = RuntimeError("Found no NVIDIA driver\non your system")
+    item = checks.gpu_item("cuda")
+    assert (item.status, item.guide) == ("missing", "gpu")
+    assert item.message == (
+        "not seen (Found no NVIDIA driver); transcription would take hours on the CPU"
+    )
+
+
+def test_gpu_not_seen_with_cpu_only_torch(fake_torch):
+    fake_torch.available = False
+    fake_torch.torch.version.cuda = None
+    assert checks.gpu_item("cuda").message.startswith(
+        "not seen (PyTorch is a CPU-only build)"
+    )
+
+
+def test_gpu_not_seen_without_a_reason(fake_torch):
+    fake_torch.available = False
+    assert checks.gpu_item("cuda").message.startswith("not seen (no CUDA device found)")
+
+
+def test_gpu_query_raising(fake_torch):  # Review Focus 4
+    fake_torch.properties_error = RuntimeError("bad\nworse")
+    item = checks.gpu_item("cuda")
+    assert item.status == "missing"
+    assert item.message.startswith("not seen (bad)")
+
+
+def test_gpu_cpu_device_is_info(fake_torch):
+    fake_torch.available = False
+    item = checks.gpu_item("cpu")
+    assert (item.status, item.message) == ("info", "set to run on the CPU: very slow")
+
+
+@pytest.mark.parametrize(
+    "found, shown",
+    [("9.0.2", True), ("8.0", True), ("7.1.1", False), ("N-1-g", False)],
+)
+def test_audio_library_info(found, shown):
+    item = checks.audio_library_item(found)
+    assert (item is not None) == shown
+    if item is not None:
+        assert item.status == "info"
+        assert checks.line(item) == (
+            f"ffmpeg {found[0]}: WhisperX's audio library prints a warning; harmless"
+        )

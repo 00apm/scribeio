@@ -143,8 +143,8 @@ def transcribe(
     without info.txt it needs --start). Writes <name>_transcript.md,
     <name>_transcript.json (raw data for `scribe merge`) and
     <name>_transcript-report.md (quality report); <name> is the session date
-    unless --name gives one. Needs WhisperX (see README); an NVIDIA GPU is
-    strongly recommended.
+    unless --name gives one. Needs WhisperX (`scribe check` shows what is
+    installed); an NVIDIA GPU is strongly recommended.
     """
     # Imported here: numpy is only needed for transcription, not for merge.
     from scribe_rpg.transcribe import energy
