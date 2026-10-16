@@ -187,6 +187,45 @@ def cached_whisper_models() -> list[str]:
     return sorted(found.values(), key=rank)
 
 
+def cache_folder() -> Path:
+    """Hugging Face's model cache, where Whisper and most alignment models go."""
+    from huggingface_hub import constants
+
+    return Path(constants.HF_HUB_CACHE)
+
+
+def local_alignment() -> tuple[list[str], list[str]]:
+    """Languages whose default alignment model is on disk.
+
+    Returns:
+        Sorted language codes with the model ready, and those whose
+        downloaded file is damaged.
+    """
+    from whisperx import alignment
+
+    languages = {
+        *alignment.DEFAULT_ALIGN_MODELS_TORCH,
+        *alignment.DEFAULT_ALIGN_MODELS_HF,
+    }
+    ready, damaged = [], []
+    for language in sorted(languages):
+        model = _alignment(language, None)
+        if model.cached:
+            ready.append(language)
+        elif model.damaged:
+            damaged.append(language)
+    return ready, damaged
+
+
+def amount(nbytes: int | None) -> str:
+    """A download size for the user: ``2.9 GB``, ``360 MB`` or ``size unknown``."""
+    if not nbytes:
+        return "size unknown"
+    if nbytes < 1024**3:
+        return f"{nbytes / 1024**2:.0f} MB"
+    return f"{nbytes / 1024**3:.1f} GB"
+
+
 def size(model: Model) -> int | None:
     """Download size in bytes (asks the server), or None if unknown."""
     try:
@@ -227,11 +266,8 @@ def label(model: Model) -> str:
 
 def describe(model: Model, nbytes: int | None) -> str:
     """One line for the user, e.g. ``Whisper model large-v3 (2.9 GB)``."""
-    amount = f"{nbytes / 1024**3:.1f} GB" if nbytes else "size unknown"
-    if nbytes and nbytes < 1024**3:
-        amount = f"{nbytes / 1024**2:.0f} MB"
     note = ", file damaged, will be replaced" if model.damaged else ""
-    return f"{label(model)} ({amount}{note})"
+    return f"{label(model)} ({amount(nbytes)}{note})"
 
 
 def download(model: Model, progress: Progress) -> None:

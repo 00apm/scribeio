@@ -14,9 +14,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from scribe_rpg import ffmpeg
+from scribe_rpg import checks, ffmpeg
 from scribe_rpg.config import load_config
-from scribe_rpg.errors import ScribeError
+from scribe_rpg.errors import InstallError, ScribeError
 from scribe_rpg.transcribe import whisper
 
 
@@ -270,9 +270,18 @@ def fakes(monkeypatch):
     def empty_cache():
         state.freed += 1
 
+    def init():
+        if not state.cuda:
+            raise RuntimeError("Found no NVIDIA driver on your system")
+
     fake_torch = SimpleNamespace(
         cuda=SimpleNamespace(
             is_available=lambda: state.cuda,
+            init=init,
+            get_device_name=lambda index=None: "NVIDIA RTX",
+            get_device_properties=lambda index: SimpleNamespace(
+                total_memory=8 * 1024**3
+            ),
             empty_cache=empty_cache,
             mem_get_info=lambda: (state.free_bytes, 8 * 1024**3),
         ),
@@ -280,10 +289,14 @@ def fakes(monkeypatch):
     )
     state.torch = fake_torch
     monkeypatch.setitem(sys.modules, "whisperx", fake_whisperx)
+    monkeypatch.setitem(sys.modules, "whisperx.alignment", SimpleNamespace())
+    monkeypatch.setitem(sys.modules, "whisperx.asr", SimpleNamespace())
     monkeypatch.setitem(sys.modules, "torch", fake_torch)
-    monkeypatch.setattr(ffmpeg.shutil, "which", lambda name: "ffmpeg")
+    monkeypatch.setattr(checks.shutil, "which", lambda name: "ffmpeg")
     monkeypatch.setattr(
-        whisper, "_installed_version", lambda pkg: state.whisperx_version
+        checks,
+        "installed_version",
+        lambda pkg: {"whisperx": state.whisperx_version, "torch": "2.8.0"}[pkg],
     )
     return state
 
@@ -302,28 +315,26 @@ def test_preflight_ok_on_gpu(fakes):
 
 
 def test_preflight_ffmpeg_missing(fakes, monkeypatch):
-    monkeypatch.setattr(ffmpeg.shutil, "which", lambda name: None)
-    with pytest.raises(ScribeError, match="ffmpeg not found"):
+    monkeypatch.setattr(checks.shutil, "which", lambda name: None)
+    with pytest.raises(ScribeError, match="ffmpeg: not found in PATH"):
         whisper.preflight(wcfg())
 
 
 def test_preflight_whisperx_missing(fakes, monkeypatch):
     monkeypatch.setitem(sys.modules, "whisperx", None)
-    with pytest.raises(ScribeError, match="WhisperX not installed"):
+    with pytest.raises(InstallError, match="WhisperX: not installed"):
         whisper.preflight(wcfg())
 
 
 def test_preflight_cpu_build_of_torch(fakes):
     fakes.torch.version.cuda = None
-    with pytest.raises(ScribeError, match="CPU-only build"):
+    with pytest.raises(InstallError, match="PyTorch 2.8.0: a CPU-only build"):
         whisper.preflight(wcfg())
 
 
 def test_preflight_no_cuda(fakes):
     fakes.cuda = False
-    with pytest.raises(
-        ScribeError, match="CUDA not available; set transcribe.whisper.device: cpu"
-    ):
+    with pytest.raises(InstallError, match="GPU: not seen"):
         whisper.preflight(wcfg())
 
 
@@ -335,8 +346,9 @@ def test_preflight_cpu_device_warns(fakes):
 
 
 def test_preflight_cpu_with_float16_is_an_error(fakes):
-    with pytest.raises(ScribeError, match="float16.*int8"):
+    with pytest.raises(ScribeError, match="float16.*int8") as e:
         whisper.preflight(wcfg(device="cpu", compute_type="float16"))
+    assert not isinstance(e.value, InstallError)  # a settings error
 
 
 @pytest.mark.parametrize("found", ["3.4.2", "4.0.0"])
@@ -361,7 +373,7 @@ def test_preflight_unknown_whisperx_version_is_fine(fakes):
 
 def test_versions(monkeypatch):
     versions = {"whisperx": "3.8.6", "torch": "2.8.0+cu128"}
-    monkeypatch.setattr(whisper, "_installed_version", lambda pkg: versions[pkg])
+    monkeypatch.setattr(checks, "installed_version", lambda pkg: versions[pkg])
     monkeypatch.setattr(ffmpeg, "version", lambda: "7.1.1")
     assert whisper.versions() == {
         "whisperx": "3.8.6",
@@ -464,7 +476,7 @@ def test_other_errors_keep_their_type(fakes):
 
 def test_whisperx_missing(monkeypatch):
     monkeypatch.setitem(sys.modules, "whisperx", None)
-    with pytest.raises(ScribeError, match="WhisperX not installed"):
+    with pytest.raises(InstallError, match="WhisperX: not installed"):
         whisper.Transcriber(wcfg(), [])
 
 

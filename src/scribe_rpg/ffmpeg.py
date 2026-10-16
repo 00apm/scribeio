@@ -1,4 +1,4 @@
-"""The ffmpeg command line: lookup, version, runs, decoding, duration.
+"""The ffmpeg command line: version, runs, decoding, duration.
 
 Shared by ``scribe transcribe`` and ``scribe master``. ffmpeg is always called
 with an argument list, never through a shell.
@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import os
 import re
-import shutil
 import subprocess
 import threading
 from collections.abc import Callable, Iterator
@@ -23,11 +22,6 @@ if TYPE_CHECKING:
     import numpy as np
     import numpy.typing as npt
 
-HINT = (
-    "ffmpeg not found in PATH; install ffmpeg 6.1 or newer with libmp3lame "
-    "(conda install -c conda-forge ffmpeg, winget install ffmpeg, "
-    "apt install ffmpeg or brew install ffmpeg)"
-)
 # The oldest ffmpeg on a current LTS Linux (Ubuntu 24.04). The filters alone
 # would work from 4.4, but 4.4's Windows build crashes on a FLAC input seek.
 MIN_VERSION = (6, 1)
@@ -47,12 +41,6 @@ _lock = threading.Lock()
 _stopping = threading.Event()
 
 
-def require() -> None:
-    """Raise a ScribeError with install instructions if ffmpeg is not in PATH."""
-    if shutil.which("ffmpeg") is None:
-        raise ScribeError(HINT)
-
-
 def version() -> str:
     """Version from the first line of ``ffmpeg -version``, or ``"unknown"``."""
     try:
@@ -65,22 +53,6 @@ def version() -> str:
     if parts[:2] == ["ffmpeg", "version"] and len(parts) > 2:
         return parts[2]
     return "unknown"
-
-
-def version_warning() -> str | None:
-    """A warning if ffmpeg is older than MIN_VERSION; None if newer or unparsable.
-
-    Git builds (``N-11234-gabc``) and ``unknown`` give no warning.
-    """
-    found = version()
-    m = re.match(r"(\d+)\.(\d+)", found)
-    if m is None or (int(m.group(1)), int(m.group(2))) >= MIN_VERSION:
-        return None
-    need = ".".join(map(str, MIN_VERSION))
-    return (
-        f"ffmpeg {found} is older than {need}, the oldest scribe supports; "
-        "mastering may fail"
-    )
 
 
 def attempt(args: list[str]) -> subprocess.CompletedProcess[str]:

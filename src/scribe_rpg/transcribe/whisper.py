@@ -14,35 +14,24 @@ from __future__ import annotations
 import gc
 import logging
 import math
-import re
 import warnings
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
-from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
-from scribe_rpg import ffmpeg
+from scribe_rpg import checks, ffmpeg
 from scribe_rpg.errors import ScribeError
 from scribe_rpg.transcribe.session import Segment, Word
 
-TESTED = "3.8.6"
-TESTED_MIN = (3, 8, 6)  # older versions lack APIs scribe uses
-TESTED_BELOW = (4, 0, 0)  # a new major version may change the API
-
-INSTALL_HINT = (
-    'WhisperX not installed: pip install "whisperx>=3.8.6,<4" '
-    "(install torch with CUDA first; see README)"
-)
 OnProgress = Callable[[float], None]
 
 
 def _whisperx() -> Any:
-    """Import whisperx, or raise a ScribeError with install instructions."""
-    try:
-        import whisperx
-    except ImportError:
-        raise ScribeError(INSTALL_HINT) from None
+    """Import whisperx, or raise an InstallError saying what is wrong."""
+    checks.require(checks.whisperx_item())
+    import whisperx
+
     return whisperx
 
 
@@ -56,22 +45,14 @@ def preflight(cfg: dict[str, Any]) -> list[str]:
         Warnings: an untested WhisperX version, or running on the CPU.
 
     Raises:
-        ScribeError: If ffmpeg or WhisperX is missing, or the settings cannot
-            work on this machine (CUDA requested but unusable; float16 on CPU).
+        InstallError: If ffmpeg, WhisperX, a CUDA build of PyTorch or the GPU
+            is missing (the last two only with ``device: cuda``).
+        ScribeError: If the settings cannot work (float16 on the CPU).
     """
     quiet_libraries()
-    ffmpeg.require()
-    _whisperx()
-    import torch
-
-    warnings = []
-    found = _installed_version("whisperx")
-    parsed = _parse_version(found)
-    if parsed and not TESTED_MIN <= parsed < TESTED_BELOW:
-        warnings.append(
-            f"WhisperX {found} is outside the tested range (>=3.8.6,<4; tested "
-            f"{TESTED}); transcription may fail"
-        )
+    checks.require(checks.ffmpeg_item())
+    wx = checks.require(checks.whisperx_item())
+    warnings = [checks.line(wx)] if wx.status == "warning" else []
     if cfg["device"] != "cuda":
         if cfg["compute_type"] == "float16":
             raise ScribeError(
@@ -83,41 +64,18 @@ def preflight(cfg: dict[str, Any]) -> list[str]:
             "(hours per track)"
         )
         return warnings
-    if torch.version.cuda is None:
-        raise ScribeError(
-            "torch is a CPU-only build; reinstall torch with CUDA (see README), "
-            "or set transcribe.whisper.device: cpu in config (very slow)"
-        )
-    if not torch.cuda.is_available():
-        raise ScribeError(
-            "CUDA not available; set transcribe.whisper.device: cpu in config to "
-            "run on CPU (very slow)"
-        )
+    checks.require(checks.torch_item("cuda"))
+    checks.require(checks.gpu_item("cuda"))
     return warnings
 
 
 def versions() -> dict[str, str]:
     """Versions used for this run; recorded in the JSON and the report."""
     return {
-        "whisperx": _installed_version("whisperx"),
-        "torch": _installed_version("torch"),
+        "whisperx": checks.installed_version("whisperx"),
+        "torch": checks.installed_version("torch"),
         "ffmpeg": ffmpeg.version(),
     }
-
-
-def _installed_version(package: str) -> str:
-    try:
-        return version(package)
-    except PackageNotFoundError:
-        return "unknown"
-
-
-def _parse_version(text: str) -> tuple[int, int, int] | None:
-    """``"3.8.6.post1"`` -> (3, 8, 6); None if it does not look like a version."""
-    m = re.match(r"(\d+)\.(\d+)(?:\.(\d+))?", text)
-    if not m:
-        return None
-    return int(m.group(1)), int(m.group(2)), int(m.group(3) or 0)
 
 
 def load_audio(path: Path) -> Any:

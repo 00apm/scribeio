@@ -1,4 +1,4 @@
-"""Command-line interface: `scribe transcribe`, `merge`, `master` and `init`.
+"""Command-line interface: `scribe transcribe`, `merge`, `master`, `init`, `check`.
 
 Commands stay thin: they read options, call the packages and report
 progress. Errors scribe expects (`ScribeError`) are shown as one red line
@@ -17,9 +17,9 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 import click
 
-from scribe_rpg import __version__, craig, init
+from scribe_rpg import __version__, checks, craig, init
 from scribe_rpg.config import Config, load_config
-from scribe_rpg.errors import ScribeError
+from scribe_rpg.errors import InstallError, ScribeError
 from scribe_rpg.progress import Progress
 from scribe_rpg.transcribe import (
     markdown,
@@ -41,13 +41,18 @@ F = TypeVar("F", bound=Callable[..., Any])
 
 
 class _Group(click.Group):
-    """Click group that reports ScribeError as one red line, exit code 1."""
+    """Click group that reports ScribeError in red, exit code 1.
+
+    An installation error is followed by a pointer to ``scribe check``.
+    """
 
     def invoke(self, ctx: click.Context) -> Any:
         try:
             return super().invoke(ctx)
         except ScribeError as e:
             click.secho(str(e), fg="red", err=True)
+            if isinstance(e, InstallError):
+                click.echo(checks.CHECK_HINT, err=True)
             ctx.exit(1)
 
 
@@ -138,8 +143,8 @@ def transcribe(
     without info.txt it needs --start). Writes <name>_transcript.md,
     <name>_transcript.json (raw data for `scribe merge`) and
     <name>_transcript-report.md (quality report); <name> is the session date
-    unless --name gives one. Needs WhisperX (see README); an NVIDIA GPU is
-    strongly recommended.
+    unless --name gives one. Needs WhisperX (`scribe check` shows what is
+    installed); an NVIDIA GPU is strongly recommended.
     """
     # Imported here: numpy is only needed for transcription, not for merge.
     from scribe_rpg.transcribe import energy
@@ -516,7 +521,6 @@ def master(
     if write_tracks and preview:
         raise click.UsageError("--tracks cannot be used with --preview")
 
-    from scribe_rpg import ffmpeg
     from scribe_rpg.master import mix
     from scribe_rpg.master.config import resolve, unknown_players
 
@@ -532,9 +536,9 @@ def master(
     section = cfg.settings["master"]
     # --format wins; the bitrate default then follows it unless the config set one
     mcfg = resolve({**section, "format": fmt} if fmt else section)
-    ffmpeg.require()
-    if old := ffmpeg.version_warning():
-        progress.warn(old)
+    found = checks.require(checks.ffmpeg_item())
+    if found.status == "warning":
+        progress.warn(checks.line(found))
     with progress.step("config check"):
         mix.check(mcfg)
     with ExitStack() as stack:
@@ -770,6 +774,47 @@ def init_command(
     if out_dir is None:
         out_dir = source.resolve().parent if source else Path.cwd()
     _create_config(source, out_dir, language, force, progress, only, full)
+
+
+@main.command(short_help="Show what scribe needs and what it finds (offline).")
+@click.option(
+    "-c",
+    "--config",
+    "config_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Config file to check (default: scribe.yaml in this folder).",
+)
+@click.option(
+    "--online", is_flag=True,
+    help="Also look up missing model sizes and test the model sources (network).",
+)  # fmt: skip
+@click.pass_context
+def check(ctx: click.Context, config_path: Path | None, online: bool) -> None:
+    """Show what scribe needs and what it finds, per use.
+
+    Audio cleanup (ffmpeg, the encoder), transcription (WhisperX, PyTorch,
+    the GPU) and the models on disk, with a link to the guide for anything
+    missing. Exits with 1 if a use that is installed would not work.
+    Offline unless --online is given; it never downloads a model.
+    """
+    from scribe_rpg import check_report
+
+    lines, code = check_report.report(config_path, Path.cwd(), online=online)
+    _utf8_output(sys.stdout)
+    for text in lines:
+        click.echo(text)
+    ctx.exit(code)
+
+
+def _utf8_output(stream: Any) -> None:
+    """Write UTF-8 when output goes to a file or a pipe, not a terminal.
+
+    On Windows a redirected stdout uses the legacy code page (e.g. cp1250),
+    which has no ✔ ✘ ⚠ ℹ: printing them would crash. A terminal needs
+    nothing (click writes to the Windows console directly).
+    """
+    if not stream.isatty() and hasattr(stream, "reconfigure"):
+        stream.reconfigure(encoding="utf-8")
 
 
 def _interactive() -> bool:

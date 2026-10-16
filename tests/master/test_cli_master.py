@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from scribe_rpg import craig, ffmpeg
+from scribe_rpg import checks, craig, ffmpeg
 from scribe_rpg.errors import ScribeError
 
 from helpers import (
@@ -551,11 +551,29 @@ def test_master_preview_open_failure_is_a_warning(tmp_path, monkeypatch):
     assert (preview / "08-final.mp3").exists()
 
 
-def test_master_without_ffmpeg_gives_install_hint(tmp_path, monkeypatch):
-    monkeypatch.setattr("scribe_rpg.ffmpeg.shutil.which", lambda name: None)
+def test_master_without_ffmpeg_says_what_is_missing(tmp_path, monkeypatch):
+    monkeypatch.setattr(checks.shutil, "which", lambda name: None)
     result = invoke("master", craig_dir(tmp_path / "tracks"))
     assert result.exit_code == 1
-    assert "ffmpeg not found in PATH; install ffmpeg 6.1 or newer" in result.output
+    assert "ffmpeg: not found in PATH: scribe needs it" in result.output
+    assert "see " + checks.guide_url("ffmpeg") in result.output
+    assert result.output.rstrip().endswith(checks.CHECK_HINT)
+
+
+def test_master_old_ffmpeg_warns_and_other_errors_get_no_hint(tmp_path, monkeypatch):
+    from scribe_rpg.master import mix
+
+    def stop(cfg):
+        raise ScribeError("master.voice (x): stop")
+
+    monkeypatch.setattr(checks.shutil, "which", lambda name: "/bin/ffmpeg")
+    monkeypatch.setattr(ffmpeg, "version", lambda: "5.1")
+    monkeypatch.setattr(mix, "check", stop)
+    result = invoke("master", craig_dir(tmp_path / "tracks"))
+    assert result.exit_code == 1
+    assert "⚠ ffmpeg 5.1: older than 6.1" in result.output
+    assert "master.voice (x): stop" in result.output
+    assert checks.CHECK_HINT not in result.output
 
 
 @pytest.mark.ffmpeg
