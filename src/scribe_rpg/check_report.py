@@ -1,6 +1,7 @@
 """The `scribe check` report: what scribe needs, what it finds, per use.
 
-Offline: it reads the local caches only. The settings checked are the
+Offline: it reads the local caches only, unless asked to look up model
+sizes and test the model sources (``--online``). The settings checked are the
 ``scribe.yaml`` given with ``-c``, else the one in the current folder, else
 the defaults.
 """
@@ -11,12 +12,15 @@ import platform
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from scribe_rpg import __version__, checks, init
 from scribe_rpg.checks import Item
 from scribe_rpg.config import load_config
 from scribe_rpg.errors import ScribeError
+
+if TYPE_CHECKING:
+    from scribe_rpg.transcribe.models import Model
 
 SYMBOLS = {"ok": "✔", "missing": "✘", "warning": "⚠", "info": "ℹ"}
 NOT_INSTALLED = "not installed (audio cleanup only)"
@@ -126,13 +130,38 @@ def group_lines(group: Group) -> list[str]:
     return lines
 
 
-def model_lines(checked: Checked, cwd: Path, whisperx: bool) -> list[str]:
+def needed_models(checked: Checked, whisperx: bool) -> tuple[list[Model], str]:
+    """The models the checked config needs, or why they cannot be named.
+
+    Returns:
+        The models and ``""``; no models without a config that loads or
+        without WhisperX; no models and the error for an unknown model.
+    """
+    from scribe_rpg.transcribe import models
+
+    if checked.path is None or checked.error or not whisperx:
+        return [], ""
+    try:
+        return models.needed(checked.settings["transcribe"]["whisper"]), ""
+    except ScribeError as e:
+        return [], str(e)
+
+
+def model_lines(
+    checked: Checked,
+    cwd: Path,
+    whisperx: bool,
+    needed: tuple[list[Model], str],
+    online: bool = False,
+) -> list[str]:
     """The models on disk (with WhisperX loaded) and the settings checked.
 
     Args:
         checked: The settings checked.
         cwd: The current folder, named when it holds no config.
         whisperx: True if WhisperX loaded; models are listed only then.
+        needed: `needed_models` for these settings.
+        online: Add the download size of the missing models.
     """
     from scribe_rpg.transcribe import models
 
@@ -157,22 +186,38 @@ def model_lines(checked: Checked, cwd: Path, whisperx: bool) -> list[str]:
         ]
     if checked.error:
         return [*lines, f"  ⚠ Settings checked: {checked.path}: {checked.error}"]
-    if not whisperx:
-        return [*lines, f"  Settings checked: {checked.path.resolve()}"]
-    try:
-        needed = models.needed(checked.settings["transcribe"]["whisper"])
-    except ScribeError as e:
-        return [*lines, f"  ⚠ Settings checked: {checked.path}: {e}"]
-    needs = [
-        (f"alignment {m.language}" if m.kind == "alignment model" else m.name)
-        + (" ✔" if m.cached else " – (downloaded on first transcription)")
-        for m in needed
-    ]
-    return [
-        *lines,
-        f"  Settings checked: {checked.path.resolve()}",
-        "    needs " + ", ".join(needs),
-    ]
+    found, error = needed
+    if error:
+        return [*lines, f"  ⚠ Settings checked: {checked.path}: {error}"]
+    lines.append(f"  Settings checked: {checked.path.resolve()}")
+    if not found:  # without WhisperX the models cannot be named
+        return lines
+
+    def need(m: Model) -> str:
+        name = f"alignment {m.language}" if m.kind == "alignment model" else m.name
+        if m.cached:
+            return f"{name} ✔"
+        size = f"{models.amount(models.size(m))}, " if online else ""
+        return f"{name} – ({size}downloaded on first transcription)"
+
+    return [*lines, "    needs " + ", ".join(need(m) for m in found)]
+
+
+def connection_lines(needed: list[Model]) -> list[str]:
+    """Whether the model sources answer: Hugging Face always, PyTorch's
+    download site when a needed alignment model comes from there."""
+    hosts = ["huggingface.co"]
+    if any(m.source == "torchaudio" for m in needed):
+        hosts.append("download.pytorch.org")
+    items = [checks.reach(host, checks.SOURCES[host]) for host in hosts]
+    lines = ["Connection"]
+    lines += ["  " + SYMBOLS[i.status] + " " + checks.line(i) for i in items]
+    if any(i.status != "ok" for i in items):
+        lines += [
+            "  " + SYMBOLS["info"] + " " + checks.CONNECTION_INFO,
+            "    see " + checks.guide_url("connection"),
+        ]
+    return lines
 
 
 def report(config: Path | None, cwd: Path, online: bool) -> tuple[list[str], int]:
@@ -181,12 +226,14 @@ def report(config: Path | None, cwd: Path, online: bool) -> tuple[list[str], int
     Args:
         config: The ``-c`` config, or None.
         cwd: The current folder (its ``scribe.yaml`` is checked without -c).
-        online: Look up model sizes and test the model sources (Task 6).
+        online: Also look up missing model sizes and test the model sources;
+            neither changes the exit code.
     """
     checked = load_settings(config, cwd)
     audio = audio_group(checked.settings)
     transcription = transcription_group(checked.settings, audio.items[0])
     whisperx = transcription.items[0].status != "missing"
+    needed = needed_models(checked, whisperx)
     lines = [
         header(),
         "",
@@ -194,7 +241,9 @@ def report(config: Path | None, cwd: Path, online: bool) -> tuple[list[str], int
         "",
         *group_lines(transcription),
         "",
-        *model_lines(checked, cwd, whisperx),
+        *model_lines(checked, cwd, whisperx, needed, online),
     ]
+    if online:
+        lines += ["", *connection_lines(needed[0])]
     code = 1 if "not ready" in (audio.verdict, transcription.verdict) else 0
     return lines, code

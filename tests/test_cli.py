@@ -155,3 +155,18 @@ def test_utf8_output_for_a_file_with_a_legacy_encoding():
     stream.write("✔ ✘ ⚠ ℹ")
     stream.flush()
     assert raw.getvalue().decode("utf-8") == "✔ ✘ ⚠ ℹ"
+
+
+def test_check_online_option(monkeypatch):
+    from scribe_rpg import check_report
+
+    seen = []
+    monkeypatch.setattr(
+        check_report,
+        "report",
+        lambda config, cwd, online: (seen.append(online), ([], 0))[1],
+    )
+    assert invoke("check", "--online").exit_code == 0
+    assert invoke("check").exit_code == 0
+    assert seen == [True, False]
+    assert "test the model sources" in invoke("check", "--help").output

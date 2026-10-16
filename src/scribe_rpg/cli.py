@@ -778,21 +778,28 @@ def init_command(
 
 @main.command(short_help="Show what scribe needs and what it finds (offline).")
 @click.option(
-    "-c", "--config", "config_path",
+    "-c",
+    "--config",
+    "config_path",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
     help="Config file to check (default: scribe.yaml in this folder).",
+)
+@click.option(
+    "--online", is_flag=True,
+    help="Also look up missing model sizes and test the model sources (network).",
 )  # fmt: skip
 @click.pass_context
-def check(ctx: click.Context, config_path: Path | None) -> None:
+def check(ctx: click.Context, config_path: Path | None, online: bool) -> None:
     """Show what scribe needs and what it finds, per use.
 
     Audio cleanup (ffmpeg, the encoder), transcription (WhisperX, PyTorch,
     the GPU) and the models on disk, with a link to the guide for anything
     missing. Exits with 1 if a use that is installed would not work.
+    Offline unless --online is given; it never downloads a model.
     """
     from scribe_rpg import check_report
 
-    lines, code = check_report.report(config_path, Path.cwd(), online=False)
+    lines, code = check_report.report(config_path, Path.cwd(), online=online)
     _utf8_output(sys.stdout)
     for text in lines:
         click.echo(text)

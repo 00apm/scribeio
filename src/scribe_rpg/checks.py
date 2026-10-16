@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any, Literal
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 from scribe_rpg import ffmpeg
 from scribe_rpg.errors import InstallError
@@ -279,3 +281,35 @@ def audio_library_item(ffmpeg_version: str) -> Item | None:
         "ffmpeg", "info", str(parsed[0]),
         "WhisperX's audio library prints a warning; harmless",
     )  # fmt: skip
+
+
+# Where models download from; a copy of models.TORCHAUDIO_URL (models imports
+# the network code, so it is not imported here).
+SOURCES = {
+    "huggingface.co": "https://huggingface.co",
+    "download.pytorch.org": "https://download.pytorch.org/torchaudio/models/",
+}
+CONNECTION_INFO = "a firewall, antivirus or proxy may be blocking Python"
+
+
+def reach(host: str, url: str, timeout: float = 10.0) -> Item:
+    """Whether `url` answers at all; any HTTP answer, even an error, counts.
+
+    Returns:
+        ok, or a warning saying why the request got no answer.
+    """
+    request = Request(url, method="HEAD", headers={"User-Agent": "scribe"})
+    try:
+        with urlopen(request, timeout=timeout):
+            pass
+    except HTTPError:
+        pass  # the server answered
+    except URLError as e:
+        return _unreachable(host, str(e.reason))
+    except OSError as e:  # a timeout while reading the answer
+        return _unreachable(host, str(e) or "timed out")
+    return Item(host, "ok")
+
+
+def _unreachable(host: str, reason: str) -> Item:
+    return Item(host, "warning", message=f"not reachable: {reason}", guide="connection")

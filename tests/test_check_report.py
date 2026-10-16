@@ -266,3 +266,110 @@ def test_header_route(monkeypatch, tmp_path):
     assert check_report.header().startswith("scribe ")
     (tmp_path / "uv-receipt.toml").write_text("")
     assert check_report.header().endswith("(installed with uv)")
+
+
+# --- --online -----------------------------------------------------------------
+
+
+@pytest.fixture
+def network(monkeypatch):
+    """Model sizes and reachability faked; records what was asked."""
+    state = {"sizes": [], "reached": [], "size": 1288490188, "down": set()}
+
+    def size(model):
+        state["sizes"].append(model.name)
+        return state["size"]
+
+    def reach(host, url, timeout=10.0):
+        state["reached"].append(host)
+        if host in state["down"]:
+            return Item(host, "warning", "", "not reachable: timed out", "connection")
+        return Item(host, "ok")
+
+    monkeypatch.setattr(models, "size", size)
+    monkeypatch.setattr(checks, "reach", reach)
+    return state
+
+
+def online(tmp_path, config=None):
+    lines, code = check_report.report(config, tmp_path, online=True)
+    return lines, code
+
+
+def test_offline_never_touches_network(ready, monkeypatch, tmp_path):
+    def no_network(*args, **kwargs):
+        raise AssertionError("network used offline")
+
+    monkeypatch.setattr(checks, "urlopen", no_network)
+    monkeypatch.setattr(checks, "reach", no_network)
+    monkeypatch.setattr(models, "size", no_network)
+    write_config(tmp_path, "")
+    lines, code = check_report.report(None, tmp_path, online=False)
+    assert code == 0 and "Connection" not in lines
+
+
+def test_online_sizes_of_missing_models(ready, network, tmp_path):
+    write_config(tmp_path, "transcribe:\n  whisper:\n    language: pl\n")
+    lines, code = online(tmp_path)
+    assert code == 0
+    assert (
+        "    needs large-v3 ✔, alignment pl – (1.2 GB, downloaded on first "
+        "transcription)" in lines
+    )
+    assert network["sizes"] == ["org/x"]  # models on disk are not looked up
+
+
+def test_online_size_lookup_failing(ready, network, tmp_path):
+    network["size"] = None
+    write_config(tmp_path, "")
+    lines, _ = online(tmp_path)
+    [needs] = [s for s in lines if s.startswith("    needs")]
+    assert "(size unknown, downloaded on first transcription)" in needs
+
+
+def test_online_connection_block(ready, network, tmp_path):
+    write_config(tmp_path, "")
+    lines, _ = online(tmp_path)
+    i = lines.index("Connection")
+    assert lines[i - 1] == "" and lines[i + 1] == "  ✔ huggingface.co"
+    assert network["reached"] == ["huggingface.co"]
+    assert not any(checks.CONNECTION_INFO in s for s in lines)
+
+
+def test_online_pytorch_host_only_for_torchaudio_model(
+    ready, network, monkeypatch, tmp_path
+):
+    def needed(cfg):
+        return [
+            models.Model("Whisper model", "large-v3", "huggingface", True),
+            models.Model("alignment model", "WAV2VEC2", "torchaudio", True),
+        ]
+
+    monkeypatch.setattr(models, "needed", needed)
+    write_config(tmp_path, "")
+    lines, _ = online(tmp_path)
+    assert network["reached"] == ["huggingface.co", "download.pytorch.org"]
+    assert "  ✔ download.pytorch.org" in lines
+
+
+def test_online_unreachable_is_exit_0_with_info(ready, network, tmp_path):
+    network["down"] = {"huggingface.co"}
+    lines, code = online(tmp_path)
+    assert code == 0
+    i = lines.index("  ⚠ huggingface.co: not reachable: timed out")
+    assert lines[i + 1] == "  ℹ " + checks.CONNECTION_INFO
+    assert lines[i + 2] == "    see " + checks.guide_url("connection")
+
+
+def test_online_without_config_checks_reachability_only(ready, network, tmp_path):
+    lines, _ = online(tmp_path)
+    assert network["sizes"] == [] and network["reached"] == ["huggingface.co"]
+
+
+def test_online_without_whisperx_checks_reachability_only(
+    ready, network, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(checks, "whisperx_item", BROKEN["whisperx_broken"][1])
+    write_config(tmp_path, "")
+    lines, _ = online(tmp_path)
+    assert network["sizes"] == [] and network["reached"] == ["huggingface.co"]

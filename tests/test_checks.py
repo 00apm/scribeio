@@ -2,7 +2,9 @@
 
 import subprocess
 import sys
+from email.message import Message
 from types import SimpleNamespace
+from urllib.error import HTTPError, URLError
 
 import pytest
 
@@ -362,3 +364,63 @@ def test_audio_library_info(found, shown):
         assert checks.line(item) == (
             f"ffmpeg {found[0]}: WhisperX's audio library prints a warning; harmless"
         )
+
+
+# --- reachability (--online) ------------------------------------------------
+
+
+class Answer:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def urlopen_doing(monkeypatch, outcome):
+    """checks.urlopen answers, or raises `outcome`; returns the calls."""
+    calls = []
+
+    def urlopen(request, timeout=None):
+        calls.append((request, timeout))
+        if outcome is not None:
+            raise outcome
+        return Answer()
+
+    monkeypatch.setattr(checks, "urlopen", urlopen)
+    return calls
+
+
+def test_reach_ok(monkeypatch):
+    calls = urlopen_doing(monkeypatch, None)
+    item = checks.reach("huggingface.co", "https://huggingface.co")
+    assert item == Item("huggingface.co", "ok")
+    [(request, timeout)] = calls
+    assert request.get_method() == "HEAD" and timeout == 10.0
+    assert request.get_header("User-agent") == "scribe"
+
+
+def test_reach_http_error_counts_as_reachable(monkeypatch):
+    error = HTTPError("https://huggingface.co", 403, "Forbidden", Message(), None)
+    urlopen_doing(monkeypatch, error)
+    assert checks.reach("huggingface.co", "https://huggingface.co").status == "ok"
+
+
+def test_reach_unreachable(monkeypatch):
+    urlopen_doing(monkeypatch, URLError("getaddrinfo failed"))
+    item = checks.reach("huggingface.co", "https://huggingface.co")
+    assert (item.status, item.guide) == ("warning", "connection")
+    assert item.message == "not reachable: getaddrinfo failed"
+
+
+def test_reach_timeout(monkeypatch):
+    calls = urlopen_doing(monkeypatch, TimeoutError())
+    item = checks.reach("download.pytorch.org", checks.SOURCES["download.pytorch.org"])
+    assert (item.status, item.message) == ("warning", "not reachable: timed out")
+    assert calls[0][1] == 10.0
+
+
+def test_sources_match_the_download_urls():
+    from scribe_rpg.transcribe import models
+
+    assert checks.SOURCES["download.pytorch.org"] == models.TORCHAUDIO_URL
