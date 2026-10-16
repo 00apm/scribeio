@@ -36,7 +36,6 @@ def test_progress_prints_brackets_literally():
     out = buf.getvalue()
     assert "⚠ unknown account [bot]: name used [00:01:02]" in out
     assert "track [1/2]" in out
-    assert p.warnings == ["unknown account [bot]: name used [00:01:02]"]
 
 
 def test_tracks_done_lines():

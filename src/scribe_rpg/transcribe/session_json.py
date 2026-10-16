@@ -1,4 +1,4 @@
-"""Write and read ``<name>.json``: the raw session data.
+"""Write and read ``<name>_transcript.json``: the raw session data.
 
 `scribe transcribe` writes the file once; `scribe merge` only reads it. The
 file carries a format number so an incompatible future layout is refused
@@ -31,6 +31,7 @@ def write(path: Path, raw: RawSession) -> None:
             "source": raw.source,
         },
         "whisper": raw.whisper,
+        "warnings": raw.warnings,
         "tracks": [asdict(t) for t in raw.tracks],
         "segments": [_segment(s) for s in raw.segments],
     }
@@ -72,6 +73,7 @@ def read(path: Path) -> RawSession:
             ],
             scribe=data.get("scribe", ""),
             versions=data.get("versions", {}),
+            warnings=data.get("warnings", []),
         )
     # KeyError: a field is missing; TypeError: a field is unknown or the
     # value has the wrong shape (e.g. a list where an object was expected).

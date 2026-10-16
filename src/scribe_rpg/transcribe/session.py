@@ -74,7 +74,7 @@ class TrackInfo:
 
 @dataclass
 class RawSession:
-    """Everything `transcribe` stores in ``<name>.json``.
+    """Everything `transcribe` stores in ``<name>_transcript.json``.
 
     Attributes:
         date: Session date, ``YYYY-MM-DD``, local time.
@@ -87,6 +87,8 @@ class RawSession:
         segments: Segments of all transcribed tracks.
         scribe: scribe version that wrote the file.
         versions: Versions of whisperx, torch and ffmpeg used.
+        warnings: Warnings about the transcription run itself (device,
+            GPU memory, untested WhisperX), for the report.
     """
 
     date: str
@@ -98,3 +100,4 @@ class RawSession:
     segments: list[Segment]
     scribe: str = ""
     versions: dict[str, str] = field(default_factory=dict)
+    warnings: list[str] = field(default_factory=list)

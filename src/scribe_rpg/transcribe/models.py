@@ -12,8 +12,10 @@ inside functions.
 
 from __future__ import annotations
 
+import os
 import zipfile
 from dataclasses import dataclass
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -30,7 +32,22 @@ WHISPER_FILES = [
     "tokenizer.json",
     "vocabulary.*",
 ]
+# Files transformers loads for a wav2vec2 alignment model, besides one
+# weights file. Repos often hold more (flax weights, a language model).
+ALIGN_FILES = [
+    "config.json",
+    "preprocessor_config.json",
+    "vocab.json",
+    "special_tokens_map.json",
+    "tokenizer_config.json",
+    "added_tokens.json",
+]
 TORCHAUDIO_URL = "https://download.pytorch.org/torchaudio/models/"
+# Ends every download error: most are a blocked or dropped connection.
+CONNECTION_HINT = (
+    "check your internet connection; a firewall, antivirus or proxy may be "
+    "blocking Python; then run the command again"
+)
 # Preferred order when suggesting another downloaded Whisper model.
 PREFERENCE = [
     "large-v3", "large-v2", "large-v1", "large-v3-turbo", "distil-large-v3.5",
@@ -183,10 +200,24 @@ def size(model: Model) -> int | None:
             import huggingface_hub
 
             info = huggingface_hub.HfApi().model_info(model.repo, files_metadata=True)
-            return sum(f.size or 0 for f in info.siblings or []) or None
+            files = {f.rfilename: f.size or 0 for f in info.siblings or []}
+            patterns = _patterns(model, files)
+            used = [n for n in files if any(fnmatch(n, p) for p in patterns)]
+            return sum(files[n] for n in used) or None
     except Exception:  # size is only informative; never block on it
         return None
     return None
+
+
+def _patterns(model: Model, files: dict[str, int]) -> list[str]:
+    """The repo files a model loads: Whisper's list, or alignment files plus
+    the one weights file transformers picks (safetensors over .bin)."""
+    if model.kind == "Whisper model":
+        return WHISPER_FILES
+    weights = (
+        "model.safetensors" if "model.safetensors" in files else "pytorch_model.bin"
+    )
+    return [*ALIGN_FILES, weights]
 
 
 def label(model: Model) -> str:
@@ -219,12 +250,20 @@ def download(model: Model, progress: Progress) -> None:
         else:
             import whisperx
 
+            # Without this, transformers fetches a repo's .bin weights and
+            # then, in the background, a converted .safetensors copy from a
+            # pull request on the Hub: the same model twice (+1.2 GB for pl).
+            os.environ.setdefault("DISABLE_SAFETENSORS_CONVERSION", "true")
             # Loading on the CPU fetches exactly the files WhisperX needs.
             whisperx.load_align_model(
                 language_code=model.language, device="cpu", model_name=model.repo
             )
-    except OSError as e:
-        raise ScribeError(f"download of {model.name} failed: {e}") from None
+    except (OSError, ValueError) as e:
+        # WhisperX reports any failure to load an alignment model, a blocked
+        # download included, as a ValueError ("could not be found").
+        raise ScribeError(
+            f"download of {model.name} failed: {e}; {CONNECTION_HINT}"
+        ) from None
 
 
 def _download_whisper(model: Model) -> None:
@@ -263,10 +302,12 @@ def download_file(url: str, dst: Path, progress: Progress) -> None:
                 if total is not None and received != total:
                     raise ScribeError(
                         f"download of {dst.name} stopped early ({received} of "
-                        f"{total} bytes); run again to retry"
+                        f"{total} bytes); {CONNECTION_HINT}"
                     )
         tmp.replace(dst)
     except OSError as e:
-        raise ScribeError(f"download of {dst.name} failed: {e}") from None
+        raise ScribeError(
+            f"download of {dst.name} failed: {e}; {CONNECTION_HINT}"
+        ) from None
     finally:
         tmp.unlink(missing_ok=True)

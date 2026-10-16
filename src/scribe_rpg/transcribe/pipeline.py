@@ -1,7 +1,7 @@
 """Merge pipeline: raw session + settings + glossary -> lines and report data.
 
 Every decision is made here (cleanup, speaker names, lines, glossary
-corrections, bleed), from data stored in ``<name>.json``. That is why
+corrections, bleed), from data stored in ``<name>_transcript.json``. That is why
 `scribe merge` can redo the whole transcript in seconds, without audio.
 """
 
@@ -128,8 +128,9 @@ def _stats(
 
 
 def _warnings(raw: RawSession, speakers: dict[str, str]) -> list[str]:
-    """Warnings for the report, from the session data and speaker names."""
-    out = []
+    """Warnings for the report: the run's own, then from the session data
+    and speaker names."""
+    out = list(raw.warnings)
     unknown = [
         t.account
         for t in raw.tracks

@@ -37,17 +37,34 @@ def info_txt(tracks=TRACKS, start=START) -> str:
     )
 
 
-def craig_zip(folder: Path, tracks=TRACKS, start=START, name="session.zip") -> Path:
-    """Write a zip laid out like Craig's: info.txt, .aup, *_data/*.flac, raw.dat."""
+def craig_zip(
+    folder: Path, tracks=TRACKS, start=START, name="session.zip", layout="audacity"
+) -> Path:
+    """Write a zip laid out like one of Craig's downloads.
+
+    ``audacity``: info.txt, .aup, *_data/*.flac, raw.dat. ``flac``: info.txt,
+    *.flac, raw.dat. ``aac``: as ``flac`` with .aac tracks.
+    """
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / name
     with zipfile.ZipFile(path, "w") as zf:
         zf.writestr("info.txt", info_txt(tracks, start))
-        zf.writestr("AAAAAA.aup", "<project/>")
         zf.writestr("raw.dat", b"\0" * 16)
+        if layout == "audacity":
+            zf.writestr("AAAAAA.aup", "<project/>")
+        prefix = "AAAAAA_data/" if layout == "audacity" else ""
+        ext = "aac" if layout == "aac" else "flac"
         for n, (_, account) in enumerate(tracks, 1):
-            zf.writestr(f"AAAAAA_data/{n}-{account}.flac", b"fLaC fake")
+            zf.writestr(f"{prefix}{n}-{account}.{ext}", b"fLaC fake")
     return path
+
+
+def craig_unzipped(folder: Path, **kwargs) -> Path:
+    """A Craig zip extracted into `folder`, as Windows' "Extract all" does."""
+    path = craig_zip(folder.parent / "zip", **kwargs)
+    with zipfile.ZipFile(path) as zf:
+        zf.extractall(folder)
+    return folder
 
 
 def craig_dir(

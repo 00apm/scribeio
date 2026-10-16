@@ -1,9 +1,12 @@
 """Filter text built from steps: quoting, loudness steps, measurement."""
 
+from pathlib import Path
+
 import pytest
 
 from scribe_rpg import ffmpeg
 from scribe_rpg.master.catalogue import FILTERS, Step, quote
+from scribe_rpg.master.mix import discard
 from scribe_rpg.master.render import (
     chain_filter,
     measure_filter,
@@ -104,6 +107,22 @@ def test_quoted_text_is_accepted_by_ffmpeg():
     )  # fmt: skip
 
 
+@pytest.mark.ffmpeg
+def test_quoted_text_reaches_the_filter_unchanged():
+    # Both unescape levels: a lone ":" would start a second option.
+    value = "a:b=1,c;d'e\\f[g]"
+    steps = [
+        Step("tag", "ametadata", {"mode": "add", "key": "k", "value": value}),
+        Step("show", "ametadata", {"mode": "print", "key": "k"}),
+    ]
+    done = ffmpeg.run(
+        ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono", "-t", "0.05",
+         "-af", chain_filter(steps, {}), "-f", "null", "-"],
+        "quoting",
+    )  # fmt: skip
+    assert f"] k={value}\n" in done.stderr
+
+
 # Captured from ffmpeg 7.1; the per-frame line's "I:" must not be read.
 SUMMARY = """\
 [Parsed_ebur128_1 @ 0] t: 2.99  M: -18.1 S: -18.1   I: -18.1 LUFS   LRA:  20.0 LU
@@ -165,9 +184,9 @@ def test_mix_graph_two_voices_and_music_mono():
     limiter = [Step("limiter", "alimiter", {"limit": "-1dB"})]
     mono = "aformat=sample_fmts=flt:channel_layouts=mono,aformat=sample_fmts=flt"
     assert graph(plans, limiter, {}, "mono") == (
-        f"[0:a]{mono},highpass=f=80,adenorm[t0];"
-        f"[1:a]{mono}[t1];"
-        f"[2:a]{mono},volume=-3.00dB[t2];"
+        f"[0:a]{mono},highpass=f=80,adenorm,apad=pad_dur=5[t0];"
+        f"[1:a]{mono},apad=pad_dur=5[t1];"
+        f"[2:a]{mono},volume=-3.00dB,apad=pad_dur=5[t2];"
         "[t0][t1][t2]amix=inputs=3:normalize=0:duration=longest,"
         "aformat=sample_fmts=flt,alimiter=limit=-1dB,adenorm[out]"
     )
@@ -204,8 +223,39 @@ def test_mix_graph_stereo_pans_mono_voices_after_their_chain():
     mono = "aformat=sample_fmts=flt:channel_layouts=mono,aformat=sample_fmts=flt"
     stereo = "aformat=sample_fmts=flt:channel_layouts=stereo,aformat=sample_fmts=flt"
     assert graph(plans, [], {}, "stereo") == (
-        f"[0:a]{mono},highpass=f=80,adenorm,pan=stereo|c0=c0|c1=c0[t0];"
-        f"[1:a]{stereo},highpass=f=80,adenorm[t1];"
+        f"[0:a]{mono},highpass=f=80,adenorm,pan=stereo|c0=c0|c1=c0,apad=pad_dur=5[t0];"
+        f"[1:a]{stereo},highpass=f=80,adenorm,apad=pad_dur=5[t1];"
         "[t0][t1]amix=inputs=2:normalize=0:duration=longest,"
         "aformat=sample_fmts=flt[out]"
     )
+
+
+def test_discard_retries_a_held_file(tmp_path, monkeypatch):
+    # a killed ffmpeg shim's child may hold the file for a moment
+    path = tmp_path / "x.partial.mp3"
+    path.write_bytes(b"half")
+    real = Path.unlink
+    tries = []
+
+    def held(self, missing_ok=False):
+        tries.append(self)
+        if len(tries) < 3:
+            raise PermissionError("in use")
+        real(self, missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", held)
+    discard(path)
+    assert not path.exists() and len(tries) == 3
+
+
+def test_discard_gives_up_without_raising(tmp_path, monkeypatch):
+    folder = tmp_path / "s1_tracks.partial"
+    folder.mkdir()
+
+    def held(path, *args, **kwargs):
+        raise PermissionError("in use")
+
+    monkeypatch.setattr("shutil.rmtree", held)
+    discard(folder, wait=0.2)  # no exception: the real error is what matters
+    assert folder.exists()
+    discard(tmp_path / "missing")  # nothing to do

@@ -103,6 +103,11 @@ def test_estimated_words_warning():
     assert any(w.startswith("2 words") for w in run(raw).warnings)
 
 
+def test_run_warnings_come_first():
+    raw = raw_session(segments(), warnings=["runs on cpu: very slow"])
+    assert run(raw).warnings == ["runs on cpu: very slow"]
+
+
 def test_no_warnings_when_all_known():
     assert run().warnings == []
 

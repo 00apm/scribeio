@@ -2,6 +2,7 @@
 
 import json
 import textwrap
+import warnings
 from datetime import datetime, timezone
 
 import numpy as np
@@ -32,12 +33,15 @@ class FakeTranscriber:
     calls: list[str] = []
     fail: Exception | None = None
     extra_warnings: list[str] = []
+    library_warnings: list[str] = []  # emitted like pyannote's, on loading
 
     def __init__(self, cfg, names):
         self.cfg = cfg
         self.initial_prompt = ", ".join(names)
         self.prompt_cut: list[str] = []
         self.warnings = list(FakeTranscriber.extra_warnings)
+        for text in FakeTranscriber.library_warnings:
+            warnings.warn(text, stacklevel=1)
 
     def transcribe(self, audio, account, on_progress=None, on_phase=None):
         if on_phase:
@@ -68,11 +72,16 @@ def fake_whisper(monkeypatch):
     FakeTranscriber.calls = []
     FakeTranscriber.fail = None
     FakeTranscriber.extra_warnings = []
+    FakeTranscriber.library_warnings = []
     audio = np.concatenate([tone(10.0), silence(10.0)])  # speech 0-10 s, then silence
     monkeypatch.setattr(whisper, "Transcriber", FakeTranscriber)
     monkeypatch.setattr(whisper, "load_audio", lambda path: audio)
     monkeypatch.setattr(whisper, "preflight", lambda cfg: [])
     monkeypatch.setattr(whisper, "versions", lambda: dict(VERSIONS))
+    FakeTranscriber.music_seconds = 15.0  # shorter than the voices
+    monkeypatch.setattr(
+        "scribe_rpg.ffmpeg.duration", lambda path: FakeTranscriber.music_seconds
+    )
     FakeTranscriber.models = [
         models.Model("Whisper model", "large-v3", "huggingface", True),
         models.Model("alignment model", "WAV2VEC2_ASR_BASE_960H", "torchaudio", True),
@@ -94,7 +103,7 @@ def campaign(tmp_path):
     folder.mkdir()
     glossary = folder / "glossary.txt"
     glossary.write_text("Vorgrad\nWorgrad* -> Vorgrad\n", encoding="utf-8")
-    config = folder / "campaign.yaml"
+    config = folder / "scribe.yaml"
     config.write_text(
         textwrap.dedent(
             """\
@@ -130,6 +139,30 @@ def test_transcribe_writes_three_outputs(tmp_path, fake_whisper, campaign):
     assert data["versions"] == VERSIONS
     assert [t["transcribed"] for t in data["tracks"]] == [True, True, False]
     assert fake_whisper.calls == ["gm_account", "player_one"]  # music never
+
+
+def test_duration_includes_the_music_track(tmp_path, fake_whisper, campaign):
+    fake_whisper.music_seconds = 60.0  # the bot joined first, left last
+    zip_path = craig_zip(tmp_path / "rec")
+    result = invoke("transcribe", zip_path, "-c", campaign, "--name", "s")
+    assert result.exit_code == 0, result.output
+    data = json.loads((tmp_path / "rec" / "s_transcript.json").read_text("utf-8"))
+    assert data["session"]["duration"] == 60.0
+
+
+def test_unreadable_music_track_only_warns(
+    tmp_path, fake_whisper, campaign, monkeypatch
+):
+    def fail(path):
+        raise ScribeError("ffmpeg failed (duration x.flac): Invalid data")
+
+    monkeypatch.setattr("scribe_rpg.ffmpeg.duration", fail)
+    zip_path = craig_zip(tmp_path / "rec")
+    result = invoke("transcribe", zip_path, "-c", campaign, "--name", "s")
+    assert result.exit_code == 0, result.output
+    assert "Kenku_FM_1234: length unknown, not in the duration" in result.output
+    data = json.loads((tmp_path / "rec" / "s_transcript.json").read_text("utf-8"))
+    assert data["session"]["duration"] == 20.0
 
 
 def test_outputs_contain_no_paths(tmp_path, fake_whisper, campaign):
@@ -176,6 +209,59 @@ def test_preflight_and_transcriber_warnings_shown(
     result = invoke("transcribe", craig_zip(tmp_path / "rec"), "-c", campaign)
     assert result.exit_code == 0, result.output
     assert "very slow" in result.output and "prompt length estimated" in result.output
+
+
+def test_run_warnings_reach_the_report_and_survive_merge(
+    tmp_path, fake_whisper, campaign, monkeypatch
+):
+    monkeypatch.setattr(whisper, "preflight", lambda cfg: ["runs on cpu: very slow"])
+    fake_whisper.extra_warnings = ["prompt length estimated"]
+    zip_path = craig_zip(tmp_path / "rec")
+    assert invoke("transcribe", zip_path, "-c", campaign, "--name", "s").exit_code == 0
+    report = tmp_path / "rec" / "s_transcript-report.md"
+    for _ in range(2):  # after transcribe, then after merge
+        text = report.read_text(encoding="utf-8").split("## Warnings")[1]
+        assert "- runs on cpu: very slow\n- prompt length estimated\n" in text
+        result = invoke("merge", tmp_path / "rec" / "s_transcript.json", "-c", campaign)
+        assert result.exit_code == 0, result.output
+
+
+TORCHCODEC = (
+    "\ntorchcodec is not installed correctly so built-in audio decoding will "
+    "fail. Solutions are:\n* fix torchcodec installation."
+)
+
+
+def test_known_library_warnings_go_to_the_report(tmp_path, fake_whisper, campaign):
+    fake_whisper.library_warnings = [TORCHCODEC]
+    zip_path = craig_zip(tmp_path / "rec")
+    result = invoke("transcribe", zip_path, "-c", campaign, "--name", "s")
+    assert result.exit_code == 0, result.output
+    assert "torchcodec" not in result.output
+    assert "1 library warning hidden, listed in the report" in result.output
+    report = (tmp_path / "rec" / "s_transcript-report.md").read_text("utf-8")
+    assert (
+        "- library warning: torchcodec is not installed correctly so built-in "
+        "audio decoding will fail. Solutions are: * fix torchcodec installation.\n"
+    ) in report
+
+
+def test_no_hidden_line_without_library_warnings(tmp_path, fake_whisper, campaign):
+    result = invoke("transcribe", craig_zip(tmp_path / "rec"), "-c", campaign)
+    assert result.exit_code == 0, result.output
+    assert "library warning" not in result.output
+
+
+def test_hidden_library_warnings_shown_when_the_run_fails(
+    tmp_path, fake_whisper, campaign
+):
+    fake_whisper.library_warnings = [TORCHCODEC]
+    fake_whisper.fail = ScribeError("CUDA out of memory; try a smaller batch_size")
+    result = invoke("transcribe", craig_zip(tmp_path / "rec"), "-c", campaign)
+    assert result.exit_code == 1
+    hidden = result.output.index("library warnings (may explain the error):")
+    assert result.output.index("torchcodec is not installed") > hidden
+    assert result.output.index("smaller batch_size") > hidden
 
 
 def test_failure_mid_run_writes_nothing(tmp_path, fake_whisper, campaign):
@@ -446,3 +532,48 @@ def test_merge_without_config_points_to_init(tmp_path, fake_whisper):
     )
     result = invoke("merge", tmp_path / "rec" / "s_transcript.json")
     assert "scribe init" in result.output
+
+
+def test_transcribe_uses_cleanup_frame_ms(tmp_path, fake_whisper):
+    # One 20 s frame: half tone, so the line over the silence counts as voiced
+    config = tmp_path / "scribe.yaml"
+    config.write_text(
+        "transcribe:\n  cleanup:\n    frame_ms: 20000\n", encoding="utf-8"
+    )
+    zip_path = craig_zip(tmp_path / "rec")
+    result = invoke("transcribe", zip_path, "-c", config, "--name", "s")
+    assert result.exit_code == 0, result.output
+    report = (tmp_path / "rec" / "s_transcript-report.md").read_text(encoding="utf-8")
+    assert "(0% voiced)" not in report
+
+
+def test_any_existing_output_needs_force(tmp_path, fake_whisper, campaign):
+    (tmp_path / "rec").mkdir()
+    (tmp_path / "rec" / "s_transcript-report.md").write_text("old", encoding="utf-8")
+    zip_path = craig_zip(tmp_path / "rec")
+    result = invoke("transcribe", zip_path, "-c", campaign, "--name", "s")
+    assert result.exit_code == 1 and "--force" in result.output
+    assert not (tmp_path / "rec" / "s_transcript.md").exists()
+
+
+def test_glossary_option_replaces_the_config_glossary(tmp_path, fake_whisper, campaign):
+    other = tmp_path / "other.txt"
+    other.write_text("Karak Varn\n", encoding="utf-8")
+    zip_path = craig_zip(tmp_path / "rec")
+    result = invoke("transcribe", zip_path, "-c", campaign, "-g", other, "--name", "s")
+    assert result.exit_code == 0, result.output
+    data = json.loads((tmp_path / "rec" / "s_transcript.json").read_text("utf-8"))
+    assert data["whisper"]["initial_prompt"] == "Karak Varn"
+
+
+def test_unexpected_error_keeps_its_traceback(tmp_path, fake_whisper, campaign):
+    fake_whisper.fail = RuntimeError("a bug")
+    result = invoke("transcribe", craig_zip(tmp_path / "rec"), "-c", campaign)
+    assert result.exit_code == 1
+    assert isinstance(result.exception, RuntimeError)  # not turned into one line
+
+
+def test_music_tracks_are_named(tmp_path, fake_whisper, campaign):
+    result = invoke("transcribe", craig_zip(tmp_path / "rec"), "-c", campaign)
+    assert result.exit_code == 0, result.output
+    assert "music (not transcribed): Kenku_FM_1234\n" in result.output

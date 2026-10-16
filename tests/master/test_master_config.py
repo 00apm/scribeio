@@ -195,6 +195,24 @@ def test_merge_without_user_section():
             "master.voice.eq: option 'dumpfile' is not allowed",
         ),
         (
+            # an option name carrying filter syntax would add filters
+            '  voice:\n    comp:\n      "ratio=2,firequalizer=dumpfile=x:fixed": 0\n',
+            "master.voice.comp: bad option name "
+            "'ratio=2,firequalizer=dumpfile=x:fixed'",
+        ),
+        (
+            "  voice:\n    comp: {Ratio: 2}\n",
+            "master.voice.comp: bad option name 'Ratio'",
+        ),
+        (
+            "  voice:\n    comp: {3: 2}\n",
+            "master.voice.comp: bad option name '3'",
+        ),
+        (
+            "  players:\n    a:\n      comp: {'ratio;x': 2}\n",
+            "master.players.a.comp: bad option name 'ratio;x'",
+        ),
+        (
             "  voice:\n    hiss: {type: lowpass}\n",
             "master.voice.hiss: step is in no chain",
         ),
@@ -225,6 +243,27 @@ def test_merge_without_user_section():
         (
             "  voice:\n    chain: [stereo]\n",
             "master.voice.chain: unknown step 'stereo'",
+        ),
+        (
+            "  voice:\n    level: {targt: -30}\n",
+            "master.voice.level: loudness has only target and dual_mono, not 'targt'",
+        ),
+        (
+            "  voice:\n    level: {dual_mono: maybe}\n",
+            "master.voice.level: dual_mono: expected true or false",
+        ),
+        (
+            "  music:\n    loudness: {target: .nan}\n",
+            "master.music.loudness: loudness needs a target in LUFS, e.g. -19",
+        ),
+        (
+            "  voice:\n    chain: [x]\n    x: {type: {a: 1}}\n",
+            "master.voice.x: unknown type {'a': 1}",
+        ),
+        (
+            "  players:\n    gm.account: {}\n    gm_account: {}\n",
+            "master.players: 'gm.account' and 'gm_account' are one account "
+            "(gm_account); keep one",
         ),
         ("  players: [a]\n", "master.players: expected key: value pairs"),
         ("  players:\n    a: 3\n", "master.players.a: expected key: value pairs"),

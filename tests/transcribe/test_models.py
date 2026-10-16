@@ -5,6 +5,7 @@ copy the parts of their interfaces scribe uses; no network, no GPU.
 """
 
 import io
+import os
 import sys
 import zipfile
 from types import SimpleNamespace
@@ -26,6 +27,9 @@ def fakes(monkeypatch, tmp_path):
     state = SimpleNamespace(
         whisper_cached={"large-v3"},
         hf_cached={},  # repo -> folder
+        hf_files={},  # repo -> {file name: size} on the Hub
+        hf_error=None,  # raised by snapshot_download when downloading
+        align_error=None,  # raised by load_align_model
         downloads=[],
         hub=tmp_path / "hub",
     )
@@ -47,6 +51,8 @@ def fakes(monkeypatch, tmp_path):
             if repo not in state.hf_cached:
                 raise NotCached(repo)
             return str(state.hf_cached[repo])
+        if state.hf_error:
+            raise state.hf_error
         state.downloads.append(("hf", repo, kwargs.get("allow_patterns")))
         return str(tmp_path / repo.replace("/", "--"))
 
@@ -62,8 +68,17 @@ def fakes(monkeypatch, tmp_path):
     )
 
     def load_align_model(language_code, device, model_name=None, **kwargs):
+        if state.align_error:
+            raise state.align_error
         state.downloads.append(("align", model_name, device))
+        state.conversion_env = os.environ.get("DISABLE_SAFETENSORS_CONVERSION")
         return "model", {}
+
+    def model_info(repo, files_metadata=False):
+        files = state.hf_files[repo].items()
+        return SimpleNamespace(
+            siblings=[SimpleNamespace(rfilename=n, size=s) for n, s in files]
+        )
 
     whisperx = SimpleNamespace(alignment=alignment, load_align_model=load_align_model)
     bundle = SimpleNamespace(_path="wav2vec2_fairseq_base_ls960_asr_ls960.pth")
@@ -76,7 +91,10 @@ def fakes(monkeypatch, tmp_path):
     for name, module in {
         "faster_whisper": faster_whisper,
         "faster_whisper.utils": fw_utils,
-        "huggingface_hub": SimpleNamespace(snapshot_download=snapshot_download),
+        "huggingface_hub": SimpleNamespace(
+            snapshot_download=snapshot_download,
+            HfApi=lambda: SimpleNamespace(model_info=model_info),
+        ),
         "whisperx": whisperx,
         "whisperx.alignment": alignment,
         "torchaudio": torchaudio,
@@ -225,8 +243,9 @@ def test_download_file_cut_off_is_not_saved(monkeypatch, tmp_path):
         models, "urlopen", lambda req, timeout: FakeResponse(b"x" * 1000, 3000)
     )
     dst = tmp_path / "model.pth"
-    with pytest.raises(ScribeError, match="stopped early.*1000 of 3000"):
+    with pytest.raises(ScribeError, match="stopped early.*1000 of 3000") as e:
         models.download_file("https://example.invalid/model.pth", dst, quiet_progress())
+    assert str(e.value).endswith(models.CONNECTION_HINT)
     assert not dst.exists()
     assert not list(tmp_path.glob("*.partial"))
 
@@ -236,12 +255,36 @@ def test_download_file_network_error(monkeypatch, tmp_path):
         raise OSError("no route to host")
 
     monkeypatch.setattr(models, "urlopen", fail)
-    with pytest.raises(ScribeError, match="download of model.pth failed"):
+    with pytest.raises(ScribeError, match="download of model.pth failed") as e:
         models.download_file(
             "https://example.invalid/model.pth",
             tmp_path / "model.pth",
             quiet_progress(),
         )
+    assert str(e.value).endswith(models.CONNECTION_HINT)
+
+
+def test_connection_hint_names_what_to_check():
+    hint = models.CONNECTION_HINT
+    for part in ("internet connection", "firewall", "antivirus", "proxy", "again"):
+        assert part in hint
+
+
+def test_failed_whisper_download_gives_the_hint(fakes):
+    fakes.hf_error = OSError("An error happened while trying to locate the files")
+    whisper, _ = models.needed(cfg(model="medium"))
+    with pytest.raises(ScribeError, match="download of medium failed") as e:
+        models.download(whisper, quiet_progress())
+    assert str(e.value).endswith(models.CONNECTION_HINT)
+
+
+def test_failed_alignment_download_is_a_scribe_error(fakes):
+    # WhisperX turns any loading error into this ValueError
+    fakes.align_error = ValueError('The chosen align_model "x" could not be found')
+    _, align = models.needed(cfg(language="pl"))
+    with pytest.raises(ScribeError, match="download of org/wav2vec2-polish") as e:
+        models.download(align, quiet_progress())
+    assert str(e.value).endswith(models.CONNECTION_HINT)
 
 
 def test_download_replaces_damaged_torchaudio_file(fakes, monkeypatch):
@@ -266,10 +309,61 @@ def test_download_whisper_model_through_huggingface(fakes):
     assert "model.bin" in patterns
 
 
-def test_download_huggingface_alignment_model(fakes):
+def test_download_huggingface_alignment_model(fakes, monkeypatch):
+    monkeypatch.delenv("DISABLE_SAFETENSORS_CONVERSION", raising=False)
     _, align = models.needed(cfg(language="pl"))
     models.download(align, quiet_progress())
     assert fakes.downloads == [("align", "org/wav2vec2-polish", "cpu")]
+    # transformers would also fetch a converted copy of the weights from a
+    # pull request on the Hub (1.2 GB more for Polish)
+    assert fakes.conversion_env == "true"
+
+
+def test_download_alignment_keeps_users_conversion_setting(fakes, monkeypatch):
+    monkeypatch.setenv("DISABLE_SAFETENSORS_CONVERSION", "false")
+    _, align = models.needed(cfg(language="pl"))
+    models.download(align, quiet_progress())
+    assert fakes.conversion_env == "false"
+
+
+# --- size --------------------------------------------------------------------------
+
+ALIGN_REPO_FILES = {
+    "config.json": 2_000,
+    "preprocessor_config.json": 300,
+    "vocab.json": 400,
+    "special_tokens_map.json": 100,
+    "README.md": 5_000,
+    "flax_model.msgpack": 1_261_934_272,
+    "language_model/lm.binary": 1_628_858_942,
+    "pytorch_model.bin": 1_262_097_815,
+}
+
+
+def test_size_of_alignment_model_counts_only_what_it_loads(fakes):
+    fakes.hf_files["org/wav2vec2-polish"] = ALIGN_REPO_FILES
+    _, align = models.needed(cfg(language="pl"))
+    assert models.size(align) == 1_262_097_815 + 2_000 + 300 + 400 + 100
+
+
+def test_size_of_alignment_model_prefers_safetensors(fakes):
+    files = {**ALIGN_REPO_FILES, "model.safetensors": 1_261_971_432}
+    fakes.hf_files["org/wav2vec2-polish"] = files
+    _, align = models.needed(cfg(language="pl"))
+    assert models.size(align) == 1_261_971_432 + 2_000 + 300 + 400 + 100
+
+
+def test_size_of_whisper_model_counts_only_its_files(fakes):
+    fakes.hf_files["Systran/faster-whisper-medium"] = {
+        "model.bin": 1_500_000_000,
+        "config.json": 2_000,
+        "tokenizer.json": 2_000_000,
+        "vocabulary.txt": 400_000,
+        "README.md": 5_000,
+        "model.fp32.bin": 3_000_000_000,
+    }
+    whisper, _ = models.needed(cfg(model="medium"))
+    assert models.size(whisper) == 1_500_000_000 + 2_000 + 2_000_000 + 400_000
 
 
 def test_describe():

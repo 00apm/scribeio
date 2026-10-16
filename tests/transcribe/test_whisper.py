@@ -3,9 +3,13 @@
 The fakes copy the interface of WhisperX 3.8.6 (see _dev notes, 2026-10-10).
 """
 
+import logging
 import math
+import os
 import sys
+import warnings
 from dataclasses import dataclass, field
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -539,3 +543,54 @@ def test_enough_gpu_memory_no_warning(fakes):
 def test_no_memory_check_on_cpu(fakes):
     fakes.free_bytes = 0
     assert whisper.Transcriber(wcfg(device="cpu"), []).warnings == []
+
+
+# --- hidden library warnings -------------------------------------------------------
+
+SYMLINKS = (
+    "`huggingface_hub` cache-system uses symlinks by default to efficiently store "
+    "duplicated files but your machine does not support them in /cache."
+)
+XET = (
+    "Xet Storage is enabled for this repo, but the 'hf_xet' package is not "
+    "installed. Falling back to regular HTTP download."
+)
+
+
+def test_hidden_warnings_catch_the_known_ones():
+    hf_log = logging.getLogger("huggingface_hub.file_download")
+    with whisper.hidden_warnings() as hidden:
+        warnings.warn(SYMLINKS, stacklevel=1)
+        warnings.warn("\ntorchcodec is not installed correctly\nso", stacklevel=1)
+        hf_log.warning(XET)
+    assert hidden == [
+        "library warning: " + SYMLINKS,
+        "library warning: torchcodec is not installed correctly so",
+        "library warning: " + XET,
+    ]
+
+
+def test_hidden_warnings_hide_the_home_folder():
+    home = str(Path.home())
+    text = f"torchcodec is not installed correctly: {home}{os.sep}env{os.sep}x.dll"
+    with whisper.hidden_warnings() as hidden:
+        warnings.warn(text, stacklevel=1)
+    assert hidden == [
+        f"library warning: torchcodec is not installed correctly: ~{os.sep}env"
+        f"{os.sep}x.dll"
+    ]
+
+
+def test_hidden_warnings_let_other_warnings_through():
+    with pytest.warns(UserWarning, match="something new"):
+        with whisper.hidden_warnings() as hidden:
+            warnings.warn("something new", stacklevel=1)
+    assert hidden == []
+
+
+def test_hidden_warnings_restore_the_originals():
+    hf_log = logging.getLogger("huggingface_hub.file_download")
+    show, filters = warnings.showwarning, list(hf_log.filters)
+    with pytest.raises(RuntimeError), whisper.hidden_warnings():
+        raise RuntimeError("boom")
+    assert warnings.showwarning is show and hf_log.filters == filters

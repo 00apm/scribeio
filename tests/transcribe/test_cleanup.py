@@ -57,6 +57,19 @@ def test_phrase_matches_after_normalizing():
     assert dropped[0].reason == "phrase"
 
 
+def test_thank_you_for_watching_dropped():
+    _, dropped = apply_cleanup([seg("gm_account", 0, "Thank you for watching!")], cfg())
+    assert dropped[0].reason == "phrase"
+
+
+@pytest.mark.parametrize(
+    "text", ["Thank you.", "Thank you, that was great!", "Oh, thank you so much."]
+)
+def test_voiced_thanks_kept(text):
+    kept, _ = apply_cleanup([seg("player_one", 0, text)], cfg())
+    assert len(kept) == 1
+
+
 def test_phrase_ignored_on_long_segment():
     s = seg("gm_account", 0, "no to thank you mówi bohater do strażnika i odchodzi")
     kept, _ = apply_cleanup([s], cfg())
@@ -91,6 +104,12 @@ def test_fillers_dropped(text):
     "text",
     [
         "Mhm",
+        "Mhm.",
+        "Mm-hmm.",
+        "Mm-hm.",
+        "Mmhmm",
+        "Mm-hmm, yes.",
+        "Uh, mm-hmm.",
         "Aha.",
         "Tak",
         "Nie.",

@@ -1,5 +1,6 @@
 """Tests for creating scribe.yaml and glossary.txt from the templates."""
 
+import re
 from importlib.resources import files
 
 import pytest
@@ -8,10 +9,11 @@ import yaml
 from scribe_rpg import init
 from scribe_rpg.config import load_config
 from scribe_rpg.errors import ScribeError
+from scribe_rpg.master.config import resolve
 from scribe_rpg.transcribe import session_json
-from scribe_rpg.transcribe.glossary import load_glossary
+from scribe_rpg.transcribe.glossary import load_glossary, parse_glossary
 
-from helpers import craig_dir, craig_zip, raw_session
+from helpers import craig_dir, craig_unzipped, craig_zip, raw_session
 
 MUSIC = ["kenku"]
 
@@ -22,8 +24,37 @@ def test_templates_load_cleanly(tmp_path):
     assert cfg.speakers["gm_account"] == "Game Master"
     assert cfg.glossary_path == tmp_path / "glossary.txt"
     gloss = load_glossary(cfg.glossary_path)
+    # the examples are comments: a fresh glossary adds nothing to the prompt
+    assert gloss.names == []
+    assert gloss.correct("w Worgradzie") == "w Worgradzie"
+    assert "Worgrad* -> Vorgrad" in init.template("glossary.txt")
+
+
+def test_glossary_examples_work_once_uncommented():
+    text = init.template("glossary.txt")
+    # examples are commented out as "#Name" (no space after '#')
+    lines = [ln[1:] if re.match(r"#\S", ln) else ln for ln in text.splitlines()]
+    gloss = parse_glossary("\n".join(lines))
     assert gloss.names[:3] == ["Vorgrad", "Ostromir", "Czarna Wieża"]
     assert gloss.correct("w Worgradzie") == "w Vorgradzie"
+
+
+def test_master_examples_work_once_uncommented(tmp_path):
+    text = init.template("scribe.yaml")
+    # the master: block's examples are commented out as "  # key" lines
+    block = text[text.index("master:") : text.index("transcribe:")]
+    uncommented = re.sub(r"(?m)^  # ", "  ", block)
+    cfg = resolve(_load(tmp_path, text.replace(block, uncommented)).settings["master"])
+    assert cfg.players_stereo["player_one"] is True
+    assert [s.name for s in cfg.players["player_two"]] == [
+        "rumble",
+        "level",
+        "comp",
+        "eq",
+        "denoise",
+        "loudness",
+    ]
+    assert cfg.music[-1].options["target"] == -36
 
 
 def test_render_without_changes_is_the_template():
@@ -83,6 +114,12 @@ def test_speakers_from_zip(tmp_path):
     players, music = init.speakers_from(craig_zip(tmp_path), MUSIC)
     assert players == ["gm.account", "player.one"]
     assert music == ["Kenku FM#1234"]
+
+
+def test_speakers_from_unzipped_craig_folder(tmp_path):
+    players, music = init.speakers_from(craig_unzipped(tmp_path / "s"), MUSIC)
+    assert players == ["gm_account", "player_one"]
+    assert music == ["Kenku_FM_1234"]
 
 
 def test_speakers_from_track_folder_uses_file_names(tmp_path):

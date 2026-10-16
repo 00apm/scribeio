@@ -3,14 +3,15 @@
 # Names Whisper should know. They go into Whisper's prompt in this order, so
 # put the most important first (the prompt is cut at
 # transcribe.whisper.prompt_max_tokens; the report lists names left out).
-Vorgrad
-Ostromir
-Czarna Wieża
+# The entries below are examples: remove the '#' to use one, or write your own.
+#Vorgrad
+#Ostromir
+#Czarna Wieża
 
 # Corrections, applied to the transcript (case-insensitive; the right side is
 # inserted exactly as written and also joins the prompt):
 #   wrong -> right        whole word or phrase only
 #   stem* -> newstem      any ending, which is kept: Worgradzie -> Vorgradzie
-Worgrad* -> Vorgrad
-Ostromirz -> Ostromir
-Czarnej Wierzy -> Czarnej Wieży
+#Worgrad* -> Vorgrad
+#Ostromirz -> Ostromir
+#Czarnej Wierzy -> Czarnej Wieży

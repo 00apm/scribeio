@@ -18,7 +18,7 @@ from scribe_rpg.craig import (
 )
 from scribe_rpg.errors import ScribeError
 
-from helpers import MUSIC, TRACKS, craig_dir, craig_zip, info_txt
+from helpers import MUSIC, TRACKS, craig_dir, craig_unzipped, craig_zip, info_txt
 
 GIVEN = datetime(2026, 2, 3, 19, 30).astimezone()
 
@@ -73,6 +73,13 @@ def test_is_music_case_insensitive():
     assert not is_music("player_one", MUSIC)
 
 
+def test_is_music_sanitizes_both_sides():
+    # A pattern written as Discord shows it matches the file's account
+    assert is_music("Kenku_FM_1234", ["Kenku FM"])
+    assert is_music("dj_bot", ["dj.bot"])
+    assert is_music("dj.bot", ["dj_bot"])
+
+
 def test_zip_tracks_identified(tmp_path):
     with open_recording(craig_zip(tmp_path), MUSIC) as rec:
         assert rec.source == "session.zip"
@@ -85,6 +92,28 @@ def test_zip_tracks_identified(tmp_path):
         assert all(t.path.is_file() for t in rec.tracks)
         extracted = {p.name for p in rec.tracks[0].path.parent.parent.rglob("*")}
         assert "raw.dat" not in extracted and "AAAAAA.aup" not in extracted
+
+
+def test_flac_zip_has_tracks_at_the_top(tmp_path):
+    # Craig's "FLAC" download: no *_data folder, no .aup
+    with open_recording(craig_zip(tmp_path, layout="flac"), MUSIC) as rec:
+        assert [(t.account, t.kind) for t in rec.tracks] == [
+            ("gm_account", "player"),
+            ("player_one", "player"),
+            ("Kenku_FM_1234", "music"),
+        ]
+        assert rec.start == datetime(2026, 1, 1, 18, 0, tzinfo=timezone.utc)
+        assert all(t.path.is_file() for t in rec.tracks)
+
+
+def test_zip_without_flac_tracks_names_the_formats(tmp_path):
+    with pytest.raises(ScribeError) as err:
+        with open_recording(craig_zip(tmp_path, layout="aac"), MUSIC):
+            pass
+    assert str(err.value) == (
+        "session.zip: no FLAC tracks; download the recording from Craig as "
+        "FLAC or as an Audacity project"
+    )
 
 
 def test_zip_track_order_follows_number_not_name(tmp_path):
@@ -148,9 +177,14 @@ def test_dir_mode_music_may_be_absent(tmp_path):
 
 def test_dir_mode_missing_player_track(tmp_path):
     folder = craig_dir(tmp_path / "tracks", skip={"player_one"})
-    with pytest.raises(ScribeError, match="player_one"):
+    with pytest.raises(ScribeError) as err:
         with open_recording(folder, MUSIC):
             pass
+    # renamed tracks next to info.txt land here too: the message says how out
+    assert str(err.value) == (
+        "tracks: info.txt lists player_one, but no track file matches; keep "
+        "Craig's track names, or remove info.txt and give --start"
+    )
 
 
 def test_dir_mode_without_info_txt_needs_start(tmp_path):
@@ -174,6 +208,49 @@ def test_dir_mode_without_info_txt_with_start(tmp_path):
 def test_dir_mode_keeps_info_txt_text(tmp_path):
     with open_recording(craig_dir(tmp_path / "tracks"), MUSIC) as rec:
         assert rec.info_txt is not None and "Tracks:" in rec.info_txt
+
+
+def test_unzipped_craig_folder_reads_its_data_folder(tmp_path):
+    folder = craig_unzipped(tmp_path / "session")
+    with open_recording(folder, MUSIC) as rec:
+        assert rec.source == "session"
+        assert [(t.account, t.kind) for t in rec.tracks] == [
+            ("gm_account", "player"),
+            ("player_one", "player"),
+            ("Kenku_FM_1234", "music"),
+        ]
+        assert rec.start == datetime(2026, 1, 1, 18, 0, tzinfo=timezone.utc)
+        assert rec.info_txt is not None
+        assert all(t.path.parent.name == "AAAAAA_data" for t in rec.tracks)
+
+
+def test_unzipped_craig_folder_may_miss_music(tmp_path):
+    folder = craig_unzipped(tmp_path / "session")
+    (folder / "AAAAAA_data" / "3-Kenku_FM_1234.flac").unlink()
+    with open_recording(folder, MUSIC) as rec:
+        assert len(rec.tracks) == 2
+
+
+def test_unzipped_download_without_flac_names_the_formats(tmp_path):
+    folder = tmp_path / "session"
+    with zipfile.ZipFile(craig_zip(tmp_path / "zip", layout="aac")) as zf:
+        zf.extractall(folder)
+    with pytest.raises(ScribeError) as err:
+        with open_recording(folder, MUSIC):
+            pass
+    assert str(err.value) == (
+        "session: no FLAC tracks; download the recording from Craig as FLAC "
+        "or as an Audacity project"
+    )
+
+
+def test_two_data_folders_are_not_guessed(tmp_path):
+    folder = craig_unzipped(tmp_path / "session")
+    (folder / "BBBBBB_data").mkdir()
+    (folder / "BBBBBB_data" / "1-x.flac").write_bytes(b"fLaC fake")
+    with pytest.raises(ScribeError, match="^session: no FLAC files"):
+        with open_recording(folder, MUSIC):
+            pass
 
 
 def test_dir_mode_no_flac(tmp_path):

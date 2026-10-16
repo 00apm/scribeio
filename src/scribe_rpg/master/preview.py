@@ -10,14 +10,13 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TypeVar
 
 from scribe_rpg import craig, ffmpeg
 from scribe_rpg.errors import ScribeError
-from scribe_rpg.master import mix, report
+from scribe_rpg.master import measuring, mix
 from scribe_rpg.master.catalogue import Step
 from scribe_rpg.master.config import MasterConfig
 from scribe_rpg.progress import Progress
@@ -58,15 +57,16 @@ def cut(
     per track, in parallel.
     """
     dest.mkdir(parents=True, exist_ok=True)
-    with ThreadPoolExecutor(max_workers=os.cpu_count() or 1) as pool:
-        return list(pool.map(lambda t: _cut_one(t, ranges, dest), tracks))
+    return ffmpeg.parallel(lambda t: _cut_one(t, ranges, dest), tracks)
 
 
 def _cut_one(track: craig.Track, ranges: list[tuple[int, int]], dest: Path) -> Path:
     out = dest / track.path.name
     if len(ranges) == 1:
         [(start, end)] = ranges
-        args = ["-ss", str(start), "-t", str(end - start), "-i", str(track.path)]
+        # -ss after -i: ffmpeg decodes up to `start` instead of jumping there
+        # (seeking a FLAC on input crashes ffmpeg 4.4.2's Windows build)
+        args = ["-i", str(track.path), "-ss", str(start), "-t", str(end - start)]
     else:
         args = ["-i", str(track.path), "-filter_complex", _join(ranges),
                 "-map", "[out]"]  # fmt: skip
@@ -280,10 +280,10 @@ def write_files(
     if solo is not None:
         full = [p for p in full if craig.sanitize(p.track.account) == solo][:1]
         # measured first: solo_files copies the plan with its gains
-        mix_gains = report.measure(full, [], cfg.channels, progress, verbose)
+        mix_gains = measuring.measure(full, [], cfg.channels, progress, verbose)
         files = solo_files(full[0], cfg, before_after)
     else:
-        mix_gains = report.measure(full, cfg.mix, cfg.channels, progress, verbose)
+        mix_gains = measuring.measure(full, cfg.mix, cfg.channels, progress, verbose)
         files = step_files(full, cfg, before_after)
     if not before_after and solo is None:
         for account in own_chains(full, cfg):
@@ -295,8 +295,8 @@ def write_files(
         return mix.mix_level(f.plans, f.mix_steps, mix_gains, f.channels, f.name)
 
     n = len(files)
-    measuring = ("preview: measuring", f"preview: measure {n} files")
-    levels = _parallel(progress, measuring, level_of, files)
+    labels = ("preview: measuring", f"preview: measure {n} files")
+    levels = _parallel(progress, labels, level_of, files)
     level = common_level(levels)
     lowered = " (lowered: the loudest peak stays at -1 dBFS)"
     note = lowered if level < MATCH_TARGET else ""
@@ -330,16 +330,11 @@ def _parallel(
     """
     live, label = labels
 
-    with progress.count(live, label, len(items)) as advance, _pool() as pool:
+    with progress.count(live, label, len(items)) as advance:
 
         def one(item: T) -> R:
             result = work(item)
             advance()
             return result
 
-        return list(pool.map(one, items))
-
-
-def _pool() -> ThreadPoolExecutor:
-    # one ffmpeg graph uses about one core
-    return ThreadPoolExecutor(max_workers=os.cpu_count() or 1)
+        return ffmpeg.parallel(one, items)

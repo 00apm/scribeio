@@ -34,7 +34,7 @@ INSTALL_HINT = (
     'WhisperX not installed: pip install "whisperx>=3.8.6,<4" '
     "(install torch with CUDA first; see README)"
 )
-Progress = Callable[[float], None]
+OnProgress = Callable[[float], None]
 
 
 def _whisperx() -> Any:
@@ -241,7 +241,7 @@ def _logprob(
 
 
 def _call(
-    func: Callable[..., Any], *args: Any, progress: Progress | None, **kwargs: Any
+    func: Callable[..., Any], *args: Any, progress: OnProgress | None, **kwargs: Any
 ) -> Any:
     """Call a WhisperX function, passing `progress` as progress_callback if possible.
 
@@ -282,6 +282,55 @@ def quiet_libraries() -> None:
         logging.getLogger(name).setLevel(logging.WARNING)
     # pyannote turns TF32 off for reproducibility and says so on every run.
     warnings.filterwarnings("ignore", message=".*TensorFloat-32.*")
+
+
+# Library warnings that only alarm users: huggingface_hub on Windows without
+# symlinks and without hf_xet (downloads still work), pyannote when torchcodec
+# finds no ffmpeg 4-7 (scribe passes decoded audio, so torchcodec is unused).
+KNOWN_NOISE = (
+    "cache-system uses symlinks",
+    "'hf_xet' package is not installed",
+    "torchcodec is not installed correctly",
+)
+HF_DOWNLOAD_LOGGER = "huggingface_hub.file_download"
+
+
+@contextmanager
+def hidden_warnings() -> Iterator[list[str]]:
+    """Keep the known noisy library warnings off the screen.
+
+    Yields:
+        The caught warnings, one line each (``library warning: ...``, the home
+        folder shown as ``~``), for the report. Every other warning still
+        shows; the originals are restored on exit.
+    """
+    hidden: list[str] = []
+
+    def caught(text: str) -> bool:
+        if not any(noise in text for noise in KNOWN_NOISE):
+            return False
+        # Outputs hold no local paths (they may be shared): home becomes ~.
+        text = text.replace(str(Path.home()), "~")
+        hidden.append("library warning: " + " ".join(text.split()))
+        return True
+
+    show = warnings.showwarning
+
+    def show_unless_noise(message: Any, *args: Any, **kwargs: Any) -> None:
+        if not caught(str(message)):
+            show(message, *args, **kwargs)
+
+    def log_unless_noise(record: logging.LogRecord) -> bool:
+        return not caught(record.getMessage())
+
+    logger = logging.getLogger(HF_DOWNLOAD_LOGGER)
+    warnings.showwarning = show_unless_noise
+    logger.addFilter(log_unless_noise)
+    try:
+        yield hidden
+    finally:
+        warnings.showwarning = show
+        logger.removeFilter(log_unless_noise)
 
 
 # Messages torch gives when a model file is cut off or corrupt.
@@ -437,7 +486,7 @@ class Transcriber:
         self,
         audio: Any,
         account: str,
-        on_progress: Progress | None = None,
+        on_progress: OnProgress | None = None,
         on_phase: Callable[[str], None] | None = None,
     ) -> list[Segment]:
         """Transcribe and align one track, one model on the GPU at a time.

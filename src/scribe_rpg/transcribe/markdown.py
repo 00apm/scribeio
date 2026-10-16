@@ -1,4 +1,4 @@
-"""Write ``<name>.md``: YAML frontmatter plus one line per utterance.
+"""Write ``<name>_transcript.md``: YAML frontmatter plus one line per utterance.
 
 The transcript has no headings; structuring it (chapters, summaries) is left
 to the LLM assistant that reads it::

@@ -17,6 +17,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from scribe_rpg.config import read_utf8
 from scribe_rpg.errors import ScribeError
 
 
@@ -63,11 +64,12 @@ def load_glossary(path: Path) -> Glossary:
     """Read and parse a glossary file.
 
     Raises:
-        ScribeError: If the file is missing or has a malformed line.
+        ScribeError: If the file is missing, is not UTF-8 or has a malformed
+            line.
     """
     path = Path(path)
     try:
-        text = path.read_text(encoding="utf-8-sig")
+        text = read_utf8(path)
     except FileNotFoundError:
         raise ScribeError(f"glossary not found: {path.name}") from None
     return parse_glossary(text, path.name)

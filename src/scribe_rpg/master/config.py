@@ -7,6 +7,7 @@ options}``. Only steps named in the chain run.
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -20,6 +21,9 @@ BITRATES = {"mp3": "96k", "m4a": "64k", "opus": "48k"}
 CHANNELS = ("mono", "stereo")
 STAGES = ("voice", "music", "mix")
 _BITRATE = re.compile(r"^\d+k$")
+# An option name goes into the filter text as is (only values are quoted), so
+# it must be a plain name: anything else could add filters to the graph.
+_OPTION = re.compile(r"^[a-z][a-z0-9_]*$")
 
 Fail = Callable[[str, str], ScribeError]  # (config path, problem) -> error
 
@@ -149,6 +153,7 @@ def merge(defaults: dict[str, Any], user: Any, label: str) -> dict[str, Any]:
         given = _map(user.get(stage) or {}, f"master.{stage}", fail)
         out[stage] = _merge_stage(defaults[stage], given, f"master.{stage}", fail)
     blocks = _map(user.get("players") or {}, "master.players", fail)
+    _unique_accounts(blocks, fail)
     out["players"] = {
         account: _merge_stage(
             out["voice"],
@@ -198,21 +203,55 @@ def _merge_stage(
             raise fail(path, "a new step needs a type")
         if old and kind != old["type"]:
             raise fail(path, "a tweak cannot change `type`; use a new step name")
-        if kind not in FILTERS | OPERATIONS:
+        if not isinstance(kind, str) or kind not in FILTERS | OPERATIONS:
             raise fail(path, f"unknown type {kind!r}")
+        for option in settings:
+            if option != "type" and not (
+                isinstance(option, str) and _OPTION.match(option)
+            ):
+                raise fail(path, f"bad option name {str(option)!r}")
         for option in WRITES_FILES.get(kind, ()):
             if option in settings:
                 raise fail(path, f"option {option!r} is not allowed")
         out[name] = {**(old or {}), **settings}
-        target = out[name].get("target")
-        if kind == "loudness" and (
-            not isinstance(target, (int, float)) or isinstance(target, bool)
-        ):
-            raise fail(path, "loudness needs a target in LUFS, e.g. -19")
+        if kind == "loudness":
+            _check_loudness(out[name], path, fail)
     for name in out["chain"]:
         if name == "chain" or not isinstance(out.get(name), dict):
             raise fail(f"{where}.chain", f"unknown step {name!r}")
     return out
+
+
+def _check_loudness(step: dict[str, Any], path: str, fail: Fail) -> None:
+    """A loudness step: a finite `target`, optional `dual_mono`, nothing else.
+
+    It is not an ffmpeg filter, so ffmpeg never sees a typo in it.
+    """
+    for option in step:
+        if option not in ("type", "target", "dual_mono"):
+            raise fail(path, f"loudness has only target and dual_mono, not {option!r}")
+    target = step.get("target")
+    if (
+        not isinstance(target, (int, float))
+        or isinstance(target, bool)
+        or not math.isfinite(target)
+    ):
+        raise fail(path, "loudness needs a target in LUFS, e.g. -19")
+    if not isinstance(step.get("dual_mono", True), bool):
+        raise fail(path, "dual_mono: expected true or false")
+
+
+def _unique_accounts(blocks: dict[str, Any], fail: Fail) -> None:
+    """Two ``players`` keys must not name one (sanitized) account."""
+    seen: dict[str, str] = {}
+    for account in blocks:
+        key = craig.sanitize(str(account))
+        if key in seen:
+            raise fail(
+                "master.players",
+                f"{seen[key]!r} and {str(account)!r} are one account ({key}); keep one",
+            )
+        seen[key] = str(account)
 
 
 def _check_used(user: dict[str, Any], out: dict[str, Any], fail: Fail) -> None:

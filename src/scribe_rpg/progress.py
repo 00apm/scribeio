@@ -36,12 +36,10 @@ class Progress:
 
     Attributes:
         console: Where everything is printed (stderr by default).
-        warnings: Every warning printed so far.
     """
 
     def __init__(self, console: Console | None = None) -> None:
         self.console = console or Console(stderr=True)
-        self.warnings: list[str] = []
 
     @contextmanager
     def step(self, label: str) -> Iterator[None]:
@@ -66,8 +64,7 @@ class Progress:
         self.console.print(f"[green]✔[/] {escape(label)} [dim]({seconds:.1f}s)[/]")
 
     def warn(self, message: str) -> None:
-        """Print a warning and remember it."""
-        self.warnings.append(message)
+        """Print a warning."""
         self.console.print(f"[yellow]⚠[/] {escape(message)}")
 
     @contextmanager
