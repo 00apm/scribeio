@@ -43,6 +43,11 @@ ALIGN_FILES = [
     "added_tokens.json",
 ]
 TORCHAUDIO_URL = "https://download.pytorch.org/torchaudio/models/"
+# Ends every download error: most are a blocked or dropped connection.
+CONNECTION_HINT = (
+    "check your internet connection; a firewall, antivirus or proxy may be "
+    "blocking Python; then run the command again"
+)
 # Preferred order when suggesting another downloaded Whisper model.
 PREFERENCE = [
     "large-v3", "large-v2", "large-v1", "large-v3-turbo", "distil-large-v3.5",
@@ -253,8 +258,12 @@ def download(model: Model, progress: Progress) -> None:
             whisperx.load_align_model(
                 language_code=model.language, device="cpu", model_name=model.repo
             )
-    except OSError as e:
-        raise ScribeError(f"download of {model.name} failed: {e}") from None
+    except (OSError, ValueError) as e:
+        # WhisperX reports any failure to load an alignment model, a blocked
+        # download included, as a ValueError ("could not be found").
+        raise ScribeError(
+            f"download of {model.name} failed: {e}; {CONNECTION_HINT}"
+        ) from None
 
 
 def _download_whisper(model: Model) -> None:
@@ -293,10 +302,12 @@ def download_file(url: str, dst: Path, progress: Progress) -> None:
                 if total is not None and received != total:
                     raise ScribeError(
                         f"download of {dst.name} stopped early ({received} of "
-                        f"{total} bytes); run again to retry"
+                        f"{total} bytes); {CONNECTION_HINT}"
                     )
         tmp.replace(dst)
     except OSError as e:
-        raise ScribeError(f"download of {dst.name} failed: {e}") from None
+        raise ScribeError(
+            f"download of {dst.name} failed: {e}; {CONNECTION_HINT}"
+        ) from None
     finally:
         tmp.unlink(missing_ok=True)

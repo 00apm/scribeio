@@ -28,6 +28,8 @@ def fakes(monkeypatch, tmp_path):
         whisper_cached={"large-v3"},
         hf_cached={},  # repo -> folder
         hf_files={},  # repo -> {file name: size} on the Hub
+        hf_error=None,  # raised by snapshot_download when downloading
+        align_error=None,  # raised by load_align_model
         downloads=[],
         hub=tmp_path / "hub",
     )
@@ -49,6 +51,8 @@ def fakes(monkeypatch, tmp_path):
             if repo not in state.hf_cached:
                 raise NotCached(repo)
             return str(state.hf_cached[repo])
+        if state.hf_error:
+            raise state.hf_error
         state.downloads.append(("hf", repo, kwargs.get("allow_patterns")))
         return str(tmp_path / repo.replace("/", "--"))
 
@@ -64,6 +68,8 @@ def fakes(monkeypatch, tmp_path):
     )
 
     def load_align_model(language_code, device, model_name=None, **kwargs):
+        if state.align_error:
+            raise state.align_error
         state.downloads.append(("align", model_name, device))
         state.conversion_env = os.environ.get("DISABLE_SAFETENSORS_CONVERSION")
         return "model", {}
@@ -237,8 +243,9 @@ def test_download_file_cut_off_is_not_saved(monkeypatch, tmp_path):
         models, "urlopen", lambda req, timeout: FakeResponse(b"x" * 1000, 3000)
     )
     dst = tmp_path / "model.pth"
-    with pytest.raises(ScribeError, match="stopped early.*1000 of 3000"):
+    with pytest.raises(ScribeError, match="stopped early.*1000 of 3000") as e:
         models.download_file("https://example.invalid/model.pth", dst, quiet_progress())
+    assert str(e.value).endswith(models.CONNECTION_HINT)
     assert not dst.exists()
     assert not list(tmp_path.glob("*.partial"))
 
@@ -248,12 +255,36 @@ def test_download_file_network_error(monkeypatch, tmp_path):
         raise OSError("no route to host")
 
     monkeypatch.setattr(models, "urlopen", fail)
-    with pytest.raises(ScribeError, match="download of model.pth failed"):
+    with pytest.raises(ScribeError, match="download of model.pth failed") as e:
         models.download_file(
             "https://example.invalid/model.pth",
             tmp_path / "model.pth",
             quiet_progress(),
         )
+    assert str(e.value).endswith(models.CONNECTION_HINT)
+
+
+def test_connection_hint_names_what_to_check():
+    hint = models.CONNECTION_HINT
+    for part in ("internet connection", "firewall", "antivirus", "proxy", "again"):
+        assert part in hint
+
+
+def test_failed_whisper_download_gives_the_hint(fakes):
+    fakes.hf_error = OSError("An error happened while trying to locate the files")
+    whisper, _ = models.needed(cfg(model="medium"))
+    with pytest.raises(ScribeError, match="download of medium failed") as e:
+        models.download(whisper, quiet_progress())
+    assert str(e.value).endswith(models.CONNECTION_HINT)
+
+
+def test_failed_alignment_download_is_a_scribe_error(fakes):
+    # WhisperX turns any loading error into this ValueError
+    fakes.align_error = ValueError('The chosen align_model "x" could not be found')
+    _, align = models.needed(cfg(language="pl"))
+    with pytest.raises(ScribeError, match="download of org/wav2vec2-polish") as e:
+        models.download(align, quiet_progress())
+    assert str(e.value).endswith(models.CONNECTION_HINT)
 
 
 def test_download_replaces_damaged_torchaudio_file(fakes, monkeypatch):
