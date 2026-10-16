@@ -9,6 +9,7 @@ import yaml
 from scribe_rpg import init
 from scribe_rpg.config import load_config
 from scribe_rpg.errors import ScribeError
+from scribe_rpg.master.config import resolve
 from scribe_rpg.transcribe import session_json
 from scribe_rpg.transcribe.glossary import load_glossary, parse_glossary
 
@@ -36,6 +37,24 @@ def test_glossary_examples_work_once_uncommented():
     gloss = parse_glossary("\n".join(lines))
     assert gloss.names[:3] == ["Vorgrad", "Ostromir", "Czarna Wieża"]
     assert gloss.correct("w Worgradzie") == "w Vorgradzie"
+
+
+def test_master_examples_work_once_uncommented(tmp_path):
+    text = init.template("scribe.yaml")
+    # the master: block's examples are commented out as "  # key" lines
+    block = text[text.index("master:") : text.index("transcribe:")]
+    uncommented = re.sub(r"(?m)^  # ", "  ", block)
+    cfg = resolve(_load(tmp_path, text.replace(block, uncommented)).settings["master"])
+    assert cfg.players_stereo["player_one"] is True
+    assert [s.name for s in cfg.players["player_two"]] == [
+        "rumble",
+        "level",
+        "comp",
+        "eq",
+        "denoise",
+        "loudness",
+    ]
+    assert cfg.music[-1].options["target"] == -36
 
 
 def test_render_without_changes_is_the_template():
