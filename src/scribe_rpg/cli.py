@@ -1,4 +1,4 @@
-"""Command-line interface: `scribe transcribe`, `merge`, `master` and `init`.
+"""Command-line interface: `scribe transcribe`, `merge`, `master`, `init`, `check`.
 
 Commands stay thin: they read options, call the packages and report
 progress. Errors scribe expects (`ScribeError`) are shown as one red line
@@ -774,6 +774,40 @@ def init_command(
     if out_dir is None:
         out_dir = source.resolve().parent if source else Path.cwd()
     _create_config(source, out_dir, language, force, progress, only, full)
+
+
+@main.command(short_help="Show what scribe needs and what it finds (offline).")
+@click.option(
+    "-c", "--config", "config_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Config file to check (default: scribe.yaml in this folder).",
+)  # fmt: skip
+@click.pass_context
+def check(ctx: click.Context, config_path: Path | None) -> None:
+    """Show what scribe needs and what it finds, per use.
+
+    Audio cleanup (ffmpeg, the encoder), transcription (WhisperX, PyTorch,
+    the GPU) and the models on disk, with a link to the guide for anything
+    missing. Exits with 1 if a use that is installed would not work.
+    """
+    from scribe_rpg import check_report
+
+    lines, code = check_report.report(config_path, Path.cwd(), online=False)
+    _utf8_output(sys.stdout)
+    for text in lines:
+        click.echo(text)
+    ctx.exit(code)
+
+
+def _utf8_output(stream: Any) -> None:
+    """Write UTF-8 when output goes to a file or a pipe, not a terminal.
+
+    On Windows a redirected stdout uses the legacy code page (e.g. cp1250),
+    which has no ✔ ✘ ⚠ ℹ: printing them would crash. A terminal needs
+    nothing (click writes to the Windows console directly).
+    """
+    if not stream.isatty() and hasattr(stream, "reconfigure"):
+        stream.reconfigure(encoding="utf-8")
 
 
 def _interactive() -> bool:

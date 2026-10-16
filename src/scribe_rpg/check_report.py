@@ -1,0 +1,200 @@
+"""The `scribe check` report: what scribe needs, what it finds, per use.
+
+Offline: it reads the local caches only. The settings checked are the
+``scribe.yaml`` given with ``-c``, else the one in the current folder, else
+the defaults.
+"""
+
+from __future__ import annotations
+
+import platform
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from scribe_rpg import __version__, checks, init
+from scribe_rpg.checks import Item
+from scribe_rpg.config import load_config
+from scribe_rpg.errors import ScribeError
+
+SYMBOLS = {"ok": "✔", "missing": "✘", "warning": "⚠", "info": "ℹ"}
+NOT_INSTALLED = "not installed (audio cleanup only)"
+NONE_YET = "none yet: downloaded on your first transcription"
+
+
+@dataclass
+class Checked:
+    """The settings the report checks.
+
+    Attributes:
+        path: The config file, or None when there is none.
+        settings: Its settings; the defaults without a config or when it
+            does not load.
+        error: Why the config does not load, or ``""``.
+    """
+
+    path: Path | None
+    settings: dict[str, Any]
+    error: str = ""
+
+
+@dataclass
+class Group:
+    """One use (audio cleanup, transcription): its verdict and items."""
+
+    title: str
+    verdict: str
+    items: list[Item]
+
+
+def load_settings(config: Path | None, cwd: Path) -> Checked:
+    """The config from ``-c``, else ``scribe.yaml`` in `cwd`, else defaults."""
+    path = config or init.find_config(cwd)
+    if path is None:
+        return Checked(None, load_config().settings)
+    try:
+        return Checked(path, load_config(path).settings)
+    except ScribeError as e:
+        return Checked(path, load_config().settings, str(e))
+
+
+def header() -> str:
+    """scribe and Python versions, and how scribe was installed."""
+    route = "installed with uv" if checks.uv_install() else f"in {sys.prefix}"
+    return f"scribe {__version__}, Python {platform.python_version()} ({route})"
+
+
+def audio_group(settings: dict[str, Any]) -> Group:
+    """ffmpeg, and the encoder of the configured output format."""
+    from scribe_rpg.master.config import BITRATES
+
+    found = checks.ffmpeg_item()
+    items = [found]
+    if found.status != "missing":
+        fmt = settings["master"]["format"]
+        bitrate = settings["master"]["bitrate"] or BITRATES[fmt]
+        items.append(checks.encoder_item(fmt, bitrate))
+    return Group("Audio cleanup", _verdict(items), items)
+
+
+def transcription_group(settings: dict[str, Any], ffmpeg: Item) -> Group:
+    """WhisperX, PyTorch and the GPU for the configured device.
+
+    Args:
+        settings: The checked settings (``transcribe.whisper.device``).
+        ffmpeg: The ffmpeg item: transcription decodes audio with ffmpeg.
+    """
+    wx = checks.whisperx_item()
+    if wx.message == checks.WHISPERX_NOT_INSTALLED:
+        return Group("Transcription", NOT_INSTALLED, [wx])
+    items = [wx]
+    if wx.status != "missing":
+        device = settings["transcribe"]["whisper"]["device"]
+        torch = checks.torch_item(device)
+        items.append(torch)
+        # with a CPU-only PyTorch the GPU's reason would repeat PyTorch's
+        if torch.status != "missing":
+            items.append(checks.gpu_item(device))
+        if ffmpeg.status != "missing":
+            # the detail starts with the version ("9.0.2  C:\...\ffmpeg.exe")
+            info = checks.audio_library_item(ffmpeg.detail.split(" ")[0])
+            if info is not None:
+                items.append(info)
+    verdict = "not ready" if ffmpeg.status == "missing" else _verdict(items)
+    return Group("Transcription", verdict, items)
+
+
+def _verdict(items: list[Item]) -> str:
+    return "not ready" if any(i.status == "missing" for i in items) else "ready"
+
+
+def group_lines(group: Group) -> list[str]:
+    """The title line with the verdict, then one line per item."""
+    lines = [f"{group.title:<53}{group.verdict}"]
+    if group.verdict == NOT_INSTALLED:
+        [wx] = group.items
+        return [
+            *lines,
+            "  " + SYMBOLS["info"] + " " + checks.line(wx),
+            "    see " + checks.guide_url("transcription"),
+        ]
+    for item in group.items:
+        lines.append("  " + SYMBOLS[item.status] + " " + checks.line(item))
+        if item.status == "missing":
+            lines.append("    see " + checks.guide_url(item.guide))
+    return lines
+
+
+def model_lines(checked: Checked, cwd: Path, whisperx: bool) -> list[str]:
+    """The models on disk (with WhisperX loaded) and the settings checked.
+
+    Args:
+        checked: The settings checked.
+        cwd: The current folder, named when it holds no config.
+        whisperx: True if WhisperX loaded; models are listed only then.
+    """
+    from scribe_rpg.transcribe import models
+
+    lines = []
+    if whisperx:
+        ready, damaged = models.local_alignment()
+        lines += [
+            f"Models ({models.cache_folder()})",
+            "  Whisper:   " + (", ".join(models.cached_whisper_models()) or NONE_YET),
+            "  Alignment: " + (", ".join(ready) or NONE_YET),
+        ]
+        lines += [
+            f"  ⚠ alignment {language}: damaged; replaced on the next transcription"
+            for language in damaged
+        ]
+    if checked.path is None:
+        return [
+            *lines,
+            f"  No {init.CONFIG_NAME} in {cwd} (the folder this terminal is in).",
+            "  To set up a session: go to the folder with your recording and run "
+            "scribe init",
+        ]
+    if checked.error:
+        return [*lines, f"  ⚠ Settings checked: {checked.path}: {checked.error}"]
+    if not whisperx:
+        return [*lines, f"  Settings checked: {checked.path.resolve()}"]
+    try:
+        needed = models.needed(checked.settings["transcribe"]["whisper"])
+    except ScribeError as e:
+        return [*lines, f"  ⚠ Settings checked: {checked.path}: {e}"]
+    needs = [
+        (f"alignment {m.language}" if m.kind == "alignment model" else m.name)
+        + (" ✔" if m.cached else " – (downloaded on first transcription)")
+        for m in needed
+    ]
+    return [
+        *lines,
+        f"  Settings checked: {checked.path.resolve()}",
+        "    needs " + ", ".join(needs),
+    ]
+
+
+def report(config: Path | None, cwd: Path, online: bool) -> tuple[list[str], int]:
+    """The whole report and the exit code (1 if a use is not ready).
+
+    Args:
+        config: The ``-c`` config, or None.
+        cwd: The current folder (its ``scribe.yaml`` is checked without -c).
+        online: Look up model sizes and test the model sources (Task 6).
+    """
+    checked = load_settings(config, cwd)
+    audio = audio_group(checked.settings)
+    transcription = transcription_group(checked.settings, audio.items[0])
+    whisperx = transcription.items[0].status != "missing"
+    lines = [
+        header(),
+        "",
+        *group_lines(audio),
+        "",
+        *group_lines(transcription),
+        "",
+        *model_lines(checked, cwd, whisperx),
+    ]
+    code = 1 if "not ready" in (audio.verdict, transcription.verdict) else 0
+    return lines, code

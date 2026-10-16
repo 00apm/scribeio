@@ -309,7 +309,9 @@ def test_torch_cpu_device_is_info(fake_torch):
 
 
 def test_gpu_found(fake_torch):
-    assert checks.gpu_item("cuda") == Item("GPU", "ok", "NVIDIA RTX, 8 GB")
+    item = checks.gpu_item("cuda")
+    assert item == Item("GPU", "ok", message="NVIDIA RTX, 8 GB")
+    assert checks.line(item) == "GPU: NVIDIA RTX, 8 GB"
 
 
 def test_gpu_not_seen_gives_torch_reason(fake_torch):

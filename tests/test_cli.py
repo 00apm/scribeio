@@ -126,3 +126,32 @@ def test_init_from_json_hints_merge(tmp_path):
     assert f'scribe merge "{path}"' in next_steps
     assert "scribe transcribe" not in next_steps
     assert "scribe master <recording>" in next_steps
+
+
+def test_check_is_listed_with_its_short_help():
+    output = invoke("--help").output
+    assert "Show what scribe needs and what it finds (offline)." in output
+
+
+def test_check_prints_report_and_exits_with_its_code(monkeypatch):
+    from scribe_rpg import check_report
+
+    monkeypatch.setattr(
+        check_report, "report", lambda config, cwd, online: (["a", "b"], 1)
+    )
+    result = invoke("check")
+    assert result.exit_code == 1
+    assert result.output == "a\nb\n"
+
+
+def test_utf8_output_for_a_file_with_a_legacy_encoding():
+    import io
+
+    from scribe_rpg import cli
+
+    raw = io.BytesIO()
+    stream = io.TextIOWrapper(raw, encoding="cp1250")
+    cli._utf8_output(stream)
+    stream.write("✔ ✘ ⚠ ℹ")
+    stream.flush()
+    assert raw.getvalue().decode("utf-8") == "✔ ✘ ⚠ ℹ"

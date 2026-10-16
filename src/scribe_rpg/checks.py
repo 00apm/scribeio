@@ -242,7 +242,8 @@ def gpu_item(device: str) -> Item:
         if torch.cuda.is_available():
             name = torch.cuda.get_device_name(0)
             memory = torch.cuda.get_device_properties(0).total_memory / 1024**3
-            return Item("GPU", "ok", f"{name}, {memory:.0f} GB")
+            # as the message, so the line reads "GPU: <name>, 8 GB"
+            return Item("GPU", "ok", message=f"{name}, {memory:.0f} GB")
         reason = _no_gpu_reason(torch)
     except Exception as e:
         reason = _first_line(e)

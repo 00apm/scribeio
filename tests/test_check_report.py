@@ -1,0 +1,268 @@
+"""Tests for the `scribe check` report, with the checks and caches faked."""
+
+import re
+from pathlib import Path
+
+import pytest
+
+from scribe_rpg import check_report, checks
+from scribe_rpg.checks import Item
+from scribe_rpg.errors import ScribeError
+from scribe_rpg.transcribe import models
+
+NONE_YET = "none yet: downloaded on your first transcription"
+
+
+@pytest.fixture
+def ready(monkeypatch, tmp_path):
+    """Everything installed and both models of the default settings on disk."""
+    state = {"encoder_calls": []}
+
+    def encoder_item(fmt, bitrate):
+        state["encoder_calls"].append((fmt, bitrate))
+        return Item(f"{fmt} encoder", "ok")
+
+    def needed(cfg):
+        if cfg["model"] == "no-such-model":
+            raise ScribeError("unknown Whisper model 'no-such-model': invalid")
+        return [
+            models.Model("Whisper model", cfg["model"], "huggingface", True),
+            models.Model(
+                "alignment model", "org/x", "huggingface", False,
+                language=cfg["language"],
+            ),
+        ]  # fmt: skip
+
+    monkeypatch.setattr(
+        checks, "ffmpeg_item", lambda: Item("ffmpeg", "ok", "7.1.1  C:\\ff.exe")
+    )
+    monkeypatch.setattr(checks, "encoder_item", encoder_item)
+    monkeypatch.setattr(
+        checks, "whisperx_item", lambda: Item("WhisperX", "ok", "3.8.6")
+    )
+    monkeypatch.setattr(
+        checks, "torch_item", lambda device: Item("PyTorch", "ok", "2.8.0, CUDA build")
+    )
+    monkeypatch.setattr(
+        checks, "gpu_item", lambda device: Item("GPU", "ok", message="NVIDIA RTX, 8 GB")
+    )
+    monkeypatch.setattr(models, "cache_folder", lambda: tmp_path / "hf")
+    monkeypatch.setattr(models, "cached_whisper_models", lambda: ["large-v3", "medium"])
+    monkeypatch.setattr(models, "local_alignment", lambda: (["en", "pl"], []))
+    monkeypatch.setattr(models, "needed", needed)
+    return state
+
+
+def run(tmp_path, config=None):
+    lines, code = check_report.report(config, tmp_path, online=False)
+    return "\n".join(lines), code
+
+
+def write_config(folder: Path, text: str) -> Path:
+    path = folder / "scribe.yaml"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def test_all_ready_exit_0(ready, tmp_path):
+    text, code = run(tmp_path)
+    assert code == 0
+    assert re.search(r"^Audio cleanup +ready$", text, re.M)
+    assert re.search(r"^Transcription +ready$", text, re.M)
+    assert "  ✔ ffmpeg 7.1.1  C:\\ff.exe" in text
+    assert "  ✔ GPU: NVIDIA RTX, 8 GB" in text
+
+
+def test_verdict_column_matches_the_spec(ready, tmp_path):
+    text, _ = run(tmp_path)
+    assert "Audio cleanup" + " " * 40 + "ready" in text.splitlines()
+
+
+BROKEN = {
+    "ffmpeg": ("ffmpeg_item", lambda *a: Item("ffmpeg", "missing", "", "m", "ffmpeg")),
+    "encoder": (
+        "encoder_item",
+        lambda *a: Item("mp3 encoder", "missing", "", "m", "encoder"),
+    ),
+    "torch": (
+        "torch_item",
+        lambda *a: Item("PyTorch", "missing", "2.8.0", "m", "pytorch-cuda"),
+    ),
+    "gpu": ("gpu_item", lambda *a: Item("GPU", "missing", "", "m", "gpu")),
+    "whisperx_broken": (
+        "whisperx_item",
+        lambda *a: Item("WhisperX", "missing", "", "installed but", "transcription"),
+    ),
+}
+
+
+@pytest.mark.parametrize("broken", list(BROKEN))
+def test_not_ready_exit_1(ready, broken, monkeypatch, tmp_path):
+    name, fake = BROKEN[broken]
+    monkeypatch.setattr(checks, name, fake)
+    lines, code = check_report.report(None, tmp_path, online=False)
+    assert code == 1
+    [i] = [i for i, s in enumerate(lines) if s.startswith("  ✘ ")]
+    assert lines[i + 1].startswith("    see https://")
+
+
+def test_ffmpeg_missing_skips_encoder_and_blocks_transcription(
+    ready, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(checks, "ffmpeg_item", BROKEN["ffmpeg"][1])
+    text, code = run(tmp_path)
+    assert code == 1 and ready["encoder_calls"] == []
+    assert "encoder" not in text
+    assert re.search(r"^Audio cleanup +not ready$", text, re.M)
+    assert re.search(r"^Transcription +not ready$", text, re.M)
+
+
+def test_whisperx_not_installed_is_exit_0(ready, monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        checks,
+        "whisperx_item",
+        lambda: Item(
+            "WhisperX", "missing", "", checks.WHISPERX_NOT_INSTALLED, "transcription"
+        ),
+    )
+    lines, code = check_report.report(None, tmp_path, online=False)
+    text = "\n".join(lines)
+    assert code == 0
+    assert re.search(
+        r"^Transcription +not installed \(audio cleanup only\)$", text, re.M
+    )
+    i = lines.index("  ℹ WhisperX: " + checks.WHISPERX_NOT_INSTALLED)
+    assert lines[i + 1] == "    see " + checks.guide_url("transcription")
+    assert "PyTorch" not in text and "Models (" not in text
+
+
+def test_cpu_device_in_config_makes_gpu_info(ready, monkeypatch, tmp_path):
+    def torch_item(device):
+        if device == "cpu":
+            return Item("PyTorch", "info", "2.8.0", "set to run on the CPU: very slow")
+        return Item("PyTorch", "missing", "2.8.0", "m", "pytorch-cuda")
+
+    monkeypatch.setattr(checks, "torch_item", torch_item)
+    monkeypatch.setattr(
+        checks,
+        "gpu_item",
+        lambda device: Item("GPU", "info", "", "set to run on the CPU: very slow"),
+    )
+    config = write_config(tmp_path, "transcribe:\n  whisper:\n    device: cpu\n")
+    text, code = run(tmp_path, config)
+    assert code == 0
+    assert "  ℹ PyTorch 2.8.0: set to run on the CPU" in text
+    assert "  ℹ GPU: set to run on the CPU" in text
+
+
+def test_cpu_only_torch_on_cuda_skips_the_gpu_line(ready, monkeypatch, tmp_path):
+    monkeypatch.setattr(checks, "torch_item", BROKEN["torch"][1])
+    text, code = run(tmp_path)
+    assert code == 1 and "GPU" not in text
+
+
+def test_ffmpeg_8_info_line(ready, monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        checks, "ffmpeg_item", lambda: Item("ffmpeg", "ok", "9.0.2  C:\\ff.exe")
+    )
+    text, code = run(tmp_path)
+    assert code == 0
+    assert "  ℹ ffmpeg 9: WhisperX's audio library prints a warning; harmless" in text
+
+
+def test_models_listed(ready, tmp_path):
+    lines, _ = check_report.report(None, tmp_path, online=False)
+    assert f"Models ({tmp_path / 'hf'})" in lines
+    assert "  Whisper:   large-v3, medium" in lines
+    assert "  Alignment: en, pl" in lines
+
+
+def test_no_models_yet(ready, monkeypatch, tmp_path):
+    monkeypatch.setattr(models, "cached_whisper_models", lambda: [])
+    monkeypatch.setattr(models, "local_alignment", lambda: ([], []))
+    lines, _ = check_report.report(None, tmp_path, online=False)
+    assert "  Whisper:   " + NONE_YET in lines
+    assert "  Alignment: " + NONE_YET in lines
+
+
+def test_damaged_alignment(ready, monkeypatch, tmp_path):
+    monkeypatch.setattr(models, "local_alignment", lambda: (["pl"], ["en"]))
+    lines, code = check_report.report(None, tmp_path, online=False)
+    assert code == 0
+    assert "  ⚠ alignment en: damaged; replaced on the next transcription" in lines
+
+
+def test_settings_from_cwd(ready, tmp_path):
+    path = write_config(tmp_path, "transcribe:\n  whisper:\n    language: pl\n")
+    lines, _ = check_report.report(None, tmp_path, online=False)
+    assert f"  Settings checked: {path.resolve()}" in lines
+    assert (
+        "    needs large-v3 ✔, alignment pl – (downloaded on first transcription)"
+        in lines
+    )
+
+
+def test_settings_from_dash_c(ready, tmp_path):
+    write_config(tmp_path, "")
+    other = tmp_path / "other"
+    other.mkdir()
+    path = write_config(other, "")
+    lines, _ = check_report.report(path, tmp_path, online=False)
+    assert f"  Settings checked: {path.resolve()}" in lines
+    assert f"  Settings checked: {(tmp_path / 'scribe.yaml').resolve()}" not in lines
+
+
+def test_no_settings(ready, tmp_path):
+    lines, code = check_report.report(None, tmp_path, online=False)
+    assert code == 0
+    assert f"  No scribe.yaml in {tmp_path} (the folder this terminal is in)." in lines
+    assert (
+        "  To set up a session: go to the folder with your recording and run "
+        "scribe init" in lines
+    )
+    assert not any(re.search(r"\bhere\b", s) for s in lines)
+
+
+def test_no_settings_without_whisperx(ready, monkeypatch, tmp_path):
+    monkeypatch.setattr(checks, "whisperx_item", BROKEN["whisperx_broken"][1])
+    lines, _ = check_report.report(None, tmp_path, online=False)
+    assert f"  No scribe.yaml in {tmp_path} (the folder this terminal is in)." in lines
+
+
+def test_settings_do_not_load(ready, tmp_path):
+    path = write_config(tmp_path, "master: [\n")
+    lines, code = check_report.report(None, tmp_path, online=False)
+    text = "\n".join(lines)
+    assert code == 0
+    [bad] = [s for s in lines if s.startswith("  ⚠ Settings checked: ")]
+    assert str(path) in bad and "YAML" in bad
+    assert "Models (" in text and re.search(r"^Transcription +ready$", text, re.M)
+
+
+def test_unknown_model_in_settings(ready, tmp_path):  # Review Focus 1
+    write_config(tmp_path, "transcribe:\n  whisper:\n    model: no-such-model\n")
+    lines, code = check_report.report(None, tmp_path, online=False)
+    assert code == 0
+    [bad] = [s for s in lines if s.startswith("  ⚠ Settings checked: ")]
+    assert "unknown Whisper model" in bad
+    assert not any(s.startswith("    needs") for s in lines)
+
+
+def test_encoder_uses_the_configs_format(ready, tmp_path):
+    write_config(tmp_path, "master:\n  format: opus\n")
+    run(tmp_path)
+    assert ready["encoder_calls"] == [("opus", "48k")]
+
+
+def test_encoder_uses_the_configs_bitrate(ready, tmp_path):
+    write_config(tmp_path, "master:\n  bitrate: 128k\n")
+    run(tmp_path)
+    assert ready["encoder_calls"] == [("mp3", "128k")]
+
+
+def test_header_route(monkeypatch, tmp_path):
+    monkeypatch.setattr(check_report.sys, "prefix", str(tmp_path))
+    assert check_report.header().endswith(f"(in {tmp_path})")
+    assert check_report.header().startswith("scribe ")
+    (tmp_path / "uv-receipt.toml").write_text("")
+    assert check_report.header().endswith("(installed with uv)")
