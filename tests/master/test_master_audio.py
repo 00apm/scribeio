@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from scribe_rpg import ffmpeg
-from scribe_rpg.errors import ScribeError
+from scribe_rpg import checks, ffmpeg
+from scribe_rpg.errors import InstallError, ScribeError
 from scribe_rpg.master.catalogue import Step
 from scribe_rpg.master.render import (
     chain_filter,
@@ -272,13 +272,13 @@ def test_check_missing_encoder(tmp_path, monkeypatch):
         return real(args)
 
     monkeypatch.setattr(ffmpeg, "attempt", no_lame)
-    with pytest.raises(ScribeError) as e:
+    with pytest.raises(InstallError) as e:
         checked(tmp_path, "  format: mp3\n")
-    assert str(e.value) == (
-        "master.format (mp3): this ffmpeg has no libmp3lame encoder; install "
-        "an ffmpeg build with libmp3lame, or choose another master.format "
-        "(or --format)"
-    )
+    assert str(e.value).splitlines() == [
+        "mp3 encoder: this ffmpeg has no libmp3lame, so it cannot write mp3 "
+        "files; --format m4a works without it",
+        "see " + checks.guide_url("encoder"),
+    ]
 
 
 # --- progress of the measuring passes ------------------------------------------

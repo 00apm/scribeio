@@ -1,5 +1,7 @@
 """Installation checks shared by `scribe check`, `transcribe` and `master`."""
 
+import subprocess
+
 import pytest
 
 from scribe_rpg import checks, ffmpeg
@@ -116,3 +118,65 @@ def test_ffmpeg_unparsable_or_new_is_ok(found_ffmpeg, found):
     found_ffmpeg.version = found
     item = checks.ffmpeg_item()
     assert item.status == "ok" and item.detail.startswith(found)
+
+
+# --- encoder ----------------------------------------------------------------
+
+
+def ffmpeg_says(monkeypatch, code, stderr):
+    """Make every ffmpeg run end with `code` and `stderr`; return the args seen."""
+    seen = []
+
+    def attempt(args):
+        seen.append(args)
+        return subprocess.CompletedProcess(args, code, "", stderr)
+
+    monkeypatch.setattr(ffmpeg, "attempt", attempt)
+    return seen
+
+
+def test_encoder_ok(monkeypatch):
+    seen = ffmpeg_says(monkeypatch, 0, "")
+    assert checks.encoder_item("mp3", "96k") == Item("mp3 encoder", "ok")
+    [args] = seen
+    assert "libmp3lame" in args and "96k" in args
+
+
+def test_encoder_missing(monkeypatch):
+    ffmpeg_says(monkeypatch, 1, "[aost#0:0 @ 0000] Unknown encoder 'libmp3lame'\n")
+    assert checks.encoder_item("mp3", "96k") == Item(
+        "mp3 encoder", "missing",
+        message="this ffmpeg has no libmp3lame, so it cannot write mp3 files; "
+        "--format m4a works without it",
+        guide="encoder",
+    )  # fmt: skip
+
+
+def test_encoder_missing_for_m4a_names_no_alternative(monkeypatch):
+    ffmpeg_says(monkeypatch, 1, "Unknown encoder 'aac'\n")
+    item = checks.encoder_item("m4a", "64k")
+    assert item.status == "missing" and "--format" not in item.message
+
+
+def test_encoder_refusing_bitrate_is_a_warning(monkeypatch):
+    ffmpeg_says(
+        monkeypatch, 1,
+        "[libmp3lame @ 0x1] The bit rate 7k is unsupported\nError while opening\n",
+    )  # fmt: skip
+    item = checks.encoder_item("mp3", "7k")
+    assert (item.status, item.detail, item.message) == (
+        "warning",
+        "7k",
+        "The bit rate 7k is unsupported",
+    )
+
+
+def test_encoder_crash_without_output(monkeypatch):
+    ffmpeg_says(monkeypatch, 0xC0000005, "")
+    item = checks.encoder_item("mp3", "96k")
+    assert (item.status, item.message) == ("warning", "ffmpeg exited with 3221225477")
+
+
+@pytest.mark.ffmpeg
+def test_encoder_probe_with_real_ffmpeg():
+    assert checks.encoder_item("flac", "").status == "ok"

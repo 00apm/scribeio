@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
 
-from scribe_rpg import craig, ffmpeg
+from scribe_rpg import checks, craig, ffmpeg
 from scribe_rpg.errors import ScribeError
 from scribe_rpg.master.catalogue import OPERATIONS, Step
 from scribe_rpg.master.config import MasterConfig
@@ -292,7 +292,8 @@ def check(cfg: MasterConfig) -> None:
 
     Raises:
         ScribeError: ``<path> (<type>): <ffmpeg's message>``, first bad step;
-            then ``master.format`` / ``master.bitrate`` for the encoder.
+            then ``master.bitrate`` for a bitrate the encoder refuses.
+        InstallError: If this ffmpeg has no encoder for ``master.format``.
     """
     chains = [cfg.voice, cfg.music, cfg.mix, *cfg.players.values()]
     steps = {s.where: s for chain in chains for s in chain if s.type not in OPERATIONS}
@@ -301,6 +302,18 @@ def check(cfg: MasterConfig) -> None:
         if problem is not None:
             raise ScribeError(f"{step.where} ({step.type}): {problem}")
     _check_encoder(cfg.format, cfg.bitrate)
+
+
+def _check_encoder(fmt: str, bitrate: str) -> None:
+    """Encode the silence as the master will be encoded.
+
+    Raises:
+        InstallError: If this ffmpeg has no encoder for `fmt`.
+        ScribeError: If the encoder refuses the bitrate.
+    """
+    found = checks.require(checks.encoder_item(fmt, bitrate))
+    if found.status == "warning":
+        raise ScribeError(f"master.bitrate ({fmt} {bitrate}): {found.message}")
 
 
 def _silence(args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -317,7 +330,7 @@ def _problem(step: Step) -> str | None:
     done = _silence(["-af", chain_filter([step], {})])
     if done.returncode == 0:
         return None
-    lines = _lines(done.stderr)
+    lines = error_lines(done.stderr)
     # the most specific line first: a range, then any option line, else the last
     for key in ("out of range", "option"):
         for line in lines:
@@ -326,32 +339,7 @@ def _problem(step: Step) -> str | None:
     return lines[-1] if lines else f"ffmpeg exited with {done.returncode}"
 
 
-def _check_encoder(fmt: str, bitrate: str) -> None:
-    """Encode the silence as the master will be encoded.
-
-    Raises:
-        ScribeError: If the encoder is missing or refuses the bitrate.
-    """
-    args = encode_args(fmt, bitrate)
-    # errors only: the stream info lines would come before the reason
-    done = _silence(["-loglevel", "error", *args])
-    if done.returncode == 0:
-        return
-    codec = args[1]  # "-c:a", codec, ...
-    if f"Unknown encoder '{codec}'" in done.stderr:
-        raise ScribeError(
-            f"master.format ({fmt}): this ffmpeg has no {codec} encoder; install "
-            f"an ffmpeg build with {codec}, or choose another master.format "
-            "(or --format)"
-        )
-    lines = _lines(done.stderr)
-    # the encoder's own complaint comes first (e.g. "The bit rate ... is
-    # unsupported"); the lines after it are ffmpeg's generic follow-ups
-    first = lines[0] if lines else f"ffmpeg exited with {done.returncode}"
-    raise ScribeError(f"master.bitrate ({fmt} {bitrate}): {first}")
-
-
-def _lines(stderr: str) -> list[str]:
+def error_lines(stderr: str) -> list[str]:
     """ffmpeg's non-empty error lines without their ``[name @ 0x...]`` prefix."""
     lines = [_PREFIX.sub("", line).strip() for line in stderr.splitlines()]
     return [line for line in lines if line]

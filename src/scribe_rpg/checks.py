@@ -121,3 +121,36 @@ def ffmpeg_item() -> Item:
             f"older than {need}, the oldest scribe supports; mastering may fail",
         )  # fmt: skip
     return Item("ffmpeg", "ok", f"{found}  {path}")
+
+
+def encoder_item(fmt: str, bitrate: str) -> Item:
+    """Encode 0.1 s of silence as `master` would encode a `fmt` file.
+
+    Returns:
+        ok; missing if this ffmpeg lacks the encoder; a warning with the
+        encoder's complaint if it refuses the bitrate (a settings problem).
+    """
+    # imported here: the CLI imports this module for every command, and
+    # mix imports this module itself
+    from scribe_rpg.master.mix import encode_args, error_lines
+
+    name = f"{fmt} encoder"
+    args = encode_args(fmt, bitrate)
+    # errors only: the stream info lines would come before the reason
+    done = ffmpeg.attempt(
+        ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono", "-t", "0.1",
+         "-loglevel", "error", *args, "-f", "null", "-"]
+    )  # fmt: skip
+    if done.returncode == 0:
+        return Item(name, "ok")
+    codec = args[1]  # "-c:a", codec, ...
+    if f"Unknown encoder '{codec}'" in done.stderr:
+        message = f"this ffmpeg has no {codec}, so it cannot write {fmt} files"
+        if fmt != "m4a":
+            message += "; --format m4a works without it"
+        return Item(name, "missing", message=message, guide="encoder")
+    lines = error_lines(done.stderr)
+    # the encoder's own complaint comes first (e.g. "The bit rate ... is
+    # unsupported"); the lines after it are ffmpeg's generic follow-ups
+    first = lines[0] if lines else f"ffmpeg exited with {done.returncode}"
+    return Item(name, "warning", bitrate, first)
