@@ -170,3 +170,29 @@ def test_check_online_option(monkeypatch):
     assert invoke("check").exit_code == 0
     assert seen == [True, False]
     assert "test the model sources" in invoke("check", "--help").output
+
+
+def fake_colorama(monkeypatch, platform):
+    """Pretend to run on `platform` with a colorama that records its calls."""
+    import sys
+    import types
+
+    calls = []
+    module = types.ModuleType("colorama")
+    module.just_fix_windows_console = lambda: calls.append("fixed")
+    monkeypatch.setitem(sys.modules, "colorama", module)
+    monkeypatch.setattr(sys, "platform", platform)
+    return calls
+
+
+def test_windows_console_shows_colours(monkeypatch):
+    # the old Windows console prints colour codes as text unless switched on
+    calls = fake_colorama(monkeypatch, "win32")
+    assert invoke("init", "--help").exit_code == 0
+    assert calls == ["fixed"]
+
+
+def test_colorama_not_used_elsewhere(monkeypatch):
+    calls = fake_colorama(monkeypatch, "linux")
+    assert invoke("init", "--help").exit_code == 0
+    assert calls == []

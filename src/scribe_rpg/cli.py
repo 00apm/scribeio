@@ -114,6 +114,12 @@ def _start_option(f: F) -> F:
 @click.version_option(__version__, prog_name="scribe")
 def main() -> None:
     """Transcripts of TTRPG sessions recorded with Craig (Discord)."""
+    if sys.platform == "win32":
+        # the old Windows console prints colour codes as text unless told
+        # otherwise; click stopped doing this in 8.5
+        import colorama
+
+        colorama.just_fix_windows_console()
 
 
 @main.command()
