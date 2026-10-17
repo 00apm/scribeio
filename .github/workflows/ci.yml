@@ -2,9 +2,9 @@
 # result does not depend on the OS or the Python version).
 name: CI
 
+# Every change reaches main through a pull request, which has already run
+# CI on the merged code; a push to main does not run it again.
 on:
-  push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
 
