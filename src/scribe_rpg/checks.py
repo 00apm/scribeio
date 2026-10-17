@@ -7,6 +7,7 @@ the same words and a link to the install guide section that fixes it.
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import sys
@@ -122,7 +123,9 @@ def ffmpeg_item() -> Item:
             "ffmpeg", "warning", found,
             f"older than {need}, the oldest scribe supports; mastering may fail",
         )  # fmt: skip
-    return Item("ffmpeg", "ok", f"{found}  {path}")
+    # Windows' which() spells the extension as PATHEXT does: ffmpeg.EXE
+    root, ext = os.path.splitext(path)
+    return Item("ffmpeg", "ok", f"{found}  {root}{ext.lower()}")
 
 
 def encoder_item(fmt: str, bitrate: str) -> Item:
