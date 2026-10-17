@@ -283,7 +283,7 @@ def _start(args: list[str], **kwargs: Any) -> subprocess.Popen[Any]:
 def _end(proc: subprocess.Popen[Any]) -> None:
     """Kill `proc` if it still runs and stop tracking it."""
     if proc.poll() is None:
-        proc.kill()
+        _kill(proc)
         proc.wait()
     with _lock:
         _live.discard(proc)
@@ -293,7 +293,21 @@ def _kill_all() -> None:
     with _lock:
         for proc in _live:
             if proc.poll() is None:
-                proc.kill()
+                _kill(proc)
+
+
+def _kill(proc: subprocess.Popen[Any]) -> None:
+    """Kill `proc` and, on Windows, the processes it started.
+
+    Chocolatey's ffmpeg.exe is a launcher that runs the real ffmpeg as its
+    child: killing the launcher alone would leave ffmpeg running.
+    """
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+            capture_output=True, check=False,
+        )  # fmt: skip
+    proc.kill()
 
 
 def _check_interrupted(code: int) -> None:

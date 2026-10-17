@@ -1,5 +1,6 @@
 """Shared ffmpeg helpers: lookup, version, runs, decoding, duration."""
 
+import subprocess
 import sys
 import threading
 import time
@@ -200,6 +201,44 @@ def test_parallel_stops_at_the_first_error(monkeypatch, error):
     assert sorted(started) == [0, 1]
     ffmpeg.run(["-f", "lavfi", "-i", "anullsrc", "-t", "0.1", "-f", "null", "-"],
                "after")  # fmt: skip
+
+
+# A launcher like Chocolatey's ffmpeg.exe shim: it runs the real program as a
+# child that shares its pipes, writes the child's PID, and waits for it.
+LAUNCHER = (
+    "import subprocess, sys; "
+    "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)']); "
+    "open(sys.argv[-1], 'w').write(str(child.pid)); "
+    "child.wait()"
+)
+
+
+@pytest.mark.skipif(
+    sys.platform != "win32", reason="launcher shims are a Windows install route"
+)
+def test_parallel_kills_the_program_behind_a_launcher(monkeypatch, tmp_path):
+    # Killing only the launcher leaves the real ffmpeg running, holding the
+    # pipes open: the worker waits until it ends on its own
+    monkeypatch.setattr(ffmpeg, "workers", lambda: 2)
+    fake_ffmpeg(monkeypatch, LAUNCHER)
+    pid_file = tmp_path / "pid"
+
+    def work(i):
+        if i == 0:
+            while not pid_file.exists() or not pid_file.read_text():
+                time.sleep(0.05)
+            raise ScribeError("boom")
+        ffmpeg.run([str(pid_file)], "launched")
+
+    begin = time.monotonic()
+    with pytest.raises(ScribeError, match="boom"):
+        ffmpeg.parallel(work, [0, 1])
+    assert time.monotonic() - begin < 10
+    tasks = subprocess.run(
+        ["tasklist", "/FI", f"PID eq {pid_file.read_text()}", "/NH"],
+        capture_output=True, text=True,
+    )  # fmt: skip
+    assert "python" not in tasks.stdout.lower()
 
 
 def test_silent_crash_names_the_exit_code(monkeypatch):
