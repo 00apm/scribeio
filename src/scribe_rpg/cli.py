@@ -675,6 +675,28 @@ def _open(folder: Path, progress: Progress) -> None:
         progress.warn(str(e))
 
 
+def _print_chains(rec: craig.Recording, mcfg: MasterConfig, progress: Progress) -> None:
+    """List the steps of every chain this run uses, one line per stage.
+
+    A pass runs all its steps at once, so the progress bars cannot show them.
+    Players with their own block get their own line.
+    """
+    from scribe_rpg.master.catalogue import Step
+
+    def show(label: str, steps: list[Step]) -> None:
+        names = " → ".join(s.name for s in steps) or "(none)"
+        progress.console.print(f"{label}: {names}", markup=False, soft_wrap=True)
+
+    show("voice", mcfg.voice)
+    for t in rec.players:
+        account = craig.sanitize(t.account)
+        if account in mcfg.players:
+            show(account, mcfg.players[account])
+    if any(t.kind == "music" for t in rec.tracks):
+        show("music", mcfg.music)
+    show("mix", mcfg.mix)
+
+
 def _write_master(
     rec: craig.Recording,
     mcfg: MasterConfig,
@@ -696,6 +718,7 @@ def _write_master(
             raise ScribeError(
                 f"output already exists: {path.name} (use --force to overwrite)"
             )
+    _print_chains(rec, mcfg, progress)
     plans = [
         mix.TrackPlan(t, mcfg.chain_for(t), stereo=mcfg.keeps_stereo(t))
         for t in rec.tracks

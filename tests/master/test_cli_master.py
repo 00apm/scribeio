@@ -165,6 +165,28 @@ def test_master_notes_players_not_in_recording(tmp_path):
 
 
 @pytest.mark.ffmpeg
+def test_master_prints_each_chain_first(tmp_path):
+    # the passes run every step at once, so the steps are listed up front
+    folder = master_dir(tmp_path / "rec" / "tracks")
+    config = tmp_path / "scribe.yaml"
+    config.write_text(
+        "master:\n  players:\n    gm_account:\n      chain: [rumble, loudness]\n"
+        "  mix:\n    chain: []\n",
+        encoding="utf-8",
+    )
+    result = invoke("master", folder, *START_ARG, "-c", config)
+    assert result.exit_code == 0, result.output
+    lines = result.output.splitlines()
+    chains = lines[lines.index("voice: rumble → level → comp → eq → loudness") :]
+    assert chains[1:4] == [
+        "gm_account: rumble → loudness",
+        "music: loudness",
+        "mix: (none)",
+    ]
+    assert result.output.index("mix: (none)") < result.output.index("measure")
+
+
+@pytest.mark.ffmpeg
 def test_master_checks_config_before_reading(tmp_path):
     folder = master_dir(tmp_path / "rec" / "tracks")
     config = tmp_path / "scribe.yaml"
