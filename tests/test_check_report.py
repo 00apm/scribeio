@@ -67,7 +67,7 @@ def write_config(folder: Path, text: str) -> Path:
 def test_all_ready_exit_0(ready, tmp_path):
     text, code = run(tmp_path)
     assert code == 0
-    assert re.search(r"^Audio cleanup +ready$", text, re.M)
+    assert re.search(r"^Audio mastering +ready$", text, re.M)
     assert re.search(r"^Transcription +ready$", text, re.M)
     assert "  ✔ ffmpeg 7.1.1  C:\\ff.exe" in text
     assert "  ✔ GPU: NVIDIA RTX, 8 GB" in text
@@ -75,7 +75,7 @@ def test_all_ready_exit_0(ready, tmp_path):
 
 def test_verdict_column_matches_the_spec(ready, tmp_path):
     text, _ = run(tmp_path)
-    assert "Audio cleanup" + " " * 40 + "ready" in text.splitlines()
+    assert "Audio mastering" + " " * 38 + "ready" in text.splitlines()
 
 
 BROKEN = {
@@ -113,7 +113,7 @@ def test_ffmpeg_missing_skips_encoder_and_blocks_transcription(
     text, code = run(tmp_path)
     assert code == 1 and ready["encoder_calls"] == []
     assert "encoder" not in text
-    assert re.search(r"^Audio cleanup +not ready$", text, re.M)
+    assert re.search(r"^Audio mastering +not ready$", text, re.M)
     assert re.search(r"^Transcription +not ready$", text, re.M)
 
 
@@ -129,8 +129,9 @@ def test_whisperx_not_installed_is_exit_0(ready, monkeypatch, tmp_path):
     text = "\n".join(lines)
     assert code == 0
     assert re.search(
-        r"^Transcription +not installed \(audio cleanup only\)$", text, re.M
+        r"^Transcription +not installed \(audio mastering only\)$", text, re.M
     )
+    assert "(audio mastering works)" in checks.WHISPERX_NOT_INSTALLED
     i = lines.index("  ℹ WhisperX: " + checks.WHISPERX_NOT_INSTALLED)
     assert lines[i + 1] == "    see " + checks.guide_url("transcription")
     assert "PyTorch" not in text and "Models (" not in text

@@ -172,7 +172,7 @@ TESTED = "3.8.6"
 TESTED_MIN = (3, 8, 6)  # older versions lack APIs scribe uses
 TESTED_BELOW = (4, 0, 0)  # a new major version may change the API
 WHISPERX_NOT_INSTALLED = (
-    "not installed, so scribe cannot transcribe (audio cleanup works)"
+    "not installed, so scribe cannot transcribe (audio mastering works)"
 )
 ON_CPU = "set to run on the CPU: very slow"
 
