@@ -22,6 +22,7 @@ dependencies = [
     "rich>=13",
     "pyyaml>=6",
     "numpy>=1.24",
+    "colorama>=0.4.6; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]
@@ -69,5 +70,5 @@ warn_unreachable = true
 
 [[tool.mypy.overrides]]
 # these ship no type information
-module = ["whisperx", "whisperx.*", "faster_whisper", "faster_whisper.*", "torchaudio", "torchaudio.*"]
+module = ["whisperx", "whisperx.*", "faster_whisper", "faster_whisper.*", "torchaudio", "torchaudio.*", "colorama"]
 ignore_missing_imports = true

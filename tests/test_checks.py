@@ -107,6 +107,12 @@ def test_ffmpeg_found(found_ffmpeg):
     assert checks.ffmpeg_item() == Item("ffmpeg", "ok", "7.1.1  /bin/ffmpeg")
 
 
+def test_ffmpeg_path_shows_a_lowercase_extension(found_ffmpeg, monkeypatch):
+    # Windows' which() returns the extension as PATHEXT spells it (.EXE)
+    monkeypatch.setattr(checks.shutil, "which", lambda name: r"C:\bin\ffmpeg.EXE")
+    assert checks.ffmpeg_item().detail == r"7.1.1  C:\bin\ffmpeg.exe"
+
+
 @pytest.mark.parametrize("found", ["4.4.2", "5.1.2", "6.0"])
 def test_ffmpeg_old_is_a_warning(found_ffmpeg, found):
     found_ffmpeg.version = found

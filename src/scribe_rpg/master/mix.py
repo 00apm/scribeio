@@ -35,7 +35,7 @@ from scribe_rpg.master.render import (
 )
 
 OnMeasured = Callable[[str, list[Measured]], None]
-# Told a row (account or "mix"), a pass's phase ("level 1/2") and percent done
+# Told a row (account or "mix"), a pass's phase ("measure level (1/2)") and percent done
 OnRowPass = Callable[[str, str, float], None]
 
 # ffmpeg's own name for a bad option ("... out of range [1 - 20]"), stripped
