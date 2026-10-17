@@ -15,7 +15,7 @@ and scribe itself.
 >   covers the basics.
 > - **Transcription needs an NVIDIA GPU.** Run `nvidia-smi`: a table
 >   naming your GPU means the driver is ready. No NVIDIA GPU, or a Mac:
->   see [GPU](#gpu). Audio cleanup needs no GPU.
+>   see [GPU](#gpu). Audio mastering needs no GPU.
 > - **Disk:** up to about 12 GB (the install and the speech models).
 
 ## Install scribe
@@ -69,7 +69,7 @@ It lists what each use needs and what it finds, offline:
 ```
 scribe 0.1.0, Python 3.12.9 (installed with uv)
 
-Audio cleanup                                        ready
+Audio mastering                                      ready
   ✔ ffmpeg 9.0.2  C:\Users\you\AppData\Local\Microsoft\WinGet\Links\ffmpeg.exe
   ✔ mp3 encoder
 
@@ -85,12 +85,12 @@ Models (C:\Users\you\.cache\huggingface\hub)
 …
 ```
 
-Each use is **ready**, **not ready**, or **not installed** (audio cleanup
-only). ✔ is fine, ℹ is for your information, ⚠ may cause trouble, ✘ stops
-that use. Every ✘ comes with a link to the section below that fixes it:
+Each use is **ready**, **not ready**, or **not installed** (audio
+mastering only). ✔ is fine, ℹ is for your information, ⚠ may cause
+trouble, ✘ stops that use. Every ✘ comes with a link to the section below that fixes it:
 
 ```
-Audio cleanup                                        not ready
+Audio mastering                                      not ready
   ✔ ffmpeg 6.1  C:\Tools\ffmpeg\bin\ffmpeg.exe
   ✘ mp3 encoder: this ffmpeg has no libmp3lame, so it cannot write mp3 files; --format m4a works without it
     see https://github.com/00apm/scribe-rpg/blob/main/docs/install.md#mp3-encoder
@@ -99,7 +99,7 @@ Audio cleanup                                        not ready
 Run `scribe check` in a session folder and it also checks that folder's
 `scribe.yaml` and lists the models it needs.
 
-## Install audio cleanup only
+## Install scribe with audio mastering only
 
 Without transcription there is no WhisperX or PyTorch to download:
 
@@ -107,7 +107,7 @@ Without transcription there is no WhisperX or PyTorch to download:
 uv tool install scribe-rpg --python 3.12
 ```
 
-`scribe check` then shows Transcription as "not installed (audio cleanup
+`scribe check` then shows Transcription as "not installed (audio mastering
 only)". To add transcription later, run the full command from step 3 with
 `--force`.
 
@@ -187,7 +187,7 @@ transcribe:
     device: cpu
 ```
 
-Audio cleanup needs no GPU.
+Audio mastering needs no GPU.
 
 GPU memory: scribe is tested on an 8 GB NVIDIA GPU. With less, set
 `compute_type: int8_float16` or `model: large-v3-turbo` under
