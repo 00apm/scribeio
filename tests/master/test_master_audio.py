@@ -293,10 +293,10 @@ def test_track_gains_reports_each_pass(tmp_path):
     ]
     seen = []
     track_gains(tone, MONO, steps, "a", lambda phase, pct: seen.append((phase, pct)))
-    assert seen[0] == ("l 1/2", 0.0)
-    assert {phase for phase, _ in seen} == {"l 1/2", "l2 2/2"}
+    assert seen[0] == ("measure l (1/2)", 0.0)
+    assert {phase for phase, _ in seen} == {"measure l (1/2)", "measure l2 (2/2)"}
     assert all(0 <= pct <= 100 for _, pct in seen)
-    assert seen[-1][0] == "l2 2/2" and seen[-1][1] > 90
+    assert seen[-1][0] == "measure l2 (2/2)" and seen[-1][1] > 90
 
 
 def test_measure_all_reports_tracks_then_the_mix(tmp_path):
@@ -311,5 +311,5 @@ def test_measure_all_reports_tracks_then_the_mix(tmp_path):
         lambda account, _: measured.append(account),
         lambda row, phase, _: rows.append((row, phase)),
     )  # fmt: skip
-    assert ("a", "l 1/1") in rows and ("mix", "ml 1/1") in rows
+    assert ("a", "measure l (1/1)") in rows and ("mix", "measure ml (1/1)") in rows
     assert measured == ["a", "mix"]

@@ -24,7 +24,7 @@ DENORM = "adenorm"
 EQ_DELAY = 0.01
 
 Gains = dict[int, float | None]  # chain index of a loudness step -> dB (None: silent)
-# Told the phase of a measuring pass (e.g. "level 1/2") and its percent done
+# Told the phase of a measuring pass (e.g. "measure level (1/2)") and its percent done
 OnPass = Callable[[str, float], None]
 
 # At or below this, BS.1770 gating found nothing to measure: a silent track.
@@ -135,10 +135,10 @@ def measure(
 
 
 def passes(steps: Sequence[Step]) -> list[tuple[int, str]]:
-    """Index and phase text (``level 1/2``) of each loudness step."""
+    """Index and phase text (``measure level (1/2)``) of each loudness step."""
     found = [i for i, s in enumerate(steps) if s.type == "loudness"]
     n = len(found)
-    return [(i, f"{steps[i].name} {k}/{n}") for k, i in enumerate(found, 1)]
+    return [(i, f"measure {steps[i].name} ({k}/{n})") for k, i in enumerate(found, 1)]
 
 
 def percent_of(on_pass: OnPass, phase: str, length: float) -> Callable[[float], None]:
@@ -164,7 +164,7 @@ def track_gains(
         prep: Input filter for the track (channel layout).
         steps: The track's chain.
         label: Track name for error messages.
-        on_pass: Told the phase (``level 1/2``) and its percent done.
+        on_pass: Told the phase (``measure level (1/2)``) and its percent done.
     """
     gains: Gains = {}
     measured = []
