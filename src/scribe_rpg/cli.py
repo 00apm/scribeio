@@ -828,7 +828,9 @@ def check(ctx: click.Context, config_path: Path | None, online: bool) -> None:
     """
     from scribe_rpg import check_report
 
-    lines, code = check_report.report(config_path, Path.cwd(), online=online)
+    # loading WhisperX takes a few seconds: show that scribe is working
+    with Progress().busy("checking what scribe needs"):
+        lines, code = check_report.report(config_path, Path.cwd(), online=online)
     _utf8_output(sys.stdout)
     for text in lines:
         click.echo(text)

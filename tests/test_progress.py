@@ -28,6 +28,22 @@ def test_step_failure_prints_no_check():
     assert "✔" not in buf.getvalue()
 
 
+def test_busy_shows_the_label_on_a_terminal_and_prints_no_check():
+    buf = io.StringIO()
+    p = Progress(Console(file=buf, width=120, force_terminal=True))
+    with p.busy("checking"):
+        pass
+    assert "checking" in buf.getvalue()
+    assert "✔" not in buf.getvalue()
+
+
+def test_busy_prints_nothing_when_not_a_terminal():
+    p, buf = make()
+    with p.busy("checking"):
+        pass
+    assert buf.getvalue() == ""
+
+
 def test_progress_prints_brackets_literally():
     p, buf = make()
     p.warn("unknown account [bot]: name used [00:01:02]")

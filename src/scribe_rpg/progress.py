@@ -59,6 +59,16 @@ class Progress:
             yield
         self.done(label, time.monotonic() - t0)
 
+    @contextmanager
+    def busy(self, label: str) -> Iterator[None]:
+        """Show a spinner while the block runs; leave nothing behind.
+
+        For work whose result is printed afterwards (``scribe check``).
+        Nothing is shown when the console is not a terminal.
+        """
+        with self.console.status(escape(label)):
+            yield
+
     def done(self, label: str, seconds: float) -> None:
         """Print a finished line: ``✔ label (12.3s)``."""
         self.console.print(f"[green]✔[/] {escape(label)} [dim]({seconds:.1f}s)[/]")
