@@ -55,7 +55,7 @@ scribe init "craig-session-7.zip"
 ```
 
 Write each person's name next to their Discord account in `scribe.yaml`,
-then:
+then make the session audio and the transcript:
 
 ```
 scribe master "craig-session-7.zip"
@@ -73,10 +73,25 @@ The files land next to the recording, named by the session date:
 | `2026-09-22_transcript-report.md` | the quality report |
 | `2026-09-22_transcript.json` | everything Whisper found, for rebuilding the transcript |
 
-## Documentation
+The quick start runs everything on its defaults. The guides below show
+how to make the result your own.
 
-[All pages](docs/README.md): installing, which recordings work, audio
-mastering, transcription.
+## Usage guide
+
+Read in this order the first time; later, go straight to the part you
+need.
+
+1. **[Input recordings](docs/recordings.md):** which Craig downloads work,
+   where scribe puts its files, and how to use tracks that did not come
+   from Craig.
+2. **[Audio mastering](docs/usage/audio.md):** listen to a short preview
+   after each step, change how the voices and the music sound, adjust one
+   player only, and choose the file format.
+3. **[Transcribing a recording](docs/usage/transcribe.md):** set names and
+   the language, download the models, read the transcript and the report,
+   and teach Whisper the names of your world with a glossary.
+
+All documentation pages, install included: [docs](docs/README.md).
 
 ## Development
 
