@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from scribe_rpg.transcribe.models import Model
 
 SYMBOLS = {"ok": "✔", "missing": "✘", "warning": "⚠", "info": "ℹ"}
-NOT_INSTALLED = "not installed (audio cleanup only)"
+NOT_INSTALLED = "not installed (audio mastering only)"
 NONE_YET = "none yet: downloaded on your first transcription"
 # Model source -> the host its downloads come from (checks.SOURCES)
 SOURCE_HOSTS = {"huggingface": "huggingface.co", "torchaudio": "download.pytorch.org"}
@@ -47,7 +47,7 @@ class Checked:
 
 @dataclass
 class Group:
-    """One use (audio cleanup, transcription): its verdict and items."""
+    """One use (audio mastering, transcription): its verdict and items."""
 
     title: str
     verdict: str
@@ -81,7 +81,7 @@ def audio_group(settings: dict[str, Any]) -> Group:
         fmt = settings["master"]["format"]
         bitrate = settings["master"]["bitrate"] or BITRATES[fmt]
         items.append(checks.encoder_item(fmt, bitrate))
-    return Group("Audio cleanup", _verdict(items), items)
+    return Group("Audio mastering", _verdict(items), items)
 
 
 def transcription_group(settings: dict[str, Any], ffmpeg: Item) -> Group:

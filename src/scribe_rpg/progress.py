@@ -16,6 +16,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 
 from rich.console import Console
+from rich.live import Live
 from rich.markup import escape
 from rich.progress import (
     BarColumn,
@@ -29,6 +30,8 @@ from rich.progress import (
     TransferSpeedColumn,
 )
 from rich.progress import Progress as RichProgress
+from rich.spinner import Spinner
+from rich.text import Text
 
 
 class Progress:
@@ -58,6 +61,27 @@ class Progress:
             spinner.add_task(escape(label), total=None)
             yield
         self.done(label, time.monotonic() - t0)
+
+    @contextmanager
+    def busy(self, label: str) -> Iterator[None]:
+        """Show a spinner while the block runs; leave nothing behind.
+
+        For work whose result is printed afterwards (``scribe check``).
+        Nothing is shown when the console is not a terminal.
+        """
+        spinner = Spinner("dots", text=Text(label), style="status.spinner")
+        # no stdout/stderr redirect: a library imported meanwhile may keep
+        # sys.stdout (tqdm's colorama.init writes a reset code to it at exit),
+        # and through rich's proxy that code would be printed as "[0m"
+        live = Live(
+            spinner,
+            console=self.console,
+            transient=True,
+            redirect_stdout=False,
+            redirect_stderr=False,
+        )
+        with live:
+            yield
 
     def done(self, label: str, seconds: float) -> None:
         """Print a finished line: ``✔ label (12.3s)``."""

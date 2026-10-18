@@ -144,6 +144,30 @@ def test_check_prints_report_and_exits_with_its_code(monkeypatch):
     assert result.output == "a\nb\n"
 
 
+def test_check_builds_the_report_behind_a_busy_indicator(monkeypatch):
+    from contextlib import contextmanager
+
+    from scribe_rpg import check_report
+    from scribe_rpg.progress import Progress
+
+    busy = []
+
+    @contextmanager
+    def fake_busy(self, label):
+        busy.append(label)
+        yield
+        busy.append("done")
+
+    def report(config, cwd, online):
+        assert busy and busy[-1] != "done"  # built while the indicator runs
+        return ["a"], 0
+
+    monkeypatch.setattr(Progress, "busy", fake_busy)
+    monkeypatch.setattr(check_report, "report", report)
+    assert invoke("check").output == "a\n"
+    assert busy[-1] == "done"
+
+
 def test_utf8_output_for_a_file_with_a_legacy_encoding():
     import io
 

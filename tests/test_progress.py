@@ -28,6 +28,42 @@ def test_step_failure_prints_no_check():
     assert "✔" not in buf.getvalue()
 
 
+def test_busy_shows_the_label_on_a_terminal_and_prints_no_check():
+    buf = io.StringIO()
+    p = Progress(Console(file=buf, width=120, force_terminal=True))
+    with p.busy("checking"):
+        pass
+    assert "checking" in buf.getvalue()
+    assert "✔" not in buf.getvalue()
+
+
+def test_busy_prints_brackets_literally():
+    buf = io.StringIO()
+    p = Progress(Console(file=buf, width=120, force_terminal=True))
+    with p.busy("checking [bold]x"):
+        pass
+    assert "checking [bold]x" in buf.getvalue()
+
+
+def test_busy_leaves_stdout_and_stderr_alone():
+    # Libraries imported under the spinner may keep sys.stdout (tqdm runs
+    # colorama.init, which writes a reset code to it at exit); it must be
+    # the real stream, not rich's proxy, or "[0m" shows up as text.
+    import sys
+
+    p = Progress(Console(file=io.StringIO(), force_terminal=True))
+    before = sys.stdout, sys.stderr
+    with p.busy("checking"):
+        assert (sys.stdout, sys.stderr) == before
+
+
+def test_busy_prints_nothing_when_not_a_terminal():
+    p, buf = make()
+    with p.busy("checking"):
+        pass
+    assert buf.getvalue() == ""
+
+
 def test_progress_prints_brackets_literally():
     p, buf = make()
     p.warn("unknown account [bot]: name used [00:01:02]")

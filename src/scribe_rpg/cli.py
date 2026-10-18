@@ -821,14 +821,16 @@ def init_command(
 def check(ctx: click.Context, config_path: Path | None, online: bool) -> None:
     """Show what scribe needs and what it finds, per use.
 
-    Audio cleanup (ffmpeg, the encoder), transcription (WhisperX, PyTorch,
+    Audio mastering (ffmpeg, the encoder), transcription (WhisperX, PyTorch,
     the GPU) and the models on disk, with a link to the guide for anything
     missing. Exits with 1 if a use that is installed would not work.
     Offline unless --online is given; it never downloads a model.
     """
     from scribe_rpg import check_report
 
-    lines, code = check_report.report(config_path, Path.cwd(), online=online)
+    # loading WhisperX takes a few seconds: show that scribe is working
+    with Progress().busy("checking what scribe needs"):
+        lines, code = check_report.report(config_path, Path.cwd(), online=online)
     _utf8_output(sys.stdout)
     for text in lines:
         click.echo(text)

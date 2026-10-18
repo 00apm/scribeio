@@ -266,19 +266,19 @@ def test_whisperx_with_broken_torch(fake_whisperx, monkeypatch):  # Review Focus
     )
 
 
-@pytest.mark.parametrize("found", ["3.4.2", "4.0.0"])
+@pytest.mark.parametrize("found", ["3.4.2", "3.9.0", "4.0.0"])
 def test_whisperx_untested_version(fake_whisperx, monkeypatch, found):
     monkeypatch.setattr(checks, "installed_version", lambda pkg: found)
     assert checks.whisperx_item() == Item(
         "WhisperX",
         "warning",
         found,
-        "outside the tested range (>=3.8.6,<4; tested 3.8.6); transcription may fail",
+        "outside the tested range (>=3.8.6,<3.9; tested 3.8.6); transcription may fail",
     )
 
 
-@pytest.mark.parametrize("found", ["3.9.1", "unknown"])
-def test_whisperx_newer_3x_or_unknown_is_ok(fake_whisperx, monkeypatch, found):
+@pytest.mark.parametrize("found", ["3.8.7", "unknown"])
+def test_whisperx_newer_3_8_or_unknown_is_ok(fake_whisperx, monkeypatch, found):
     monkeypatch.setattr(checks, "installed_version", lambda pkg: found)
     assert checks.whisperx_item().status == "ok"
 

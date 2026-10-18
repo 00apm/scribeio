@@ -1,7 +1,7 @@
 """Write ``<name>_transcript.md``: YAML frontmatter plus one line per utterance.
 
-The transcript has no headings; structuring it (chapters, summaries) is left
-to the LLM assistant that reads it::
+The transcript is plain text to read, search or use elsewhere; it has no
+headings (chapters or summaries are up to the reader)::
 
     ---
     date: 2026-01-01
