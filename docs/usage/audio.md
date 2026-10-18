@@ -3,18 +3,51 @@
 Turn a session recording into one evenly balanced audio file, and adjust
 how it sounds.
 
+## Configure the audio mastering
+
+```
+scribe init --only master "craig-session-7.zip"
+```
+
+The input is the Craig zip or a folder of FLAC tracks
+([what scribe reads](../recordings.md)). This writes `scribe.yaml` next to
+it: the file where your settings for this recording live (the mastering
+steps you change, changes for one player, the file format). It holds the
+settings people change most, and a comment listing the recording's
+accounts. `--full` writes every setting with its default value.
+
+scribe works without it, using the default settings (it says so), but
+every change described below goes into this file. Every scribe command
+uses it by itself when it sits next to the input. Without `--only master`,
+the file also gets the speakers and the glossary for
+[transcription](transcribe.md).
+
+> **Warning:** `scribe.yaml` and the outputs land next to the input, not
+> inside it. Run scribe from the session folder, with the tracks inside it
+> ([keep the tracks inside a session folder](../recordings.md#keep-the-tracks-inside-a-session-folder)).
+
 ## Make the session audio
 
 ```
 scribe master "craig-session-7.zip"
 ```
 
-The input is the Craig zip or a folder of FLAC tracks
-([what scribe reads](../recordings.md)). Every player's track goes through
-the same steps: low rumble and desk thumps cut, every player brought to
-the same level, loud and quiet words evened out, a little warmth and
-clarity added. The music bot is set well under the voices. Then everything
-is mixed, peaks are capped, and one file is written next to the input:
+Every player's track goes through the same steps: low rumble and desk
+thumps cut, every player brought to the same level, loud and quiet words
+evened out, a little warmth and clarity added. The music bot is set well
+under the voices. Then everything is mixed, peaks are capped, and one file
+is written next to the input.
+
+Every run starts by checking the settings, so a typo stops scribe within a
+second, before any audio is processed. The message names where the problem
+is:
+
+```
+master.voice.comp (acompressor): Value 30.000000 for parameter 'ratio' out of range [1 - 20]
+```
+
+When all goes well, the run shows the config it uses and the chains, and
+ends with the written file:
 
 ```
 using config scribe.yaml (next to the input)
@@ -31,32 +64,6 @@ master: C:\RPG\Session 7\2026-09-22_master.mp3
 The name is the session date; `--name` changes it, `-o` writes to another
 folder. If the file already exists, scribe stops; `--force` overwrites it.
 
-> **Warning:** the outputs land next to the input, not inside it. Run
-> scribe from the session folder, with the tracks inside it
-> ([keep the tracks inside a session folder](../recordings.md#keep-the-tracks-inside-a-session-folder)).
-
-## Create the settings file
-
-```
-scribe init --only master "craig-session-7.zip"
-```
-
-This writes `scribe.yaml` next to the recording with the mastering settings
-people change most, and a comment listing the recording's accounts. Every
-scribe command uses it by itself when it sits next to the input. Without
-`--only master`, the file also gets the speakers and the glossary for
-[transcription](transcribe.md); `--full` writes every setting with its
-default value. Without any `scribe.yaml`, `scribe master` uses the
-defaults and says so.
-
-Every run starts by checking the settings, so a typo stops scribe within a
-second, before any audio is processed. The message names where the problem
-is:
-
-```
-master.voice.comp (acompressor): Value 30.000000 for parameter 'ratio' out of range [1 - 20]
-```
-
 ## Preview your settings
 
 ```
@@ -64,7 +71,8 @@ scribe master "craig-session-7.zip" --preview
 ```
 
 Instead of the whole session, scribe picks a 90-second excerpt and writes a
-folder of short listening files, one after each step:
+folder of short listening files, one after each step. When all goes well,
+the run ends like this:
 
 ```
 excerpt: 00:05:44, 90 s

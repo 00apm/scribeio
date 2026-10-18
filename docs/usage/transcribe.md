@@ -1,25 +1,32 @@
-# Transcribing a session
+# Transcribing a recording
 
-Turn a session recording into a readable transcript with everyone's name,
-and fix the names Whisper gets wrong.
+Turn a recording into a readable transcript with everyone's name, and fix
+the names Whisper gets wrong.
 
-## Prepare the names
+## Configure the transcription
+
+Before the first transcription, create the config files:
 
 ```
 scribe init "craig-session-7.zip"
 ```
 
 The input is the Craig zip or a folder of FLAC tracks
-([what scribe reads](../recordings.md)). This writes two files next to it:
+([what scribe reads](../recordings.md)). scribe only sees Discord
+accounts and sounds: it needs you to tell it who is who, which language is
+spoken, and the names of your world. This writes two files next to the
+input:
 
 - `scribe.yaml`, with the recording's Discord accounts listed under
   `speakers:`. Write each person's name after their account; the
-  transcript uses these names. Set the language here too (`language: pl`).
+  transcript uses these names. Set the language here too
+  (`language: pl`; English by default).
 - `glossary.txt`, for the names of your world (see
   [Teach Whisper your names](#teach-whisper-your-names)).
 
 Every scribe command uses `scribe.yaml` by itself when it sits next to the
-input.
+input. Without it, `scribe transcribe` offers to create it; a run without
+it uses the account names and English.
 
 ## Transcribe
 
@@ -30,7 +37,8 @@ scribe transcribe "craig-session-7.zip"
 Each player's track is transcribed on its own, so every line has the right
 speaker even when people talk over each other. The music bot is left out.
 A 10-minute recording took about a minute and a half on an 8 GB NVIDIA
-GPU. A run:
+GPU. When all goes well, the run looks like this, and its last line names
+the transcript and the report:
 
 ```
 using config scribe.yaml (next to the input)
@@ -51,9 +59,11 @@ If the outputs already exist, scribe stops; `--force` overwrites them.
 
 ### Download the models on the first run
 
-The first transcription needs two speech models: Whisper (`large-v3`,
-2.9 GB) and a smaller word-timing model for the language (up to about
-1.2 GB). scribe asks before downloading each one, with its size:
+The first transcription needs two speech models: the Whisper model
+(`large-v3` by default, 2.9 GB; `transcribe.whisper.model` in
+`scribe.yaml` picks another) and a smaller word-timing model for the
+language (up to about 1.2 GB). scribe asks before downloading each one,
+with its size:
 
 ```
 ⚠ Whisper model large-v3 (2.9 GB) is not downloaded
@@ -85,37 +95,45 @@ speakers: ["Game Master", "Player One", "Player Two"]
 source: "craig-session-7.zip"
 ---
 
-[00:00:00] Game Master: The gate of Vorgrad is closed, and the guards look tired.
-[00:00:04] Player One: We wait until they change shifts.
+[00:00:00] Game Master: The mists part, and the road to Barovia lies ahead.
+[00:00:04] Player One: We keep walking. Slowly.
 [00:00:06] Player Two: Agreed.
-[00:00:07] Game Master: The bell rings, and two new guards walk up the road.
+[00:00:07] Game Master: Far above, a castle stands against the grey sky.
 ```
 
 A new line starts when a speaker pauses for 1.5 seconds; a short reply
 from someone else lands in the middle of a long speech, where it was said.
 
-Whisper sometimes writes things nobody said: a "thanks for watching" in a
-silent stretch, a phrase repeated over and over, hesitations ("um", "yyy").
-scribe drops these, and the report lists every dropped line with the
-reason, so you can check that nothing real went missing. It also shows,
-per speaker, how many lines were kept and dropped, and lists "possible
-bleed": the same speech found on two tracks, usually one mic picking up
-another person's speakers.
+### Hallucinations are removed
+
+Whisper hallucinates: it sometimes writes things nobody said. Typical
+cases are a "thanks for watching" in a silent stretch, the same phrase
+repeated over and over, and lines made only of hesitations ("um", "yyy").
+scribe looks for these and deletes them from the transcript. The report
+lists every deleted line with the reason, so you can check that nothing
+real went missing.
+
+The report also shows, per speaker, how many lines were kept and dropped,
+and lists "possible bleed": the same speech found on two tracks, usually
+one mic picking up another person's speakers.
 
 ## Teach Whisper your names
 
-Whisper knows common words, not the names of your world: "Vorgrad" comes
-out as "Worgrad", or differently each time. `glossary.txt` fixes this in
-two ways:
+Whisper knows common words, not the names of your world: "Strahd" may
+come out as "Strad", "Skaven" as "Scaven", or differently each time.
+`glossary.txt` fixes this in two ways:
 
 ```
 # names Whisper should listen for, most important first
-Vorgrad
-Ostromir
+Strahd
+Barovia
+Cthulhu
+Skaven
 
 # corrections: wrong -> right
-Ostromirz -> Ostromir
-Worgrad* -> Vorgrad
+Cthulu -> Cthulhu
+Scaven* -> Skaven
+Borovia* -> Barovia
 ```
 
 - **A name on its own line** is given to Whisper before it listens, which
@@ -123,10 +141,12 @@ Worgrad* -> Vorgrad
   (`prompt_max_tokens`, 200 by default), so put the most important names
   first; scribe warns about names left out.
 - **`wrong -> right`** replaces the wrong spelling in the transcript, as a
-  whole word or phrase, ignoring case.
+  whole word or phrase, ignoring case: `Cthulu` becomes `Cthulhu`.
 - **`stem* -> right`** replaces any word that starts with the stem and
-  keeps its ending: `Worgradzie` becomes `Vorgradzie`. Useful in languages
-  where names change their endings.
+  keeps its ending: with `Borovia* -> Barovia`, `Borovian` becomes
+  `Barovian`, and with `Scaven* -> Skaven`, `Scavens` becomes `Skavens`.
+  In languages where names change their endings (Polish `Strahda`,
+  `Strahdem`), one stem rule covers every form.
 
 The right side of a correction counts as a name for Whisper too.
 
@@ -134,7 +154,7 @@ The right side of a correction counts as a name for Whisper too.
 
 When the transcript has a name wrong:
 
-1. Add a correction to `glossary.txt`, e.g. `Ostromirz -> Ostromir`.
+1. Add a correction to `glossary.txt`, e.g. `Strad* -> Strahd`.
 2. Rebuild the transcript from the `.json`:
 
    ```
@@ -156,10 +176,9 @@ transcribe:
 
 Any language code Whisper knows works (`en`, `de`, `fr`, …). English and
 Polish are tuned and tested: for those, scribe knows Whisper's typical
-made-up phrases and the hesitation sounds. For another language, add the
-phrases you find in the report's dropped lines, or in the transcript, to
-`transcribe.cleanup.phrases` in `scribe.yaml` (a list you write replaces
-the default one).
+hallucinated phrases and the hesitation sounds. For another language, add
+the phrases you find in the transcript to `transcribe.cleanup.phrases` in
+`scribe.yaml` (a list you write replaces the default one).
 
 ## Transcribe the processed tracks
 
