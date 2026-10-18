@@ -26,7 +26,9 @@ input:
 
 Every scribe command uses `scribe.yaml` by itself when it sits next to the
 input. Without it, `scribe transcribe` offers to create it; a run without
-it uses the account names and English.
+it uses the account names and English. For the next session of the same
+group, copy both files to its folder: the names and the glossary carry
+over.
 
 ## Transcribe
 
@@ -194,6 +196,10 @@ scribe transcribe "2026-09-22_tracks"
 
 ### CUDA out of memory
 
+```
+CUDA out of memory; try a smaller transcribe.whisper.batch_size (now 4)
+```
+
 The GPU ran out of memory. Lower `batch_size` in `scribe.yaml`:
 
 ```yaml
@@ -204,3 +210,14 @@ transcribe:
 
 If that is not enough, see [GPU](../install.md#gpu) for the settings that
 need less memory.
+
+### Transcription is much slower than expected (Windows)
+
+When GPU memory is full, the NVIDIA driver quietly moves the rest into
+normal RAM ("Shared GPU memory" in Task Manager rises above zero), and the
+work slows down several times, without any error. scribe warns when little
+GPU memory is left after loading Whisper (`only 1.4 GB GPU memory free
+after loading Whisper; …`). Lower `batch_size` as above, or set *NVIDIA
+Control Panel → Manage 3D settings → CUDA - Sysmem Fallback Policy* to
+*Prefer No Sysmem Fallback*: you then get the clear out-of-memory error
+instead.
