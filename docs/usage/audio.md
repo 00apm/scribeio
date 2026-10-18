@@ -6,21 +6,24 @@ how it sounds.
 ## Configure the audio mastering
 
 ```
-scribe init --only master "craig-session-7.zip"
+scribe init "craig-session-7.zip"
 ```
 
 The input is the Craig zip or a folder of FLAC tracks
 ([what scribe reads](../recordings.md)). This writes `scribe.yaml` next to
 it: the file where your settings for this recording live (the mastering
 steps you change, changes for one player, the file format). It holds the
-settings people change most, and a comment listing the recording's
-accounts. `--full` writes every setting with its default value.
+settings people change most; `--full` writes every setting with its
+default value. The same file serves [transcription](transcribe.md), so
+it also has the speakers, and `glossary.txt` comes with it.
 
-scribe works without it, using the default settings (it says so), but
-every change described below goes into this file. Every scribe command
-uses it by itself when it sits next to the input. Without `--only master`,
-the file also gets the speakers and the glossary for
-[transcription](transcribe.md).
+If you only want the audio, `scribe init --only master` leaves the
+transcription part out: `scribe.yaml` gets only the mastering settings
+(with a comment listing the recording's accounts), and no glossary.
+
+scribe works without `scribe.yaml`, using the default settings (it says
+so), but every change described below goes into this file. Every scribe
+command uses it by itself when it sits next to the input.
 
 > **Warning:** `scribe.yaml` and the outputs land next to the input, not
 > inside it. Run scribe from the session folder, with the tracks inside it
