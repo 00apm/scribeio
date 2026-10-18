@@ -10,7 +10,7 @@
 
 ## Use
 
-- [What scribe reads](recordings.md): which recordings work, where the
+- [Input recordings](recordings.md): which recordings work, where the
   files land, and preparing tracks yourself.
 - [Audio mastering](usage/audio.md): one evenly balanced audio file of the
   session; preview and adjust how it sounds.

@@ -12,7 +12,7 @@ scribe init "craig-session-7.zip"
 ```
 
 The input is the Craig zip or a folder of FLAC tracks
-([what scribe reads](../recordings.md)). scribe only sees Discord
+([input recordings](../recordings.md)). scribe only sees Discord
 accounts and sounds: it needs you to tell it who is who, which language is
 spoken, and the names of your world. This writes two files next to the
 input:

@@ -6,9 +6,9 @@ everyone's name.
 
 Craig records one track per person. scribe works on those tracks:
 
-- **Audio:** each voice is evened out and brought to the same level as
-  the others, the music bot is set under the voices, and everything is
-  mixed into one file.
+- **Audio mastering:** each voice is evened out and brought to the same
+  level as the others, the music is kept quieter than the voices so it
+  never drowns them out, and everything is mixed into one file.
 - **Transcript:** each track is transcribed by Whisper, a speech-to-text
   model that runs on your own computer
   (through [WhisperX](https://github.com/m-bain/whisperX)), and the lines
@@ -22,12 +22,14 @@ What you get from working per track, locally:
   silence) are found and removed; a report lists each one.
 - The names of your world are taught to Whisper in a glossary; a misheard
   name is fixed with one line and a rebuild that takes seconds.
-- Your recordings never leave your computer.
+- Your recordings never leave your computer: your players' voices and
+  words stay private, and no online service can keep them or use them to
+  train its AI models.
 
 **Not a TTRPG session, or not Craig?** A podcast or a meeting recorded on
 Discord with Craig works the same way, and so does any other recording
 with one track per person
-([what scribe reads](docs/recordings.md#not-using-craig)).
+([input recordings](docs/recordings.md#not-using-craig)).
 
 ## Requirements
 

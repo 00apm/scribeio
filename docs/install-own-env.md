@@ -68,6 +68,20 @@ It shows each use as ready or not, with versions, the GPU and the models
 on disk; the output is explained on [Quick install](install.md#check-the-install).
 The first line names the environment scribe runs in.
 
+## Upgrade scribe
+
+In the environment scribe is in:
+
+```
+pip install --upgrade "scribe-rpg[transcribe]"
+```
+
+pip upgrades scribe and WhisperX and keeps your PyTorch while it fits
+WhisperX's pin. Then run `scribe check`: if a newer WhisperX needed
+another PyTorch, pip took it from PyPI, and on Windows that is a CPU-only
+build; [PyTorch with CUDA](#pytorch-with-cuda) fixes it. Without
+transcription: `pip install --upgrade scribe-rpg`.
+
 ## Where the models go
 
 - Speech models download on the first transcription into per-user caches

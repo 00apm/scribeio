@@ -1,12 +1,15 @@
-# What scribe reads
+# Input recordings
 
-Which recordings scribe accepts, where its files land, and how to prepare
-tracks that did not come from Craig.
+scribe works from separate tracks: one voice track per person, plus the
+music bot's track if you had one. Most Craig multi-track downloads give
+exactly that, zipped or unpacked; so does any folder of FLAC files with
+one speaker per file. This page shows which downloads work, where scribe
+puts its files, and how to prepare tracks yourself.
 
 ## Give scribe a Craig download
 
 Every scribe command takes one input: the zip Craig gives you, or a folder
-of FLAC tracks.
+of its FLAC tracks.
 
 ```
 scribe transcribe "craig-session-7.zip"
@@ -14,7 +17,7 @@ scribe transcribe tracks
 ```
 
 - **Zip:** use it as downloaded; there is no need to unpack it.
-- **Folder:** every `.flac` file in it is one speaker. Craig's `info.txt`
+- **Folder:** every `.flac` file in it is one track. Craig's `info.txt`
   is optional; without it, give the session start yourself:
 
   ```

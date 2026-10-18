@@ -10,7 +10,7 @@ scribe init "craig-session-7.zip"
 ```
 
 The input is the Craig zip or a folder of FLAC tracks
-([what scribe reads](../recordings.md)). This writes `scribe.yaml` next to
+([input recordings](../recordings.md)). This writes `scribe.yaml` next to
 it: the file where your settings for this recording live (the mastering
 steps you change, changes for one player, the file format). It holds the
 settings people change most; `--full` writes every setting with its

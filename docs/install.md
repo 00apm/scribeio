@@ -3,20 +3,15 @@
 Install scribe with three commands: ffmpeg, uv (it brings its own Python),
 and scribe itself.
 
-> **Before you start**
+> **What you need**
 >
-> - **A terminal in a folder:** on Windows, right-click the folder →
->   "Open in Terminal"; on macOS, right-click the folder → Services →
->   "New Terminal at Folder". Paste each command and press Enter.
-> - **Paths with spaces need quotes:** `"C:\RPG\Session 7"`, not
->   `C:\RPG\Session 7`. Dragging a file onto the terminal pastes its path.
-> - New to the terminal? MDN's
->   [command line crash course](https://developer.mozilla.org/en-US/docs/Learn_web_development/Getting_started/Environment_setup/Command_line)
->   covers the basics.
-> - **Transcription needs an NVIDIA GPU.** Run `nvidia-smi`: a table
+> - **For transcription, an NVIDIA GPU.** Run `nvidia-smi`: a table
 >   naming your GPU means the driver is ready. No NVIDIA GPU, or a Mac:
 >   see [GPU](#gpu). Audio mastering needs no GPU.
 > - **Disk:** up to about 12 GB (the install and the speech models).
+
+Every step is a command to paste into a terminal. Rarely use one? See
+[Terminal tips](#terminal-tips).
 
 ## Install scribe
 
@@ -127,6 +122,16 @@ The speech models stay in the folder `scribe check` shows under Models.
 Other programs that use Hugging Face models share that folder: delete the
 models there only if nothing else needs them. To remove uv as well, see
 [uninstalling uv](https://docs.astral.sh/uv/getting-started/installation/#uninstallation).
+
+## Terminal tips
+
+- **Open a terminal in a folder:** on Windows, right-click the folder →
+  "Open in Terminal"; on macOS, right-click the folder → Services →
+  "New Terminal at Folder". Paste a command and press Enter.
+- **Put paths with spaces in quotes:** `"C:\RPG\Session 7"`, not
+  `C:\RPG\Session 7`. Dragging a file onto the terminal pastes its path.
+- **Learn the basics:** MDN's
+  [command line crash course](https://developer.mozilla.org/en-US/docs/Learn_web_development/Getting_started/Environment_setup/Command_line).
 
 ## Troubleshooting
 
