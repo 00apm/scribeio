@@ -351,15 +351,15 @@ def test_preflight_cpu_with_float16_is_an_error(fakes):
     assert not isinstance(e.value, InstallError)  # a settings error
 
 
-@pytest.mark.parametrize("found", ["3.4.2", "4.0.0"])
+@pytest.mark.parametrize("found", ["3.4.2", "3.9.1", "4.0.0"])
 def test_preflight_warns_on_untested_whisperx(fakes, found):
     fakes.whisperx_version = found
     [warning] = whisper.preflight(wcfg())
     assert found in warning and "tested" in warning
 
 
-def test_preflight_newer_3x_is_fine(fakes):
-    fakes.whisperx_version = "3.9.1"
+def test_preflight_newer_3_8_is_fine(fakes):
+    fakes.whisperx_version = "3.8.7"
     assert whisper.preflight(wcfg()) == []
 
 

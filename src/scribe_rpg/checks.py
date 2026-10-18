@@ -170,7 +170,7 @@ def encoder_item(fmt: str, bitrate: str) -> Item:
 
 TESTED = "3.8.6"
 TESTED_MIN = (3, 8, 6)  # older versions lack APIs scribe uses
-TESTED_BELOW = (4, 0, 0)  # a new major version may change the API
+TESTED_BELOW = (3, 9, 0)  # a new minor version may pin another PyTorch
 WHISPERX_NOT_INSTALLED = (
     "not installed, so scribe cannot transcribe (audio mastering works)"
 )
@@ -209,7 +209,7 @@ def whisperx_item() -> Item:
     if parsed and not TESTED_MIN <= parsed < TESTED_BELOW:
         return Item(
             "WhisperX", "warning", found,
-            f"outside the tested range (>=3.8.6,<4; tested {TESTED}); "
+            f"outside the tested range (>=3.8.6,<3.9; tested {TESTED}); "
             "transcription may fail",
         )  # fmt: skip
     return Item("WhisperX", "ok", found)

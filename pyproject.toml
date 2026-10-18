@@ -27,7 +27,7 @@ dependencies = [
 
 [project.optional-dependencies]
 # Install torch with CUDA first (README), so pip keeps the GPU build.
-transcribe = ["whisperx>=3.8.6,<4"]
+transcribe = ["whisperx>=3.8.6,<3.9"]
 dev = ["pytest>=8", "mypy>=1.10", "types-PyYAML", "ruff>=0.6"]
 
 [project.scripts]

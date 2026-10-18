@@ -9,7 +9,7 @@ example next to a PyTorch you already have.
 |---|---|
 | Python | 3.10–3.13 |
 | ffmpeg | 6.1 or newer, with the mp3 encoder (libmp3lame); without it, `--format m4a` |
-| WhisperX (transcription) | `>=3.8.6,<4`; 3.8.6 needs PyTorch 2.8 (`torch~=2.8.0`, `torchaudio~=2.8.0`, `torchvision~=0.23.0`) |
+| WhisperX (transcription) | `>=3.8.6,<3.9`; 3.8.6 needs PyTorch 2.8 (`torch~=2.8.0`, `torchaudio~=2.8.0`, `torchvision~=0.23.0`) |
 | GPU (transcription) | NVIDIA with CUDA; see [GPU](#gpu) |
 
 Use an environment of its own: WhisperX pins its PyTorch version and would
