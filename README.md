@@ -2,18 +2,32 @@
 
 Turn a [Craig](https://craig.chat) recording of your Discord tabletop RPG
 session into evenly balanced session audio and a readable transcript with
-everyone's name, plus a quality report. Everything runs on your own
-computer.
+everyone's name.
 
-- Craig records one track per person, so every line of the transcript has
-  the right speaker, even when people talk over each other.
-- Whisper's hallucinations (lines nobody said) are found and removed; the
-  report lists every removal.
-- A misheard name is fixed with one line in a glossary and a rebuild that
-  takes seconds, without the GPU.
+Craig records one track per person. scribe works on those tracks:
 
-Transcription runs on [WhisperX](https://github.com/m-bain/whisperX) and
-the Whisper `large-v3` model.
+- **Audio:** each voice is evened out and brought to the same level as
+  the others, the music bot is set under the voices, and everything is
+  mixed into one file.
+- **Transcript:** each track is transcribed by Whisper, a speech-to-text
+  model that runs on your own computer
+  (through [WhisperX](https://github.com/m-bain/whisperX)), and the lines
+  are put together in time order with each person's name.
+
+What you get from working per track, locally:
+
+- Every line has the right speaker, even when people talk over each
+  other.
+- Lines Whisper made up (hallucinations, e.g. "thanks for watching" in a
+  silence) are found and removed; a report lists each one.
+- The names of your world are taught to Whisper in a glossary; a misheard
+  name is fixed with one line and a rebuild that takes seconds.
+- Your recordings never leave your computer.
+
+**Not a TTRPG session, or not Craig?** A podcast or a meeting recorded on
+Discord with Craig works the same way, and so does any other recording
+with one track per person
+([what scribe reads](docs/recordings.md#not-using-craig)).
 
 ## Requirements
 
