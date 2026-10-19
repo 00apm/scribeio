@@ -13,7 +13,14 @@ requires-python = ">=3.10"
 authors = [{ name = "Artur Marchewicz" }]
 keywords = ["ttrpg", "transcription", "whisper", "discord", "craig"]
 classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Operating System :: OS Independent",
     "Topic :: Multimedia :: Sound/Audio :: Speech",
 ]
@@ -24,6 +31,11 @@ dependencies = [
     "numpy>=1.24",
     "colorama>=0.4.6; sys_platform == 'win32'",
 ]
+
+[project.urls]
+Homepage = "https://github.com/00apm/scribeio"
+Documentation = "https://github.com/00apm/scribeio/blob/main/docs/README.md"
+Issues = "https://github.com/00apm/scribeio/issues"
 
 [project.optional-dependencies]
 # Install torch with CUDA first (docs/install-own-env.md), so pip keeps the GPU build.

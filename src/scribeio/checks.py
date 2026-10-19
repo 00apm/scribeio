@@ -23,8 +23,7 @@ from scribeio.errors import InstallError
 
 Status = Literal["ok", "missing", "warning", "info"]
 
-# Set at the pre-publish checklist; the repository is not public yet.
-GUIDE_BASE = "https://github.com/OWNER/scribeio/blob/main/docs/"
+GUIDE_BASE = "https://github.com/00apm/scribeio/blob/main/docs/"
 # Guide section key -> anchor on the install pages (they must provide these).
 ANCHORS = {
     "ffmpeg": "ffmpeg",
