@@ -1,10 +1,17 @@
-# scribe
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/scribeio-logo-dark.svg">
+    <img alt="scribeio logo" src="docs/images/scribeio-logo-light.svg" width="360">
+  </picture>
+</p>
+
+# scribeio
 
 Turn a [Craig](https://craig.chat) recording of your Discord tabletop RPG
 session into evenly balanced session audio and a readable transcript with
 everyone's name.
 
-Craig records one track per person. scribe works on those tracks:
+Craig records one track per person. scribeio works on those tracks:
 
 - **Audio mastering:** each voice is evened out and brought to the same
   level as the others, the music is kept quieter than the voices so it
