@@ -1,12 +1,12 @@
-# scribe documentation
+# scribeio documentation
 
-New to scribe? Install it, then read the usage pages: input recordings
+New to scribeio? Install it, then read the usage pages: input recordings
 first, then audio mastering and transcription, in either order or only
 the one you need.
 
 ## Install
 
-- [Quick install](install.md): install scribe and ffmpeg with a few
+- [Quick install](install.md): install scribeio and ffmpeg with a few
   commands, then check that everything works.
 - [Install into your own Python environment](install-own-env.md): pip into
   a venv, a conda env or a uv project, next to a PyTorch you may already

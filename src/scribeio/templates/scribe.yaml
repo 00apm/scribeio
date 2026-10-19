@@ -1,6 +1,6 @@
-# scribe config, made by `scribe init`. Every key is optional: what you leave
+# scribeio config, made by `scribe init`. Every key is optional: what you leave
 # out comes from the built-in defaults (`scribe init --full` writes them all).
-# scribe uses this file by itself when it is next to the recording (or the
+# scribeio uses this file by itself when it is next to the recording (or the
 # .json); elsewhere pass it with -c. Lists replace the defaults; unknown keys
 # are an error, so typos are caught.
 # Docs: https://github.com/00apm/scribeio/tree/main/docs

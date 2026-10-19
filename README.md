@@ -82,7 +82,7 @@ Read in this order the first time; later, go straight to the part you
 need.
 
 1. **[Input recordings](docs/recordings.md):** which Craig downloads work,
-   where scribe puts its files, and how to use tracks that did not come
+   where scribeio puts its files, and how to use tracks that did not come
    from Craig.
 2. **[Audio mastering](docs/usage/audio.md):** listen to a short preview
    after each step, change how the voices and the music sound, adjust one

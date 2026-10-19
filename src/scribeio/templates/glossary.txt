@@ -1,4 +1,4 @@
-# scribe glossary. UTF-8, one entry per line; '#' starts a comment.
+# scribeio glossary. UTF-8, one entry per line; '#' starts a comment.
 #
 # Names Whisper should know. They go into Whisper's prompt in this order, so
 # put the most important first (the prompt is cut at

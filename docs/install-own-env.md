@@ -1,6 +1,6 @@
 # Install into your own Python environment
 
-Install scribe with pip into a venv, a conda env or a uv project, for
+Install scribeio with pip into a venv, a conda env or a uv project, for
 example next to a PyTorch you already have.
 
 ## What you need
@@ -17,7 +17,7 @@ replace the one other tools in a shared environment use.
 
 ## Install
 
-> **Warning:** install PyTorch with CUDA *before* scribe. Otherwise pip
+> **Warning:** install PyTorch with CUDA *before* scribeio. Otherwise pip
 > takes PyTorch from PyPI, which on Windows is a CPU-only build, and
 > transcription takes hours. The PyTorch version must also fit WhisperX's
 > pin (2.8 for WhisperX 3.8.6): with a newer one, pip replaces it the same
@@ -31,7 +31,7 @@ replace the one other tools in a shared environment use.
    pip install torch==2.8.0 torchaudio==2.8.0 torchvision==0.23.0 --index-url https://download.pytorch.org/whl/cu128
    ```
 
-2. scribe with transcription:
+2. scribeio with transcription:
 
    ```
    pip install "scribeio[transcribe]"
@@ -66,17 +66,17 @@ scribe check
 
 It shows each use as ready or not, with versions, the GPU and the models
 on disk; the output is explained on [Quick install](install.md#check-the-install).
-The first line names the environment scribe runs in.
+The first line names the environment scribeio runs in.
 
-## Upgrade scribe
+## Upgrade scribeio
 
-In the environment scribe is in:
+In the environment scribeio is in:
 
 ```
 pip install --upgrade "scribeio[transcribe]"
 ```
 
-pip upgrades scribe and WhisperX and keeps your PyTorch while it fits
+pip upgrades scribeio and WhisperX and keeps your PyTorch while it fits
 WhisperX's pin. Then run `scribe check`: if a newer WhisperX needed
 another PyTorch, pip took it from PyPI, and on Windows that is a CPU-only
 build; [PyTorch with CUDA](#pytorch-with-cuda) fixes it. Without

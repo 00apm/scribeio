@@ -1,7 +1,7 @@
 # Quick install
 
-Install scribe with three commands: ffmpeg, uv (it brings its own Python),
-and scribe itself.
+Install scribeio with three commands: ffmpeg, uv (it brings its own Python),
+and scribeio itself.
 
 > **What you need**
 >
@@ -13,11 +13,11 @@ and scribe itself.
 Every step is a command to paste into a terminal. Rarely use one? See
 [Terminal tips](#terminal-tips).
 
-## Install scribe
+## Install scribeio
 
 ### 1. Install ffmpeg
 
-scribe reads and writes audio with ffmpeg.
+scribeio reads and writes audio with ffmpeg.
 
 ```
 winget install --id Gyan.FFmpeg -e
@@ -43,13 +43,13 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 Close the terminal and open a new one: the new commands are found only in
 new terminals.
 
-### 3. Install scribe
+### 3. Install scribeio
 
 ```
 uv tool install "scribeio[transcribe]" --python 3.12 --torch-backend=auto
 ```
 
-This installs scribe with transcription: Python 3.12, WhisperX, and the
+This installs scribeio with transcription: Python 3.12, WhisperX, and the
 PyTorch build that suits your NVIDIA driver (`--torch-backend=auto`). It
 downloads a few GB and takes several minutes.
 
@@ -94,7 +94,7 @@ Audio mastering                                      not ready
 Run `scribe check` in a session folder and it also checks that folder's
 `scribe.yaml` and lists the models it needs.
 
-## Install scribe with audio mastering only
+## Install scribeio with audio mastering only
 
 Without transcription there is no WhisperX or PyTorch to download:
 
@@ -106,13 +106,13 @@ uv tool install scribeio --python 3.12
 only)". To add transcription later, run the full command from step 3 with
 `--force`.
 
-## Upgrade scribe
+## Upgrade scribeio
 
 ```
 uv tool upgrade scribeio
 ```
 
-## Uninstall scribe
+## Uninstall scribeio
 
 ```
 uv tool uninstall scribeio
@@ -154,7 +154,7 @@ build from [ffmpeg.org](https://ffmpeg.org/download.html).
 
 ### MP3 encoder
 
-"this ffmpeg has no libmp3lame": the ffmpeg scribe finds cannot write MP3
+"this ffmpeg has no libmp3lame": the ffmpeg scribeio finds cannot write MP3
 files. The ffmpeg from step 1 can; another ffmpeg that comes first in your
 PATH (bundled with other software) may not. Either make the step 1 ffmpeg
 the one found, or write M4A instead: `--format m4a` on the command, or in
@@ -167,14 +167,14 @@ master:
 
 ### Transcription
 
-"WhisperX not installed": scribe was installed without transcription; run
+"WhisperX not installed": scribeio was installed without transcription; run
 step 3 again with `--force`. "installed but does not load": a download
 went wrong; the same command rebuilds the install.
 
 ### PyTorch with CUDA
 
 "a CPU-only build": `--torch-backend=auto` found no NVIDIA driver when
-scribe was installed, so it chose the PyTorch build without GPU support.
+scribeio was installed, so it chose the PyTorch build without GPU support.
 Install or update the NVIDIA driver (until `nvidia-smi` shows your GPU),
 then run step 3 again with `--force`.
 
@@ -194,7 +194,7 @@ transcribe:
 
 Audio mastering needs no GPU.
 
-GPU memory: scribe is tested on an 8 GB NVIDIA GPU. With less, set
+GPU memory: scribeio is tested on an 8 GB NVIDIA GPU. With less, set
 `compute_type: int8_float16` or `model: large-v3-turbo` under
 `transcribe: whisper:`.
 
