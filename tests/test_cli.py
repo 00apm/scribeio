@@ -20,6 +20,7 @@ def test_version_option():
 
 
 def test_help_texts():
+    assert "Balanced audio and transcripts" in invoke("--help").output
     assert "Craig recording" in invoke("transcribe", "--help").output
     assert "without the GPU" in invoke("merge", "--help").output
 

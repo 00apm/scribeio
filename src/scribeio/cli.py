@@ -113,7 +113,8 @@ def _start_option(f: F) -> F:
 @click.group(cls=_Group)
 @click.version_option(__version__, prog_name="scribeio")
 def main() -> None:
-    """Transcripts of TTRPG sessions recorded with Craig (Discord)."""
+    """Balanced audio and transcripts from Craig (Discord) recordings of TTRPG
+    sessions."""
     if sys.platform == "win32":
         # the old Windows console prints colour codes as text unless told
         # otherwise; click stopped doing this in 8.5
