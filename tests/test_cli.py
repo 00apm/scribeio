@@ -16,7 +16,7 @@ from helpers import (
 def test_version_option():
     result = invoke("--version")
     assert result.exit_code == 0
-    assert scribeio.__version__ in result.output
+    assert f"scribeio, version {scribeio.__version__}" in result.output
 
 
 def test_help_texts():

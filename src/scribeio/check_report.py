@@ -66,9 +66,9 @@ def load_settings(config: Path | None, cwd: Path) -> Checked:
 
 
 def header() -> str:
-    """scribe and Python versions, and how scribe was installed."""
+    """scribeio and Python versions, and how it was installed."""
     route = "installed with uv" if checks.uv_install() else f"in {sys.prefix}"
-    return f"scribe {__version__}, Python {platform.python_version()} ({route})"
+    return f"scribeio {__version__}, Python {platform.python_version()} ({route})"
 
 
 def audio_group(settings: dict[str, Any]) -> Group:

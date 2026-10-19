@@ -111,7 +111,7 @@ def _start_option(f: F) -> F:
 
 
 @click.group(cls=_Group)
-@click.version_option(__version__, prog_name="scribe")
+@click.version_option(__version__, prog_name="scribeio")
 def main() -> None:
     """Transcripts of TTRPG sessions recorded with Craig (Discord)."""
     if sys.platform == "win32":
