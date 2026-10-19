@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "scribeio"
 version = "0.1.0"
-description = "Transcripts of tabletop RPG sessions recorded with Craig (Discord)"
+description = "Balanced audio and transcripts from Craig (Discord) recordings of TTRPG sessions"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]

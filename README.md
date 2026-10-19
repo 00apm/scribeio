@@ -1,15 +1,15 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/scribeio-logo-dark.svg">
-    <img alt="scribeio logo" src="docs/images/scribeio-logo-light.svg" width="360">
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/00apm/scribeio/main/docs/images/scribeio-logo-dark.svg">
+    <img alt="scribeio logo" src="https://raw.githubusercontent.com/00apm/scribeio/main/docs/images/scribeio-logo-light.svg" width="360">
   </picture>
 </p>
 
 # scribeio
 
-Turn a [Craig](https://craig.chat) recording of your Discord tabletop RPG
-session into evenly balanced session audio and a readable transcript with
-everyone's name.
+Turn [Craig](https://craig.chat) (Discord) recordings of your TTRPG
+sessions into balanced audio and a transcript ready for your session
+notes.
 
 Craig records one track per person. scribeio works on those tracks:
 
@@ -36,7 +36,7 @@ What you get from working per track, locally:
 **Not a TTRPG session, or not Craig?** A podcast or a meeting recorded on
 Discord with Craig works the same way, and so does any other recording
 with one track per person
-([input recordings](docs/recordings.md#not-using-craig)).
+([input recordings](https://github.com/00apm/scribeio/blob/main/docs/recordings.md#not-using-craig)).
 
 ## Requirements
 
@@ -48,9 +48,9 @@ with one track per person
 
 ## Install
 
-- [Quick install](docs/install.md): a few commands, no Python knowledge
-  needed.
-- [Install into your own Python environment](docs/install-own-env.md):
+- [Quick install](https://github.com/00apm/scribeio/blob/main/docs/install.md):
+  a few commands, no Python knowledge needed.
+- [Install into your own Python environment](https://github.com/00apm/scribeio/blob/main/docs/install-own-env.md):
   pip, Python 3.10–3.13.
 
 ## Quick start
@@ -88,17 +88,19 @@ how to make the result your own.
 Read in this order the first time; later, go straight to the part you
 need.
 
-1. **[Input recordings](docs/recordings.md):** which Craig downloads work,
-   where scribeio puts its files, and how to use tracks that did not come
-   from Craig.
-2. **[Audio mastering](docs/usage/audio.md):** listen to a short preview
-   after each step, change how the voices and the music sound, adjust one
-   player only, and choose the file format.
-3. **[Transcribing a recording](docs/usage/transcribe.md):** set names and
-   the language, download the models, read the transcript and the report,
-   and teach Whisper the names of your world with a glossary.
+1. **[Input recordings](https://github.com/00apm/scribeio/blob/main/docs/recordings.md):**
+   which Craig downloads work, where scribeio puts its files, and how to
+   use tracks that did not come from Craig.
+2. **[Audio mastering](https://github.com/00apm/scribeio/blob/main/docs/usage/audio.md):**
+   listen to a short preview after each step, change how the voices and
+   the music sound, adjust one player only, and choose the file format.
+3. **[Transcribing a recording](https://github.com/00apm/scribeio/blob/main/docs/usage/transcribe.md):**
+   set names and the language, download the models, read the transcript
+   and the report, and teach Whisper the names of your world with a
+   glossary.
 
-All documentation pages, install included: [docs](docs/README.md).
+All documentation pages, install included:
+[docs](https://github.com/00apm/scribeio/blob/main/docs/README.md).
 
 ## Development
 
@@ -113,4 +115,8 @@ Tests use synthetic data only; no real recordings are in the repository.
 
 ## License
 
-MIT
+scribeio is free and open source under the
+[MIT License](https://github.com/00apm/scribeio/blob/main/LICENSE): you
+may use, change and share it, also commercially, as long as the licence
+text stays with it. ffmpeg, WhisperX and the speech models are installed
+separately and come with their own licences.
