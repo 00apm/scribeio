@@ -18,13 +18,13 @@ from typing import Any, Literal
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from scribe_rpg import ffmpeg
-from scribe_rpg.errors import InstallError
+from scribeio import ffmpeg
+from scribeio.errors import InstallError
 
 Status = Literal["ok", "missing", "warning", "info"]
 
 # Set at the pre-publish checklist; the repository is not public yet.
-GUIDE_BASE = "https://github.com/OWNER/scribe-rpg/blob/main/docs/"
+GUIDE_BASE = "https://github.com/OWNER/scribeio/blob/main/docs/"
 # Guide section key -> anchor on the install pages (they must provide these).
 ANCHORS = {
     "ffmpeg": "ffmpeg",
@@ -137,7 +137,7 @@ def encoder_item(fmt: str, bitrate: str) -> Item:
     """
     # imported here: the CLI imports this module for every command, and
     # mix imports this module itself
-    from scribe_rpg.master.mix import encode_args, error_lines
+    from scribeio.master.mix import encode_args, error_lines
 
     name = f"{fmt} encoder"
     args = encode_args(fmt, bitrate)

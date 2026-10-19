@@ -20,8 +20,8 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from scribe_rpg.transcribe.pipeline import MergeResult
-from scribe_rpg.transcribe.session import RawSession
+from scribeio.transcribe.pipeline import MergeResult
+from scribeio.transcribe.session import RawSession
 
 
 def hms(seconds: float) -> str:

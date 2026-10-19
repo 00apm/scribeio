@@ -13,9 +13,9 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from scribe_rpg import craig
-from scribe_rpg.errors import ScribeError
-from scribe_rpg.master.catalogue import FILTERS, OPERATIONS, WRITES_FILES, Step
+from scribeio import craig
+from scribeio.errors import ScribeError
+from scribeio.master.catalogue import FILTERS, OPERATIONS, WRITES_FILES, Step
 
 BITRATES = {"mp3": "96k", "m4a": "64k", "opus": "48k"}
 CHANNELS = ("mono", "stereo")

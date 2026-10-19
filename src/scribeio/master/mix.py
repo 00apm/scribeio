@@ -17,11 +17,11 @@ from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
 
-from scribe_rpg import checks, craig, ffmpeg
-from scribe_rpg.errors import ScribeError
-from scribe_rpg.master.catalogue import OPERATIONS, Step
-from scribe_rpg.master.config import MasterConfig
-from scribe_rpg.master.render import (
+from scribeio import checks, craig, ffmpeg
+from scribeio.errors import ScribeError
+from scribeio.master.catalogue import OPERATIONS, Step
+from scribeio.master.config import MasterConfig
+from scribeio.master.render import (
     Gains,
     Measured,
     chain_filter,

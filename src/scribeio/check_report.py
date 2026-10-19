@@ -14,13 +14,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from scribe_rpg import __version__, checks, init
-from scribe_rpg.checks import Item
-from scribe_rpg.config import load_config
-from scribe_rpg.errors import ScribeError
+from scribeio import __version__, checks, init
+from scribeio.checks import Item
+from scribeio.config import load_config
+from scribeio.errors import ScribeError
 
 if TYPE_CHECKING:
-    from scribe_rpg.transcribe.models import Model
+    from scribeio.transcribe.models import Model
 
 SYMBOLS = {"ok": "✔", "missing": "✘", "warning": "⚠", "info": "ℹ"}
 NOT_INSTALLED = "not installed (audio mastering only)"
@@ -73,7 +73,7 @@ def header() -> str:
 
 def audio_group(settings: dict[str, Any]) -> Group:
     """ffmpeg, and the encoder of the configured output format."""
-    from scribe_rpg.master.config import BITRATES
+    from scribeio.master.config import BITRATES
 
     found = checks.ffmpeg_item()
     items = [found]
@@ -139,7 +139,7 @@ def needed_models(checked: Checked, whisperx: bool) -> tuple[list[Model], str]:
         The models and ``""``; no models without a config that loads or
         without WhisperX; no models and the error for an unknown model.
     """
-    from scribe_rpg.transcribe import models
+    from scribeio.transcribe import models
 
     if checked.path is None or checked.error or not whisperx:
         return [], ""
@@ -168,7 +168,7 @@ def model_lines(
         reachable: Model sources that answered; sizes are looked up only
             there (a dropped connection would stall each lookup).
     """
-    from scribe_rpg.transcribe import models
+    from scribeio.transcribe import models
 
     lines = []
     if whisperx:

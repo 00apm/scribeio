@@ -17,8 +17,8 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from scribe_rpg.config import read_utf8
-from scribe_rpg.errors import ScribeError
+from scribeio.config import read_utf8
+from scribeio.errors import ScribeError
 
 
 @dataclass(frozen=True)

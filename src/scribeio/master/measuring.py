@@ -7,10 +7,10 @@ always a warning.
 
 from __future__ import annotations
 
-from scribe_rpg.master import mix
-from scribe_rpg.master.catalogue import Step
-from scribe_rpg.master.render import Gains, Measured
-from scribe_rpg.progress import Progress
+from scribeio.master import mix
+from scribeio.master.catalogue import Step
+from scribeio.master.render import Gains, Measured
+from scribeio.progress import Progress
 
 
 def measure(

@@ -22,9 +22,9 @@ from typing import Any
 
 import yaml
 
-from scribe_rpg.craig import sanitize
-from scribe_rpg.errors import ScribeError
-from scribe_rpg.master.config import merge as merge_master
+from scribeio.craig import sanitize
+from scribeio.errors import ScribeError
+from scribeio.master.config import merge as merge_master
 
 # Allowed values of numeric settings: (lowest, highest, whole numbers only);
 # None leaves that end open. Checked at load time, before any slow work.
@@ -81,7 +81,7 @@ def load_config(
         ScribeError: If the config is missing, is not valid YAML, has an
             unknown key or a value of the wrong type.
     """
-    defaults = files("scribe_rpg").joinpath("defaults.yaml").read_text(encoding="utf-8")
+    defaults = files("scribeio").joinpath("defaults.yaml").read_text(encoding="utf-8")
     settings = _parse_yaml(defaults, "defaults.yaml")
     speakers: dict[str, str] = {}
     glossary_path = None

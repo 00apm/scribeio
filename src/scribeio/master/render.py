@@ -11,8 +11,8 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from scribe_rpg import ffmpeg
-from scribe_rpg.master.catalogue import Step, quote
+from scribeio import ffmpeg
+from scribeio.master.catalogue import Step, quote
 
 # Every chain starts in 32-bit float, so no step clips between steps.
 FLOAT = "aformat=sample_fmts=flt"

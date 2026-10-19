@@ -10,11 +10,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from scribe_rpg.craig import sanitize, speaker_name
-from scribe_rpg.transcribe.cleanup import Dropped, apply_cleanup
-from scribe_rpg.transcribe.glossary import Glossary
-from scribe_rpg.transcribe.lines import Bleed, Line, build_lines, find_bleed
-from scribe_rpg.transcribe.session import RawSession, Segment
+from scribeio.craig import sanitize, speaker_name
+from scribeio.transcribe.cleanup import Dropped, apply_cleanup
+from scribeio.transcribe.glossary import Glossary
+from scribeio.transcribe.lines import Bleed, Line, build_lines, find_bleed
+from scribeio.transcribe.session import RawSession, Segment
 
 
 @dataclass

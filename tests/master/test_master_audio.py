@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from scribe_rpg import checks, ffmpeg
-from scribe_rpg.errors import InstallError, ScribeError
-from scribe_rpg.master.catalogue import Step
-from scribe_rpg.master.render import (
+from scribeio import checks, ffmpeg
+from scribeio.errors import InstallError, ScribeError
+from scribeio.master.catalogue import Step
+from scribeio.master.render import (
     chain_filter,
     measure,
     measure_filter,
@@ -104,7 +104,7 @@ def file_loudness(path):
 def peak_db(path):
     import re
 
-    from scribe_rpg import ffmpeg
+    from scribeio import ffmpeg
 
     done = ffmpeg.run(
         ["-i", str(path), "-af", "astats=measure_perchannel=none", "-f", "null", "-"],
@@ -114,14 +114,14 @@ def peak_db(path):
 
 
 def plans_for(*paths):
-    from scribe_rpg.craig import Track
-    from scribe_rpg.master.mix import TrackPlan
+    from scribeio.craig import Track
+    from scribeio.master.mix import TrackPlan
 
     return [TrackPlan(Track(p.stem, "player", p), []) for p in paths]
 
 
 def test_amix_sums_without_halving(tmp_path):
-    from scribe_rpg.master.mix import render
+    from scribeio.master.mix import render
 
     a = make_flac(tmp_path / "a.flac", 5, volume_db=-20)
     b = make_flac(tmp_path / "b.flac", 5, volume_db=-20)
@@ -134,7 +134,7 @@ def rms_db(path, start, end):
     """RMS level in dBFS of `path` between `start` and `end` seconds."""
     import re
 
-    from scribe_rpg import ffmpeg
+    from scribeio import ffmpeg
 
     done = ffmpeg.run(
         ["-i", str(path), "-af",
@@ -147,7 +147,7 @@ def rms_db(path, start, end):
 
 def test_amix_keeps_the_end_of_a_track_that_ends_first(tmp_path):
     # ffmpeg 6.1's amix dropped the last ~1.5 s of the first input at its end
-    from scribe_rpg.master.mix import render
+    from scribeio.master.mix import render
 
     a = make_flac(tmp_path / "a.flac", 4, volume_db=-20)
     b = make_flac(tmp_path / "b.flac", 8, volume_db=-20)
@@ -159,13 +159,13 @@ def test_amix_keeps_the_end_of_a_track_that_ends_first(tmp_path):
 
 
 def ffmpeg_duration(path):
-    from scribe_rpg import ffmpeg
+    from scribeio import ffmpeg
 
     return ffmpeg.duration(path)
 
 
 def test_limiter_caps_the_mix(tmp_path):
-    from scribe_rpg.master.mix import render
+    from scribeio.master.mix import render
 
     a = make_flac(tmp_path / "a.flac", 5, volume_db=-3)
     b = make_flac(tmp_path / "b.flac", 5, volume_db=-3)
@@ -176,7 +176,7 @@ def test_limiter_caps_the_mix(tmp_path):
 
 
 def test_render_reports_progress(tmp_path):
-    from scribe_rpg.master.mix import render
+    from scribeio.master.mix import render
 
     a = make_flac(tmp_path / "a.flac", 3)
     seen = []
@@ -186,8 +186,8 @@ def test_render_reports_progress(tmp_path):
 
 @pytest.mark.parametrize("error", [KeyboardInterrupt, RuntimeError])
 def test_render_failure_leaves_no_file(tmp_path, monkeypatch, error):
-    from scribe_rpg import ffmpeg
-    from scribe_rpg.master import mix
+    from scribeio import ffmpeg
+    from scribeio.master import mix
 
     a = make_flac(tmp_path / "a.flac", 3)
     out = tmp_path / "o.mp3"
@@ -206,9 +206,9 @@ def test_render_failure_leaves_no_file(tmp_path, monkeypatch, error):
 
 
 def checked(tmp_path, text):
-    from scribe_rpg.config import load_config
-    from scribe_rpg.master.config import resolve
-    from scribe_rpg.master.mix import check
+    from scribeio.config import load_config
+    from scribeio.master.config import resolve
+    from scribeio.master.mix import check
 
     path = tmp_path / "scribe.yaml"
     path.write_text("master:\n" + text, encoding="utf-8")
@@ -300,7 +300,7 @@ def test_track_gains_reports_each_pass(tmp_path):
 
 
 def test_measure_all_reports_tracks_then_the_mix(tmp_path):
-    from scribe_rpg.master import mix
+    from scribeio.master import mix
 
     a = make_flac(tmp_path / "a.flac", 3)
     [plan] = plans_for(a)

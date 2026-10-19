@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from scribe_rpg.config import load_config
-from scribe_rpg.errors import ScribeError
-from scribe_rpg.transcribe.glossary import load_glossary
+from scribeio.config import load_config
+from scribeio.errors import ScribeError
+from scribeio.transcribe.glossary import load_glossary
 
 
 def write(folder: Path, text: str, name: str = "scribe.yaml") -> Path:

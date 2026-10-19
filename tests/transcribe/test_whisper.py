@@ -14,10 +14,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from scribe_rpg import checks, ffmpeg
-from scribe_rpg.config import load_config
-from scribe_rpg.errors import InstallError, ScribeError
-from scribe_rpg.transcribe import whisper
+from scribeio import checks, ffmpeg
+from scribeio.config import load_config
+from scribeio.errors import InstallError, ScribeError
+from scribeio.transcribe import whisper
 
 
 def words_count(text):

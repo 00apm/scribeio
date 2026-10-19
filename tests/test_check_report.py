@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from scribe_rpg import check_report, checks
-from scribe_rpg.checks import Item
-from scribe_rpg.errors import ScribeError
-from scribe_rpg.transcribe import models
+from scribeio import check_report, checks
+from scribeio.checks import Item
+from scribeio.errors import ScribeError
+from scribeio.transcribe import models
 
 NONE_YET = "none yet: downloaded on your first transcription"
 

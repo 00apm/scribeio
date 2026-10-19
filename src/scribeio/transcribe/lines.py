@@ -20,9 +20,9 @@ from collections import defaultdict
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
-from scribe_rpg.craig import speaker_name
-from scribe_rpg.transcribe.cleanup import normalize
-from scribe_rpg.transcribe.session import Segment, Word
+from scribeio.craig import speaker_name
+from scribeio.transcribe.cleanup import normalize
+from scribeio.transcribe.session import Segment, Word
 
 # Tolerance for the pause test: 2.3 - 0.8 is 1.4999999999999998 in floats.
 _EPS = 1e-6

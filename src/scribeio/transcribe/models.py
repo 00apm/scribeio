@@ -21,8 +21,8 @@ from typing import Any
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
-from scribe_rpg.errors import ScribeError
-from scribe_rpg.progress import Progress
+from scribeio.errors import ScribeError
+from scribeio.progress import Progress
 
 # Files faster-whisper fetches for a model (same list as its download_model).
 WHISPER_FILES = [

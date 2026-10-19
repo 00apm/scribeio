@@ -14,12 +14,12 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TypeVar
 
-from scribe_rpg import craig, ffmpeg
-from scribe_rpg.errors import ScribeError
-from scribe_rpg.master import measuring, mix
-from scribe_rpg.master.catalogue import Step
-from scribe_rpg.master.config import MasterConfig
-from scribe_rpg.progress import Progress
+from scribeio import craig, ffmpeg
+from scribeio.errors import ScribeError
+from scribeio.master import measuring, mix
+from scribeio.master.catalogue import Step
+from scribeio.master.config import MasterConfig
+from scribeio.progress import Progress
 
 FADE = 0.02  # seconds of fade at each montage join
 # Preview files are matched to one loudness, so they are compared by tone and

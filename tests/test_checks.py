@@ -9,9 +9,9 @@ from urllib.error import HTTPError, URLError
 
 import pytest
 
-from scribe_rpg import checks, ffmpeg
-from scribe_rpg.checks import Item
-from scribe_rpg.errors import InstallError, ScribeError
+from scribeio import checks, ffmpeg
+from scribeio.checks import Item
+from scribeio.errors import InstallError, ScribeError
 
 # --- route and guide links --------------------------------------------------
 
@@ -448,7 +448,7 @@ def test_reach_timeout(monkeypatch):
 
 
 def test_sources_match_the_download_urls():
-    from scribe_rpg.transcribe import models
+    from scribeio.transcribe import models
 
     assert checks.SOURCES["download.pytorch.org"] == models.TORCHAUDIO_URL
 

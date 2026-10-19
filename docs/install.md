@@ -46,7 +46,7 @@ new terminals.
 ### 3. Install scribe
 
 ```
-uv tool install "scribe-rpg[transcribe]" --python 3.12 --torch-backend=auto
+uv tool install "scribeio[transcribe]" --python 3.12 --torch-backend=auto
 ```
 
 This installs scribe with transcription: Python 3.12, WhisperX, and the
@@ -88,7 +88,7 @@ trouble, ✘ stops that use. Every ✘ comes with a link to the section below th
 Audio mastering                                      not ready
   ✔ ffmpeg 6.1  C:\Tools\ffmpeg\bin\ffmpeg.exe
   ✘ mp3 encoder: this ffmpeg has no libmp3lame, so it cannot write mp3 files; --format m4a works without it
-    see https://github.com/00apm/scribe-rpg/blob/main/docs/install.md#mp3-encoder
+    see https://github.com/00apm/scribeio/blob/main/docs/install.md#mp3-encoder
 ```
 
 Run `scribe check` in a session folder and it also checks that folder's
@@ -99,7 +99,7 @@ Run `scribe check` in a session folder and it also checks that folder's
 Without transcription there is no WhisperX or PyTorch to download:
 
 ```
-uv tool install scribe-rpg --python 3.12
+uv tool install scribeio --python 3.12
 ```
 
 `scribe check` then shows Transcription as "not installed (audio mastering
@@ -109,13 +109,13 @@ only)". To add transcription later, run the full command from step 3 with
 ## Upgrade scribe
 
 ```
-uv tool upgrade scribe-rpg
+uv tool upgrade scribeio
 ```
 
 ## Uninstall scribe
 
 ```
-uv tool uninstall scribe-rpg
+uv tool uninstall scribeio
 ```
 
 The speech models stay in the folder `scribe check` shows under Models.

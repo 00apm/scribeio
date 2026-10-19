@@ -12,8 +12,8 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from scribe_rpg.errors import ScribeError
-from scribe_rpg.transcribe.session import RawSession, Segment, TrackInfo, Word
+from scribeio.errors import ScribeError
+from scribeio.transcribe.session import RawSession, Segment, TrackInfo, Word
 
 FORMAT = 1
 

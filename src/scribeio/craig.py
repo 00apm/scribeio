@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from scribe_rpg.errors import ScribeError
+from scribeio.errors import ScribeError
 
 TRACK_NUMBER = re.compile(r"^(\d+)-")
 # A Craig download without FLAC tracks (AAC, Ogg)

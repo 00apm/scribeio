@@ -7,13 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from scribe_rpg import ffmpeg
-from scribe_rpg.config import load_config
-from scribe_rpg.craig import Track
-from scribe_rpg.errors import ScribeError
-from scribe_rpg.master.config import resolve
-from scribe_rpg.master.mix import TrackPlan
-from scribe_rpg.master.preview import (
+from scribeio import ffmpeg
+from scribeio.config import load_config
+from scribeio.craig import Track
+from scribeio.errors import ScribeError
+from scribeio.master.config import resolve
+from scribeio.master.mix import TrackPlan
+from scribeio.master.preview import (
     common_level,
     cut,
     fresh_folder,

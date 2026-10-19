@@ -6,12 +6,12 @@ from importlib.resources import files
 import pytest
 import yaml
 
-from scribe_rpg import init
-from scribe_rpg.config import load_config
-from scribe_rpg.errors import ScribeError
-from scribe_rpg.master.config import resolve
-from scribe_rpg.transcribe import session_json
-from scribe_rpg.transcribe.glossary import load_glossary, parse_glossary
+from scribeio import init
+from scribeio.config import load_config
+from scribeio.errors import ScribeError
+from scribeio.master.config import resolve
+from scribeio.transcribe import session_json
+from scribeio.transcribe.glossary import load_glossary, parse_glossary
 
 from helpers import craig_dir, craig_unzipped, craig_zip, raw_session
 
@@ -180,7 +180,7 @@ def test_render_only_transcribe(tmp_path):
 def test_render_full_holds_every_default(tmp_path):
     text = init.render_config(full=True, language="pl")
     assert _keys(text) == ["speakers", "input", "master", "transcribe"]
-    defaults_text = files("scribe_rpg").joinpath("defaults.yaml").read_text("utf-8")
+    defaults_text = files("scribeio").joinpath("defaults.yaml").read_text("utf-8")
     defaults = yaml.safe_load(defaults_text)
     data = yaml.safe_load(text)
     # steps in no chain are built in; a config defining one fails, so they

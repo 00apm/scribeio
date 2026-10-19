@@ -5,11 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from scribe_rpg.config import load_config
-from scribe_rpg.craig import Track
-from scribe_rpg.errors import ScribeError
-from scribe_rpg.master.catalogue import Step
-from scribe_rpg.master.config import BITRATES, merge, resolve, unknown_players
+from scribeio.config import load_config
+from scribeio.craig import Track
+from scribeio.errors import ScribeError
+from scribeio.master.catalogue import Step
+from scribeio.master.config import BITRATES, merge, resolve, unknown_players
 
 
 def defaults():

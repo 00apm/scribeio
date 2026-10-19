@@ -15,7 +15,7 @@ from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, TypeVar
 
-from scribe_rpg.errors import ScribeError
+from scribeio.errors import ScribeError
 
 if TYPE_CHECKING:
     # numpy only inside decode: `scribe merge` imports this module too

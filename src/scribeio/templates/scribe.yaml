@@ -3,7 +3,7 @@
 # scribe uses this file by itself when it is next to the recording (or the
 # .json); elsewhere pass it with -c. Lists replace the defaults; unknown keys
 # are an error, so typos are caught.
-# Docs: https://github.com/00apm/scribe-rpg/tree/main/docs
+# Docs: https://github.com/00apm/scribeio/tree/main/docs
 
 # Discord account -> name in the transcript. Write the account as Discord
 # shows it; accounts not listed keep their account name and are reported.

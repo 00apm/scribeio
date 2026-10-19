@@ -2,8 +2,8 @@
 
 import pytest
 
-from scribe_rpg.errors import ScribeError
-from scribe_rpg.transcribe.glossary import Glossary, load_glossary, parse_glossary
+from scribeio.errors import ScribeError
+from scribeio.transcribe.glossary import Glossary, load_glossary, parse_glossary
 
 TEXT = """\
 # invented names only

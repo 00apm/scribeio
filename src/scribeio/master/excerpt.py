@@ -14,9 +14,9 @@ from pathlib import Path
 import numpy as np
 import numpy.typing as npt
 
-from scribe_rpg import ffmpeg
-from scribe_rpg.errors import ScribeError
-from scribe_rpg.transcribe.energy import Levels, frame_levels
+from scribeio import ffmpeg
+from scribeio.errors import ScribeError
+from scribeio.transcribe.energy import Levels, frame_levels
 
 Activity = npt.NDArray[np.float64]
 

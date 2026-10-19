@@ -5,7 +5,7 @@ import tracemalloc
 import numpy as np
 import pytest
 
-from scribe_rpg.transcribe.energy import annotate, frame_levels
+from scribeio.transcribe.energy import annotate, frame_levels
 
 from helpers import seg, silence, tone
 

@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from scribe_rpg.transcribe.markdown import duration, hms
-from scribe_rpg.transcribe.pipeline import MergeResult
-from scribe_rpg.transcribe.session import RawSession
+from scribeio.transcribe.markdown import duration, hms
+from scribeio.transcribe.pipeline import MergeResult
+from scribeio.transcribe.session import RawSession
 
 REASONS = [
     ("energy", "Energy (track silent under most words)"),

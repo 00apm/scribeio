@@ -17,7 +17,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from scribe_rpg.transcribe.session import Segment
+from scribeio.transcribe.session import Segment
 
 # Hesitation tokens (after normalize): hm/hmm; English uh, um, uhm, er, erm
 # (also drawn out); Polish y/e/m and their mixes - checked in _filler_token.

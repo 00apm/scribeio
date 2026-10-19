@@ -13,9 +13,9 @@ from types import SimpleNamespace
 import pytest
 from rich.console import Console
 
-from scribe_rpg.errors import ScribeError
-from scribe_rpg.progress import Progress
-from scribe_rpg.transcribe import models
+from scribeio.errors import ScribeError
+from scribeio.progress import Progress
+from scribeio.transcribe import models
 
 
 class NotCached(FileNotFoundError):

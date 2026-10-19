@@ -3,6 +3,6 @@
 from importlib.metadata import PackageNotFoundError, version
 
 try:
-    __version__ = version("scribe-rpg")
+    __version__ = version("scribeio")
 except PackageNotFoundError:  # source tree without `pip install -e .`
     __version__ = "0.0.0"

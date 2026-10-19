@@ -20,9 +20,9 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from scribe_rpg import checks, ffmpeg
-from scribe_rpg.errors import ScribeError
-from scribe_rpg.transcribe.session import Segment, Word
+from scribeio import checks, ffmpeg
+from scribeio.errors import ScribeError
+from scribeio.transcribe.session import Segment, Word
 
 OnProgress = Callable[[float], None]
 

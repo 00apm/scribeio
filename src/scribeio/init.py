@@ -1,6 +1,6 @@
 """Create ``scribe.yaml`` and ``glossary.txt`` from the built-in templates.
 
-The templates live in the package (``scribe_rpg/templates``), so
+The templates live in the package (``scribeio/templates``), so
 `scribe init` works after a plain ``pip install``. Given a recording (or a
 ``<name>_transcript.json``), the ``speakers`` section is prefilled with the accounts as
 Discord shows them; the user only writes the names next to them. The config
@@ -18,8 +18,8 @@ from typing import Literal
 
 import yaml
 
-from scribe_rpg import craig
-from scribe_rpg.errors import ScribeError
+from scribeio import craig
+from scribeio.errors import ScribeError
 
 CONFIG_NAME = "scribe.yaml"
 GLOSSARY_NAME = "glossary.txt"
@@ -51,7 +51,7 @@ _GLOSSARY = (
 def template(name: str) -> str:
     """Text of a built-in template (``scribe.yaml`` or ``glossary.txt``)."""
     # one name per joinpath: Python 3.10 Traversable takes one
-    folder = files("scribe_rpg").joinpath("templates")
+    folder = files("scribeio").joinpath("templates")
     return folder.joinpath(name).read_text(encoding="utf-8")
 
 
@@ -78,7 +78,7 @@ def speakers_from(
     """
     source = Path(source)
     if source.suffix.lower() == ".json":
-        from scribe_rpg.transcribe import session_json
+        from scribeio.transcribe import session_json
 
         tracks = session_json.read(source).tracks
         players = [t.account for t in tracks if t.kind == "player"]
@@ -116,7 +116,7 @@ def render_config(
     header, sections = _split(template(CONFIG_NAME))
     if full:
         header += _FULL_NOTE
-        defaults = files("scribe_rpg").joinpath("defaults.yaml")
+        defaults = files("scribeio").joinpath("defaults.yaml")
         _, built_in = _split(defaults.read_text(encoding="utf-8"))
         sections.update({k: built_in[k] for k in ("input", "master", "transcribe")})
         sections["transcribe"] = sections["transcribe"].replace(

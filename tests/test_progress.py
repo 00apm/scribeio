@@ -5,7 +5,7 @@ import io
 import pytest
 from rich.console import Console
 
-from scribe_rpg.progress import Progress
+from scribeio.progress import Progress
 
 
 def make():

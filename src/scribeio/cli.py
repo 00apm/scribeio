@@ -17,11 +17,11 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 import click
 
-from scribe_rpg import __version__, checks, craig, init
-from scribe_rpg.config import Config, load_config
-from scribe_rpg.errors import InstallError, ScribeError
-from scribe_rpg.progress import Progress
-from scribe_rpg.transcribe import (
+from scribeio import __version__, checks, craig, init
+from scribeio.config import Config, load_config
+from scribeio.errors import InstallError, ScribeError
+from scribeio.progress import Progress
+from scribeio.transcribe import (
     markdown,
     models,
     pipeline,
@@ -29,13 +29,13 @@ from scribe_rpg.transcribe import (
     session_json,
     whisper,
 )
-from scribe_rpg.transcribe.glossary import Glossary, load_glossary
-from scribe_rpg.transcribe.session import RawSession, Segment, TrackInfo
+from scribeio.transcribe.glossary import Glossary, load_glossary
+from scribeio.transcribe.session import RawSession, Segment, TrackInfo
 
 if TYPE_CHECKING:
     # numpy at runtime only inside `master` / `transcribe`, never for `merge`
-    from scribe_rpg.master.config import MasterConfig
-    from scribe_rpg.master.excerpt import Excerpt
+    from scribeio.master.config import MasterConfig
+    from scribeio.master.excerpt import Excerpt
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -153,7 +153,7 @@ def transcribe(
     installed); an NVIDIA GPU is strongly recommended.
     """
     # Imported here: numpy is only needed for transcription, not for merge.
-    from scribe_rpg.transcribe import energy
+    from scribeio.transcribe import energy
 
     progress = Progress()
     folder = input_path.resolve().parent
@@ -304,7 +304,7 @@ def _music_duration(
     session's duration. A music track ffmpeg cannot read is only a warning
     (added to `run_warnings`): it is never transcribed.
     """
-    from scribe_rpg import ffmpeg
+    from scribeio import ffmpeg
 
     longest = 0.0
     for t in rec.tracks:
@@ -527,8 +527,8 @@ def master(
     if write_tracks and preview:
         raise click.UsageError("--tracks cannot be used with --preview")
 
-    from scribe_rpg.master import mix
-    from scribe_rpg.master.config import resolve, unknown_players
+    from scribeio.master import mix
+    from scribeio.master.config import resolve, unknown_players
 
     progress = Progress()
     if config_path is None:
@@ -595,7 +595,7 @@ def _find_excerpt(
     With `solo` (a sanitized account), only that voice counts: the window is
     where it is most active (music still breaks ties).
     """
-    from scribe_rpg.master import excerpt
+    from scribeio.master import excerpt
 
     tracks = [
         t
@@ -625,7 +625,7 @@ def _write_preview(
     progress: Progress,
 ) -> None:
     """Cut the excerpt out of every track, then write the listening files."""
-    from scribe_rpg.master import preview
+    from scribeio.master import preview
 
     with progress.step(f"cut {len(rec.tracks)} tracks"):
         preview.fresh_folder(folder)
@@ -667,7 +667,7 @@ def _solo_account(rec: craig.Recording, solo: str) -> str:
 
 def _open(folder: Path, progress: Progress) -> None:
     """Open the preview folder; a failure is only a warning."""
-    from scribe_rpg.master import preview
+    from scribeio.master import preview
 
     try:
         preview.open_folder(folder)
@@ -681,7 +681,7 @@ def _print_chains(rec: craig.Recording, mcfg: MasterConfig, progress: Progress) 
     A pass runs all its steps at once, so the progress bars cannot show them.
     Players with their own block get their own line.
     """
-    from scribe_rpg.master.catalogue import Step
+    from scribeio.master.catalogue import Step
 
     def show(label: str, steps: list[Step]) -> None:
         names = " → ".join(s.name for s in steps) or "(none)"
@@ -711,7 +711,7 @@ def _write_master(
     With `tracks_dir`, the same run writes each processed track there, plus
     the recording's info.txt, so the folder is a valid input itself.
     """
-    from scribe_rpg.master import measuring, mix
+    from scribeio.master import measuring, mix
 
     for path in [out, tracks_dir]:
         if path is not None and path.exists() and not force:
@@ -744,7 +744,7 @@ def _write_master(
 
 def _show_excerpt(ex: Excerpt, forced: bool, progress: Progress) -> None:
     """Print the chosen excerpt, the montage notice and missing voices."""
-    from scribe_rpg.master.excerpt import hms
+    from scribeio.master.excerpt import hms
 
     if ex.montage:
         spans = ", ".join(f"{hms(s)}-{hms(e)}" for s, e in ex.ranges)
@@ -826,7 +826,7 @@ def check(ctx: click.Context, config_path: Path | None, online: bool) -> None:
     missing. Exits with 1 if a use that is installed would not work.
     Offline unless --online is given; it never downloads a model.
     """
-    from scribe_rpg import check_report
+    from scribeio import check_report
 
     # loading WhisperX takes a few seconds: show that scribe is working
     with Progress().busy("checking what scribe needs"):

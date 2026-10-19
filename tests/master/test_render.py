@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from scribe_rpg import ffmpeg
-from scribe_rpg.master.catalogue import FILTERS, Step, quote
-from scribe_rpg.master.mix import discard
-from scribe_rpg.master.render import (
+from scribeio import ffmpeg
+from scribeio.master.catalogue import FILTERS, Step, quote
+from scribeio.master.mix import discard
+from scribeio.master.render import (
     chain_filter,
     measure_filter,
     parse_integrated,
@@ -171,8 +171,8 @@ def test_parse_peak_silence_or_absent():
 def test_mix_graph_two_voices_and_music_mono():
     from pathlib import Path
 
-    from scribe_rpg.craig import Track
-    from scribe_rpg.master.mix import TrackPlan, graph
+    from scribeio.craig import Track
+    from scribeio.master.mix import TrackPlan, graph
 
     plans = [
         TrackPlan(
@@ -195,8 +195,8 @@ def test_mix_graph_two_voices_and_music_mono():
 def test_prep_mono_and_stereo():
     from pathlib import Path
 
-    from scribe_rpg.craig import Track
-    from scribe_rpg.master.mix import TrackPlan, prep
+    from scribeio.craig import Track
+    from scribeio.master.mix import TrackPlan, prep
 
     voice = TrackPlan(Track("a", "player", Path("1-a.flac")), [])
     stereo_voice = TrackPlan(Track("b", "player", Path("2-b.flac")), [], stereo=True)
@@ -212,8 +212,8 @@ def test_prep_mono_and_stereo():
 def test_mix_graph_stereo_pans_mono_voices_after_their_chain():
     from pathlib import Path
 
-    from scribe_rpg.craig import Track
-    from scribe_rpg.master.mix import TrackPlan, graph
+    from scribeio.craig import Track
+    from scribeio.master.mix import TrackPlan, graph
 
     hp = [Step("hp", "highpass", {"f": 80})]
     plans = [

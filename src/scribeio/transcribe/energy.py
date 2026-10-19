@@ -16,7 +16,7 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 
-from scribe_rpg.transcribe.session import Segment
+from scribeio.transcribe.session import Segment
 
 SAMPLE_RATE = 16_000
 SILENCE_DB = -120.0
