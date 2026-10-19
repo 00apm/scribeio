@@ -22,6 +22,10 @@ def test_uv_install_detected(tmp_path):
     assert checks.uv_install(str(tmp_path))
 
 
+def test_guide_base_is_the_public_repo():
+    assert checks.GUIDE_BASE == "https://github.com/00apm/scribeio/blob/main/docs/"
+
+
 def test_guide_url_follows_the_route(monkeypatch, tmp_path):
     monkeypatch.setattr(checks.sys, "prefix", str(tmp_path))
     assert checks.guide_url("gpu") == checks.GUIDE_BASE + "install-own-env.md#gpu"
