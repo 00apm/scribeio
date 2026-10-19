@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from scribe_rpg.craig import (
+from scribeio.craig import (
     account_of,
     dir_tracks,
     is_music,
@@ -16,7 +16,7 @@ from scribe_rpg.craig import (
     sanitize,
     speaker_name,
 )
-from scribe_rpg.errors import ScribeError
+from scribeio.errors import ScribeError
 
 from helpers import MUSIC, TRACKS, craig_dir, craig_unzipped, craig_zip, info_txt
 

@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from scribe_rpg import checks, craig, ffmpeg
-from scribe_rpg.errors import ScribeError
+from scribeio import checks, craig, ffmpeg
+from scribeio.errors import ScribeError
 
 from helpers import (
     craig_dir,
@@ -115,7 +115,7 @@ def master_dir(folder):
 
 
 def lufs(path):
-    from scribe_rpg.master.render import measure
+    from scribeio.master.render import measure
 
     graph = "[0:a]ebur128=dualmono=true:framelog=verbose"
     return measure(["-i", str(path)], graph, "test")
@@ -483,7 +483,7 @@ def test_master_preview_writes_every_step(tmp_path):
 
 @pytest.mark.ffmpeg
 def test_master_preview_lowers_level_for_peaks(tmp_path, monkeypatch):
-    from scribe_rpg.master import preview as preview_module
+    from scribeio.master import preview as preview_module
 
     # synthetic tones peak too close to their loudness to need lowering
     monkeypatch.setattr(preview_module, "MATCH_PEAK", -30.0)
@@ -552,7 +552,7 @@ def test_master_preview_solo_unknown_account(tmp_path):
 
 @pytest.mark.ffmpeg
 def test_master_preview_open(tmp_path, monkeypatch):
-    from scribe_rpg.master import preview as preview_module
+    from scribeio.master import preview as preview_module
 
     opened = []
     monkeypatch.setattr(preview_module, "open_folder", opened.append)
@@ -562,7 +562,7 @@ def test_master_preview_open(tmp_path, monkeypatch):
 
 @pytest.mark.ffmpeg
 def test_master_preview_open_failure_is_a_warning(tmp_path, monkeypatch):
-    from scribe_rpg.master import preview as preview_module
+    from scribeio.master import preview as preview_module
 
     def fail(path):
         raise ScribeError(f"could not open {path}: no file manager")
@@ -583,7 +583,7 @@ def test_master_without_ffmpeg_says_what_is_missing(tmp_path, monkeypatch):
 
 
 def test_master_old_ffmpeg_warns_and_other_errors_get_no_hint(tmp_path, monkeypatch):
-    from scribe_rpg.master import mix
+    from scribeio.master import mix
 
     def stop(cfg):
         raise ScribeError("master.voice (x): stop")

@@ -2,9 +2,9 @@
 
 import pytest
 
-from scribe_rpg.config import load_config
-from scribe_rpg.transcribe import pipeline
-from scribe_rpg.transcribe.glossary import Glossary, parse_glossary
+from scribeio.config import load_config
+from scribeio.transcribe import pipeline
+from scribeio.transcribe.glossary import Glossary, parse_glossary
 
 from helpers import raw_session, seg
 

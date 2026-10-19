@@ -2,8 +2,8 @@
 
 import pytest
 
-from scribe_rpg.config import load_config
-from scribe_rpg.transcribe.cleanup import apply_cleanup, is_filler, normalize
+from scribeio.config import load_config
+from scribeio.transcribe.cleanup import apply_cleanup, is_filler, normalize
 
 from helpers import seg
 

@@ -1,14 +1,14 @@
 # Input recordings
 
-scribe works from separate tracks: one voice track per person, plus the
+scribeio works from separate tracks: one voice track per person, plus the
 music bot's track if you had one. Most Craig multi-track downloads give
 exactly that, zipped or unpacked; so does any folder of FLAC files with
-one speaker per file. This page shows which downloads work, where scribe
+one speaker per file. This page shows which downloads work, where scribeio
 puts its files, and how to prepare tracks yourself.
 
-## Give scribe a Craig download
+## Give scribeio a Craig download
 
-Every scribe command takes one input: the zip Craig gives you, or a folder
+Every `scribe` command takes one input: the zip Craig gives you, or a folder
 of its FLAC tracks.
 
 ```
@@ -38,7 +38,7 @@ in `scribe.yaml` under `input: music_patterns`.
 | FLAC | yes |
 | Audacity project | yes (the project file is ignored, the FLACs are read) |
 | Adobe Audition project | yes (as Audacity) |
-| AAC, Ogg, or any other non-FLAC format | no: scribe stops with "no FLAC tracks; download the recording from Craig as FLAC or as an Audacity project" |
+| AAC, Ogg, or any other non-FLAC format | no: scribeio stops with "no FLAC tracks; download the recording from Craig as FLAC or as an Audacity project" |
 
 Zipped or unpacked makes no difference: an unpacked Audacity or Audition
 download (a folder with `info.txt` and a `…_data` folder of FLACs) is read
@@ -46,12 +46,12 @@ like the zip.
 
 ## Keep the tracks inside a session folder
 
-> **Warning:** scribe writes `scribe.yaml` and every output *next to* the
+> **Warning:** scribeio writes `scribe.yaml` and every output *next to* the
 > input, in the folder that holds it, not inside it. For a track folder
 > that is its parent folder. Running `scribe init .` from inside the track
 > folder puts `scribe.yaml` one level up, and the outputs follow it there.
 
-Give each session its own folder, put the tracks in it, and run scribe from
+Give each session its own folder, put the tracks in it, and run scribeio from
 the session folder:
 
 ```
@@ -71,19 +71,19 @@ writes the outputs to another folder.
 
 ## Edit the tracks yourself
 
-You can trim noise or remove a track before running scribe; a few rules
+You can trim noise or remove a track before running scribeio; a few rules
 keep the result right.
 
 - **Keep FLAC**, one file per speaker.
 - **Keep every track's start.** The tracks line up because they all start
   at the same moment. Cutting the beginning of one track shifts that
   speaker against everyone else; silence a stretch instead of deleting it.
-- **The file name is the speaker's account.** scribe takes the name
+- **The file name is the speaker's account.** scribeio takes the name
   without Craig's leading number (`2-player_one.flac` → `player_one`);
   `speakers:` in `scribe.yaml` gives it a name (`player.one` and
   `player_one` count as the same account).
 - **With `info.txt` in the folder, keep Craig's track names and every
-  player's track.** scribe checks that each player `info.txt` lists has a
+  player's track.** scribeio checks that each player `info.txt` lists has a
   file. To rename or drop tracks, remove `info.txt` and give `--start`.
 
 ## Not using Craig?
@@ -94,7 +94,7 @@ Any recording with one track per person works, if:
 - all files start at the same moment and cover the same session;
 - you give the start with `--start "YYYY-MM-DD HH:MM"`.
 
-Convert other audio to FLAC with ffmpeg (scribe needs it anyway):
+Convert other audio to FLAC with ffmpeg (scribeio needs it anyway):
 
 ```
 ffmpeg -i "Player One.wav" "Player One.flac"

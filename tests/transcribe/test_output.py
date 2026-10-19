@@ -4,10 +4,10 @@ from pathlib import Path
 
 import yaml
 
-from scribe_rpg.config import load_config
-from scribe_rpg.transcribe import markdown, pipeline, report
-from scribe_rpg.transcribe.glossary import Glossary
-from scribe_rpg.transcribe.session import Segment, Word
+from scribeio.config import load_config
+from scribeio.transcribe import markdown, pipeline, report
+from scribeio.transcribe.glossary import Glossary
+from scribeio.transcribe.session import Segment, Word
 
 from helpers import raw_session, seg
 

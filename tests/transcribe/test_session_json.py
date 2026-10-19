@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from scribe_rpg.errors import ScribeError
-from scribe_rpg.transcribe import session_json
+from scribeio.errors import ScribeError
+from scribeio.transcribe import session_json
 
 from helpers import raw_session, seg
 

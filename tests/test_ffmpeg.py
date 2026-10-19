@@ -7,8 +7,8 @@ import time
 
 import pytest
 
-from scribe_rpg import ffmpeg
-from scribe_rpg.errors import ScribeError
+from scribeio import ffmpeg
+from scribeio.errors import ScribeError
 
 from helpers import make_flac
 

@@ -1,7 +1,7 @@
 """Tests for building transcript lines and finding possible bleed."""
 
-from scribe_rpg.transcribe.lines import build_lines, find_bleed
-from scribe_rpg.transcribe.session import Segment, Word
+from scribeio.transcribe.lines import build_lines, find_bleed
+from scribeio.transcribe.session import Segment, Word
 
 from helpers import seg
 

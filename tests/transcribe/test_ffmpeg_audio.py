@@ -14,8 +14,8 @@ pytestmark = pytest.mark.ffmpeg
 
 def test_real_flac_through_load_audio_and_energy(tmp_path):
     pytest.importorskip("whisperx")
-    from scribe_rpg.transcribe import whisper
-    from scribe_rpg.transcribe.energy import annotate
+    from scribeio.transcribe import whisper
+    from scribeio.transcribe.energy import annotate
 
     # 1 s of 440 Hz tone, then 1 s of silence; stereo 48 kHz like Craig.
     flac = tmp_path / "1-gm_account.flac"

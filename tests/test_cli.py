@@ -3,8 +3,8 @@
 import subprocess
 from pathlib import Path
 
-import scribe_rpg
-from scribe_rpg.transcribe import session_json
+import scribeio
+from scribeio.transcribe import session_json
 
 from helpers import (
     craig_zip,
@@ -16,7 +16,7 @@ from helpers import (
 def test_version_option():
     result = invoke("--version")
     assert result.exit_code == 0
-    assert scribe_rpg.__version__ in result.output
+    assert f"scribeio, version {scribeio.__version__}" in result.output
 
 
 def test_help_texts():
@@ -67,7 +67,7 @@ def test_cli_import_does_not_load_numpy():
     # test session itself has numpy imported already)
     import sys
 
-    code = "import sys, scribe_rpg.cli; print('numpy' in sys.modules)"
+    code = "import sys, scribeio.cli; print('numpy' in sys.modules)"
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
     assert out.stdout.strip() == "False", out.stderr
 
@@ -76,13 +76,13 @@ def test_master_modules_do_not_load_whisperx_or_torch():
     # scribe master must work without the [transcribe] extra
     import sys
 
-    import scribe_rpg.master as package
+    import scribeio.master as package
 
     names = sorted(p.stem for p in Path(package.__file__).parent.glob("*.py"))
     code = (
         "import importlib, sys\n"
         f"for name in {names!r}:\n"
-        "    importlib.import_module(f'scribe_rpg.master.{name}')\n"
+        "    importlib.import_module(f'scribeio.master.{name}')\n"
         "print(sorted({'whisperx', 'torch'} & set(sys.modules)))"
     )
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
@@ -134,7 +134,7 @@ def test_check_is_listed_with_its_short_help():
 
 
 def test_check_prints_report_and_exits_with_its_code(monkeypatch):
-    from scribe_rpg import check_report
+    from scribeio import check_report
 
     monkeypatch.setattr(
         check_report, "report", lambda config, cwd, online: (["a", "b"], 1)
@@ -147,8 +147,8 @@ def test_check_prints_report_and_exits_with_its_code(monkeypatch):
 def test_check_builds_the_report_behind_a_busy_indicator(monkeypatch):
     from contextlib import contextmanager
 
-    from scribe_rpg import check_report
-    from scribe_rpg.progress import Progress
+    from scribeio import check_report
+    from scribeio.progress import Progress
 
     busy = []
 
@@ -171,7 +171,7 @@ def test_check_builds_the_report_behind_a_busy_indicator(monkeypatch):
 def test_utf8_output_for_a_file_with_a_legacy_encoding():
     import io
 
-    from scribe_rpg import cli
+    from scribeio import cli
 
     raw = io.BytesIO()
     stream = io.TextIOWrapper(raw, encoding="cp1250")
@@ -182,7 +182,7 @@ def test_utf8_output_for_a_file_with_a_legacy_encoding():
 
 
 def test_check_online_option(monkeypatch):
-    from scribe_rpg import check_report
+    from scribeio import check_report
 
     seen = []
     monkeypatch.setattr(

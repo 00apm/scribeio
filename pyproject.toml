@@ -3,7 +3,7 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "scribe-rpg"
+name = "scribeio"
 version = "0.1.0"
 description = "Transcripts of tabletop RPG sessions recorded with Craig (Discord)"
 readme = "README.md"
@@ -31,13 +31,13 @@ transcribe = ["whisperx>=3.8.6,<3.9"]
 dev = ["pytest>=8", "mypy>=1.10", "types-PyYAML", "ruff>=0.6"]
 
 [project.scripts]
-scribe = "scribe_rpg.cli:main"
+scribe = "scribeio.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-scribe_rpg = ["defaults.yaml", "templates/*"]
+scribeio = ["defaults.yaml", "templates/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -59,7 +59,7 @@ target-version = "py310"
 select = ["E", "W", "F", "I", "UP", "B"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["scribe_rpg"]
+known-first-party = ["scribeio"]
 known-local-folder = ["helpers"]
 
 [tool.mypy]

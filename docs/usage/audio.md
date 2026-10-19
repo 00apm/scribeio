@@ -21,12 +21,12 @@ If you only want the audio, `scribe init --only master` leaves the
 transcription part out: `scribe.yaml` gets only the mastering settings
 (with a comment listing the recording's accounts), and no glossary.
 
-scribe works without `scribe.yaml`, using the default settings (it says
-so), but every change described below goes into this file. Every scribe
+scribeio works without `scribe.yaml`, using the default settings (it says
+so), but every change described below goes into this file. Every scribeio
 command uses it by itself when it sits next to the input.
 
 > **Warning:** `scribe.yaml` and the outputs land next to the input, not
-> inside it. Run scribe from the session folder, with the tracks inside it
+> inside it. Run scribeio from the session folder, with the tracks inside it
 > ([keep the tracks inside a session folder](../recordings.md#keep-the-tracks-inside-a-session-folder)).
 
 ## Make the session audio
@@ -41,7 +41,7 @@ evened out, a little warmth and clarity added. The music bot is set well
 under the voices. Then everything is mixed, peaks are capped, and one file
 is written next to the input.
 
-Every run starts by checking the settings, so a typo stops scribe within a
+Every run starts by checking the settings, so a typo stops scribeio within a
 second, before any audio is processed. The message names where the problem
 is:
 
@@ -65,7 +65,7 @@ master: C:\RPG\Session 7\2026-09-22_master.mp3
 ```
 
 The name is the session date; `--name` changes it, `-o` writes to another
-folder. If the file already exists, scribe stops; `--force` overwrites it.
+folder. If the file already exists, scribeio stops; `--force` overwrites it.
 
 ## Preview your settings
 
@@ -73,7 +73,7 @@ folder. If the file already exists, scribe stops; `--force` overwrites it.
 scribe master "craig-session-7.zip" --preview
 ```
 
-Instead of the whole session, scribe picks a 90-second excerpt and writes a
+Instead of the whole session, scribeio picks a 90-second excerpt and writes a
 folder of short listening files, one after each step. When all goes well,
 the run ends like this:
 
@@ -99,13 +99,13 @@ changes in the sound, not that it is louder. The numbers follow the chains,
 so they shift when you add a step. Each `--preview` replaces the
 folder: copy a file elsewhere to compare it with the next try.
 
-### How scribe picks the excerpt
+### How scribeio picks the excerpt
 
-scribe looks for a stretch in which every player talks, so you can check
+scribeio looks for a stretch in which every player talks, so you can check
 how each person sounds. Of those stretches it takes the one where the
 quietest player talks most (more music breaks a tie).
 
-If no stretch of that length has every player, scribe makes a montage: an
+If no stretch of that length has every player, scribeio makes a montage: an
 equal piece for each player, taken from where that player talks most (90
 seconds and four players give about 22 seconds each). It says so:
 
@@ -117,14 +117,14 @@ excerpt (montage): 00:01:36-00:01:58, 00:04:07-00:04:29, 00:08:47-00:09:29
 Pieces that overlap are joined, so four players can give three parts.
 
 A player who stays silent in the excerpt is named in a warning. With
-`--solo`, only that player counts; with `--at`, scribe skips the search.
+`--solo`, only that player counts; with `--at`, scribeio skips the search.
 
 | Option | What it does |
 |---|---|
 | `--solo player.one` | one player alone, through their own chain, no mix |
 | `--before-after` | only `00-original` and the final file |
 | `--open` | opens the folder when done |
-| `--at 01:15:00` | the excerpt starts here instead of where scribe picks |
+| `--at 01:15:00` | the excerpt starts here instead of where scribeio picks |
 | `--length 60` | excerpt length in seconds (default 90) |
 | `--montage` | always makes the montage (not with `--at`) |
 
@@ -229,5 +229,5 @@ scribe master "craig-session-7.zip" --tracks
 
 Besides the session file, this writes `2026-09-22_tracks/`: one FLAC per
 track after its chain, without the mix, plus Craig's `info.txt`. The
-folder is a valid scribe input itself: it can be
+folder is a valid scribeio input itself: it can be
 [transcribed](transcribe.md) or edited further in an audio editor.

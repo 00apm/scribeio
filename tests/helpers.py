@@ -9,8 +9,8 @@ from pathlib import Path
 import numpy as np
 from click.testing import CliRunner
 
-from scribe_rpg.cli import main
-from scribe_rpg.transcribe.session import RawSession, Segment, TrackInfo, Word
+from scribeio.cli import main
+from scribeio.transcribe.session import RawSession, Segment, TrackInfo, Word
 
 START = "2026-01-01T18:00:00.000Z"
 

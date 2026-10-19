@@ -3,8 +3,8 @@
 import numpy as np
 import pytest
 
-from scribe_rpg.errors import ScribeError
-from scribe_rpg.master.excerpt import (
+from scribeio.errors import ScribeError
+from scribeio.master.excerpt import (
     Excerpt,
     activities,
     activity,

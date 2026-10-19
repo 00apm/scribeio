@@ -5,10 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from scribe_rpg import check_report, checks
-from scribe_rpg.checks import Item
-from scribe_rpg.errors import ScribeError
-from scribe_rpg.transcribe import models
+import scribeio
+from scribeio import check_report, checks
+from scribeio.checks import Item
+from scribeio.errors import ScribeError
+from scribeio.transcribe import models
 
 NONE_YET = "none yet: downloaded on your first transcription"
 
@@ -264,7 +265,7 @@ def test_encoder_uses_the_configs_bitrate(ready, tmp_path):
 def test_header_route(monkeypatch, tmp_path):
     monkeypatch.setattr(check_report.sys, "prefix", str(tmp_path))
     assert check_report.header().endswith(f"(in {tmp_path})")
-    assert check_report.header().startswith("scribe ")
+    assert check_report.header().startswith(f"scribeio {scribeio.__version__}, ")
     (tmp_path / "uv-receipt.toml").write_text("")
     assert check_report.header().endswith("(installed with uv)")
 

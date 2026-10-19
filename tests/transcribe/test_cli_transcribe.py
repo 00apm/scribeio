@@ -10,10 +10,10 @@ import numpy as np
 import pytest
 from click.testing import CliRunner
 
-from scribe_rpg import checks, ffmpeg
-from scribe_rpg.cli import main
-from scribe_rpg.errors import ScribeError
-from scribe_rpg.transcribe import models, whisper
+from scribeio import checks, ffmpeg
+from scribeio.cli import main
+from scribeio.errors import ScribeError
+from scribeio.transcribe import models, whisper
 
 from helpers import (
     craig_dir,
@@ -83,7 +83,7 @@ def fake_whisper(monkeypatch):
     monkeypatch.setattr(whisper, "versions", lambda: dict(VERSIONS))
     FakeTranscriber.music_seconds = 15.0  # shorter than the voices
     monkeypatch.setattr(
-        "scribe_rpg.ffmpeg.duration", lambda path: FakeTranscriber.music_seconds
+        "scribeio.ffmpeg.duration", lambda path: FakeTranscriber.music_seconds
     )
     FakeTranscriber.models = [
         models.Model("Whisper model", "large-v3", "huggingface", True),
@@ -159,7 +159,7 @@ def test_unreadable_music_track_only_warns(
     def fail(path):
         raise ScribeError("ffmpeg failed (duration x.flac): Invalid data")
 
-    monkeypatch.setattr("scribe_rpg.ffmpeg.duration", fail)
+    monkeypatch.setattr("scribeio.ffmpeg.duration", fail)
     zip_path = craig_zip(tmp_path / "rec")
     result = invoke("transcribe", zip_path, "-c", campaign, "--name", "s")
     assert result.exit_code == 0, result.output
@@ -509,7 +509,7 @@ def test_transcribe_uses_config_next_to_recording(tmp_path, fake_whisper):
 
 
 def test_transcribe_offers_to_create_config(tmp_path, fake_whisper, monkeypatch):
-    import scribe_rpg.cli as cli
+    import scribeio.cli as cli
 
     monkeypatch.setattr(cli, "_interactive", lambda: True)
     zip_path = craig_zip(tmp_path / "rec")
@@ -522,7 +522,7 @@ def test_transcribe_offers_to_create_config(tmp_path, fake_whisper, monkeypatch)
 
 
 def test_transcribe_declining_config_uses_defaults(tmp_path, fake_whisper, monkeypatch):
-    import scribe_rpg.cli as cli
+    import scribeio.cli as cli
 
     monkeypatch.setattr(cli, "_interactive", lambda: True)
     zip_path = craig_zip(tmp_path / "rec")
