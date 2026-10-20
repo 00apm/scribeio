@@ -237,6 +237,27 @@ def test_check_value_out_of_range(tmp_path):
     )
 
 
+def test_check_expression_typo_names_the_reason(tmp_path):
+    # ffmpeg says what is wrong a few lines before its generic last line
+    with pytest.raises(ScribeError) as e:
+        checked(
+            tmp_path,
+            "  mix:\n    chain: [boost]\n    boost: {type: volume, volume: 3db}\n",
+        )
+    assert str(e.value).startswith("master.mix.boost (volume): ")
+    assert "Invalid chars 'b'" in str(e.value)
+
+
+@pytest.mark.parametrize(
+    "entry", ["entry(5000 3)", "entry(80,0)entry(150,1)", "entry(80,0),entry(150,1)"]
+)
+def test_check_eq_typo_shows_the_form(tmp_path, entry):
+    with pytest.raises(ScribeError) as e:
+        checked(tmp_path, f'  voice:\n    eq: {{gain_entry: "{entry}"}}\n')
+    assert str(e.value).startswith("master.voice.eq (firequalizer): ")
+    assert str(e.value).endswith(" (gain_entry is entry(Hz,dB) entries joined with ;)")
+
+
 def test_check_reports_player_step(tmp_path):
     with pytest.raises(ScribeError) as e:
         checked(

@@ -206,6 +206,17 @@ def test_language_without_alignment_model(fakes):
         models.needed(cfg(language="xx"))
 
 
+@pytest.mark.parametrize("name", ["polish", "English"])
+def test_language_name_instead_of_code(fakes, name):
+    # not a hunt for wav2vec2 models: the value itself is wrong
+    with pytest.raises(ScribeError) as err:
+        models.needed(cfg(language=name))
+    assert str(err.value) == (
+        f"transcribe.whisper.language: {name!r} is not a language code; "
+        "use a code such as en, de, pl"
+    )
+
+
 def test_cached_whisper_models_without_aliases(fakes):
     fakes.whisper_cached = {"medium", "large-v3", "large"}
     assert models.cached_whisper_models() == ["large-v3", "medium"]

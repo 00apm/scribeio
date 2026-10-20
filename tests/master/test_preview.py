@@ -48,9 +48,8 @@ def test_cut_one_range_keeps_names(tmp_path):
 
 
 @pytest.mark.ffmpeg
-def test_cut_seeks_after_decoding(tmp_path, monkeypatch):
-    # ffmpeg 4.4.2 (conda-forge, Windows) crashes seeking a FLAC on input
-    # (-ss before -i); seeking on output decodes up to the start instead
+def test_cut_jumps_to_the_start(tmp_path, monkeypatch):
+    # -ss before -i: ffmpeg seeks in the file instead of decoding up to it
     src = make_flac(tmp_path / "1-a.flac", 10)
     seen = []
     real = ffmpeg.run
@@ -62,7 +61,25 @@ def test_cut_seeks_after_decoding(tmp_path, monkeypatch):
     monkeypatch.setattr(ffmpeg, "run", spy)
     cut([Track("a", "player", src)], [(2, 7)], tmp_path / "t")
     [args] = seen
-    assert args.index("-i") < args.index("-ss")
+    assert args.index("-ss") < args.index("-i")
+
+
+def samples(path):
+    """The decoded samples of `path` as raw bytes."""
+    args = ["ffmpeg", "-v", "error", "-i", str(path), "-f", "s32le", "-"]
+    return subprocess.run(args, capture_output=True, check=True).stdout
+
+
+@pytest.mark.ffmpeg
+def test_cut_lands_on_the_same_samples(tmp_path):
+    # seeking must not move the cut: the excerpt is the very same samples
+    # as decoding from the start (the voices stay aligned with the music)
+    src = make_flac(tmp_path / "1-a.flac", 30, on=[(11, 14), (20, 22)])
+    [out] = cut([Track("a", "player", src)], [(12, 21)], tmp_path / "t")
+    whole = samples(src)
+    rate, size = 48000, 4  # make_flac: 48 kHz mono; s32le
+    expected = whole[12 * rate * size : 21 * rate * size]
+    assert samples(out) == expected
 
 
 @pytest.mark.ffmpeg

@@ -231,6 +231,22 @@ def test_unzipped_craig_folder_may_miss_music(tmp_path):
         assert len(rec.tracks) == 2
 
 
+def test_unzipped_craig_folder_missing_player_warns(tmp_path):
+    # a player who never spoke may have no track: warn, not stop
+    folder = craig_unzipped(tmp_path / "session")
+    (folder / "AAAAAA_data" / "2-player_one.flac").unlink()
+    with open_recording(folder, MUSIC) as rec:
+        assert [t.account for t in rec.players] == ["gm_account"]
+        assert rec.warnings == [
+            "session: info.txt lists player_one, but no track file matches; left out"
+        ]
+
+
+def test_complete_recording_has_no_warnings(tmp_path):
+    with open_recording(craig_unzipped(tmp_path / "session"), MUSIC) as rec:
+        assert rec.warnings == []
+
+
 def test_unzipped_download_without_flac_names_the_formats(tmp_path):
     folder = tmp_path / "session"
     with zipfile.ZipFile(craig_zip(tmp_path / "zip", layout="aac")) as zf:
@@ -321,6 +337,67 @@ def test_read_info_from_zip_without_extracting(tmp_path):
 
 def test_read_info_from_folder(tmp_path):
     assert read_info(craig_dir(tmp_path / "tracks")).names[1] == "player.one"
+
+
+def test_read_info_from_zip_without_flac(tmp_path):
+    # init stops here too, before the user fills in names for nothing
+    with pytest.raises(ScribeError, match="^session.zip: no FLAC tracks; download"):
+        read_info(craig_zip(tmp_path, layout="aac"))
+
+
+def test_damaged_zip_member(tmp_path):
+    z = tmp_path / "session.zip"
+    with zipfile.ZipFile(craig_zip(tmp_path / "ok")) as src:
+        with zipfile.ZipFile(z, "w", zipfile.ZIP_DEFLATED) as zf:
+            for item in src.infolist():
+                zf.writestr(item.filename, src.read(item) * 50)
+    # zero a stretch of the first track's compressed data
+    with zipfile.ZipFile(z) as zf:
+        member = zf.getinfo("AAAAAA_data/1-gm_account.flac")
+    data = bytearray(z.read_bytes())
+    start = member.header_offset + 30 + len(member.filename) + 2
+    data[start : start + 8] = bytes(8)
+    z.write_bytes(bytes(data))
+    with pytest.raises(ScribeError) as err:
+        with open_recording(z, MUSIC):
+            pass
+    assert str(err.value) == (
+        "session.zip: AAAAAA_data/1-gm_account.flac is damaged; download the "
+        "recording again"
+    )
+
+
+@pytest.mark.parametrize("make", ["zip", "dir"])
+def test_info_txt_not_utf8(tmp_path, make):
+    # an editor that saves in the ANSI code page (e.g. a Polish guild name)
+    text = info_txt().replace("Test Guild", "Gildia Żółw").encode("cp1250")
+    if make == "zip":
+        source = tmp_path / "session.zip"
+        with zipfile.ZipFile(source, "w") as zf:
+            zf.writestr("info.txt", text)
+            zf.writestr("1-gm_account.flac", b"fLaC fake")
+    else:
+        source = craig_dir(tmp_path / "tracks")
+        (source / "info.txt").write_bytes(text)
+    with pytest.raises(ScribeError, match=r"^info.txt:3: not UTF-8; save it as UTF-8"):
+        with open_recording(source, MUSIC):
+            pass
+    with pytest.raises(ScribeError, match=r"^info.txt:3: not UTF-8"):
+        read_info(source)
+
+
+def test_rezipped_download_folder(tmp_path):
+    # Windows' "Send to > Compressed folder" keeps the top folder
+    z = tmp_path / "again.zip"
+    with zipfile.ZipFile(z, "w") as zf:
+        zf.writestr("session/info.txt", info_txt())
+        zf.writestr("session/AAAAAA_data/1-gm_account.flac", b"fLaC fake")
+    message = "^again.zip: info.txt is inside session/; unzip it and pass the folder$"
+    with pytest.raises(ScribeError, match=message):
+        with open_recording(z, MUSIC):
+            pass
+    with pytest.raises(ScribeError, match=message):
+        read_info(z)
 
 
 def test_read_info_not_a_recording(tmp_path):

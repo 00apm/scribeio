@@ -48,10 +48,26 @@ def test_init_from_recording_prefills_speakers(tmp_path):
     assert "scribe transcribe" in result.output  # next step hint
 
 
+def test_init_from_zip_without_flac(tmp_path):
+    zip_path = craig_zip(tmp_path / "rec", layout="aac")
+    result = invoke("init", zip_path)
+    assert result.exit_code == 1
+    assert "no FLAC tracks; download the recording from Craig" in result.output
+    assert not (tmp_path / "rec" / "scribe.yaml").exists()
+
+
 def test_init_refuses_to_overwrite(tmp_path):
     assert invoke("init", "-o", tmp_path).exit_code == 0
     result = invoke("init", "-o", tmp_path)
     assert result.exit_code == 1 and "--force" in result.output
+
+
+def test_init_force_says_why_the_glossary_is_kept(tmp_path):
+    assert invoke("init", "-o", tmp_path).exit_code == 0
+    result = invoke("init", "-o", tmp_path, "--force")
+    assert result.exit_code == 0, result.output
+    assert "created scribe.yaml in" in result.output
+    assert "kept existing glossary.txt (it holds your corrections" in result.output
 
 
 def test_init_elsewhere_hints_config_option(tmp_path):
@@ -180,6 +196,18 @@ def test_utf8_output_for_a_file_with_a_legacy_encoding():
     stream.write("✔ ✘ ⚠ ℹ")
     stream.flush()
     assert raw.getvalue().decode("utf-8") == "✔ ✘ ⚠ ℹ"
+
+
+def test_every_command_writes_utf8_to_a_redirected_stderr(tmp_path, monkeypatch):
+    # progress lines (✔ ⚠ →) go to stderr: a log file must show them as such
+    import sys
+
+    from scribeio import cli
+
+    seen = []
+    monkeypatch.setattr(cli, "_utf8_output", lambda s: seen.append(s is sys.stderr))
+    assert invoke("init", "-o", tmp_path).exit_code == 0
+    assert seen == [True]
 
 
 def test_check_online_option(monkeypatch):

@@ -11,6 +11,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -196,9 +197,15 @@ def mix_level(
     return parse_integrated(stderr), parse_peak(stderr)
 
 
-def partial_path(path: Path) -> Path:
+def partial_path(path: Path, folder: bool = False) -> Path:
     """Where `path` is written until it is complete: ``s1_master.partial.mp3``,
-    ``s1_tracks.partial``. A leftover of a hard stop names itself."""
+    ``s1_tracks.partial``. A leftover of a hard stop names itself.
+
+    A `folder` name is kept whole (``s1.v2_tracks.partial``); a dot in it is
+    no suffix.
+    """
+    if folder:
+        return path.with_name(f"{path.name}.partial")
     return path.with_name(f"{path.stem}.partial{path.suffix}")
 
 
@@ -223,7 +230,7 @@ def render(
     is interrupted, the partial outputs are removed and old ones are kept.
     """
     part_out = partial_path(out)
-    part_dir = partial_path(tracks_dir) if tracks_dir is not None else None
+    part_dir = partial_path(tracks_dir, folder=True) if tracks_dir else None
     try:
         # every output is cut to its input's length: filters such as the eq
         # leave a short ring-out tail after the last sample
@@ -255,11 +262,55 @@ def render(
         if part_dir is not None:
             discard(part_dir)
         raise
-    os.replace(part_out, out)
-    if tracks_dir is not None and part_dir is not None:
-        if tracks_dir.exists():
-            shutil.rmtree(tracks_dir)
-        part_dir.rename(tracks_dir)
+    _put_in_place(part_out, out, part_dir, tracks_dir)
+
+
+def _put_in_place(
+    part_out: Path, out: Path, part_dir: Path | None, tracks_dir: Path | None
+) -> None:
+    """Replace `tracks_dir` with `part_dir`, then `out` with `part_out`.
+
+    The tracks folder goes first and the master last; a failure puts the old
+    tracks folder back, so the outputs are either all new or all old (never
+    a new master next to old tracks).
+
+    Raises:
+        ScribeError: If an old output cannot be replaced (on Windows: it, or
+            a file in it, is open in another program). The partial outputs
+            are removed.
+    """
+    target = out
+    holder: Path | None = None  # holds the old tracks folder until the end
+    moved = swapped = False
+    try:
+        if tracks_dir is not None and part_dir is not None:
+            target = tracks_dir
+            if tracks_dir.exists():
+                # a fresh folder: nothing already there is ever removed
+                prefix = f"{tracks_dir.name}.old-"
+                holder = Path(tempfile.mkdtemp(prefix=prefix, dir=tracks_dir.parent))
+                os.replace(tracks_dir, holder / tracks_dir.name)
+                moved = True
+            os.replace(part_dir, tracks_dir)
+            swapped = True
+        target = out
+        os.replace(part_out, out)
+    except OSError as e:
+        if tracks_dir is not None:
+            if swapped:
+                discard(tracks_dir)
+            if moved and holder is not None:
+                os.replace(holder / tracks_dir.name, tracks_dir)
+        discard(part_out)
+        if part_dir is not None:
+            discard(part_dir)
+        raise ScribeError(
+            f"could not replace {target.name}: {e.strerror or e}. Is it open "
+            "in another program? Close it and run again (old outputs kept)."
+        ) from e
+    finally:
+        if holder is not None:
+            discard(holder)
 
 
 def discard(path: Path, wait: float = 2.0) -> None:
@@ -331,15 +382,29 @@ def _problem(step: Step) -> str | None:
     if done.returncode == 0:
         return None
     lines = error_lines(done.stderr)
-    # the most specific line first: a range, then any option line, else the last
-    for key in ("out of range", "option"):
+    # the most specific line first: a range, a bad option or expression,
+    # else the last line
+    keys = ("out of range", "option", "unable to parse", "invalid chars",
+            "error when evaluating")  # fmt: skip
+    for key in keys:
         for line in lines:
             if key in line.lower():
-                return line
-    return lines[-1] if lines else f"ffmpeg exited with {done.returncode}"
+                return line + _eq_form(step, key)
+    last = lines[-1] if lines else f"ffmpeg exited with {done.returncode}"
+    return last + _eq_form(step, "")
+
+
+def _eq_form(step: Step, key: str) -> str:
+    """The form of the eq's ``gain_entry``, after a line about an expression.
+
+    audio.md tells users to edit it; ffmpeg's lines say only that it fails.
+    """
+    if step.type != "firequalizer" or key in ("out of range", "option"):
+        return ""
+    return " (gain_entry is entry(Hz,dB) entries joined with ;)"
 
 
 def error_lines(stderr: str) -> list[str]:
     """ffmpeg's non-empty error lines without their ``[name @ 0x...]`` prefix."""
-    lines = [_PREFIX.sub("", line).strip() for line in stderr.splitlines()]
+    lines = [_PREFIX.sub("", line.strip()).strip() for line in stderr.splitlines()]
     return [line for line in lines if line]

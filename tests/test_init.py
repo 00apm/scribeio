@@ -83,12 +83,16 @@ def test_write_refuses_to_overwrite_config(tmp_path):
         init.write(tmp_path)
 
 
-def test_write_force_overwrites(tmp_path):
+def test_write_force_overwrites_only_the_config(tmp_path):
+    # the glossary holds the user's corrections: --force never replaces it
     init.write(tmp_path)
     (tmp_path / "scribe.yaml").write_text("OLD-CONTENT", encoding="utf-8")
+    (tmp_path / "glossary.txt").write_text("Mine\n", encoding="utf-8")
     written, kept = init.write(tmp_path, force=True)
     assert "OLD-CONTENT" not in (tmp_path / "scribe.yaml").read_text(encoding="utf-8")
-    assert kept == []
+    assert [p.name for p in written] == ["scribe.yaml"]
+    assert [p.name for p in kept] == ["glossary.txt"]
+    assert (tmp_path / "glossary.txt").read_text(encoding="utf-8") == "Mine\n"
 
 
 def test_write_keeps_existing_glossary(tmp_path):

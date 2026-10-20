@@ -237,6 +237,8 @@ def _check_loudness(step: dict[str, Any], path: str, fail: Fail) -> None:
         or not math.isfinite(target)
     ):
         raise fail(path, "loudness needs a target in LUFS, e.g. -19")
+    if not -70 <= target <= 0:  # e.g. -190 for -19: a nearly silent master
+        raise fail(path, f"target: expected from -70 to 0 LUFS, got {target!r}")
     if not isinstance(step.get("dual_mono", True), bool):
         raise fail(path, "dual_mono: expected true or false")
 

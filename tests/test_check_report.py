@@ -218,9 +218,10 @@ def test_no_settings(ready, tmp_path):
     lines, code = check_report.report(None, tmp_path, online=False)
     assert code == 0
     assert f"  No scribe.yaml in {tmp_path} (the folder this terminal is in)." in lines
+    # with the recording: a bare `scribe init` writes example accounts
     assert (
         "  To set up a session: go to the folder with your recording and run "
-        "scribe init" in lines
+        'scribe init "<your recording>.zip"' in lines
     )
     assert not any(re.search(r"\bhere\b", s) for s in lines)
 

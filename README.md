@@ -44,7 +44,8 @@ with one track per person
 - [ffmpeg](https://ffmpeg.org) 6.1 or newer.
 - For transcription: an NVIDIA GPU (tested on 8 GB). Without one it works,
   very slowly. Audio mastering needs no GPU.
-- Disk: up to about 12 GB (the install and the speech models).
+- Disk: up to about 12 GB with transcription (the install and the speech
+  models); audio mastering alone needs well under 1 GB.
 
 ## Install
 
@@ -61,8 +62,10 @@ In the folder with the Craig download:
 scribe init "craig-session-7.zip"
 ```
 
-Write each person's name next to their Discord account in `scribe.yaml`,
-then make the session audio and the transcript:
+This creates scribeio's settings for this recording: `scribe.yaml`, with
+the Discord accounts from the recording already listed, and `glossary.txt`
+for the names of your world. Write each person's name next to their
+account in `scribe.yaml`, then make the session audio and the transcript:
 
 ```
 scribe master "craig-session-7.zip"
@@ -75,29 +78,41 @@ The files land next to the recording, named by the session date:
 
 | File | What it is |
 |---|---|
-| `2026-09-22_master.mp3` | the session audio |
+| `2026-09-22_master.mp3` | the session audio, every voice at the same level |
 | `2026-09-22_transcript.md` | the transcript, one line per utterance |
-| `2026-09-22_transcript-report.md` | the quality report |
-| `2026-09-22_transcript.json` | everything Whisper found, for rebuilding the transcript |
+| `2026-09-22_transcript.json` | everything Whisper found, for rebuilding the transcript without the GPU |
+| `2026-09-22_transcript-report.md` | the quality report: what was removed and why |
+
+A piece of the transcript:
+
+```
+[01:12:05] Alice (GM): The stairs end at a heavy door. Cold air seeps through the cracks, and from somewhere below comes a slow
+[01:12:11] Sam: Please don't say scratching.
+[01:12:12] Alice (GM): scratching. Something is scratching at the wood.
+[01:12:16] Robin: I put my ear to the door.
+[01:12:17] Sam: We are not opening that door.
+[01:12:19] Alice (GM): The scratching stops. Then, very quietly, something knocks. Three times.
+[01:12:25] Sam: Nope. I'm going back up.
+[01:12:25] Robin: I open the door.
+```
 
 The quick start runs everything on its defaults. The guides below show
 how to make the result your own.
 
 ## Usage guide
 
-Read in this order the first time; later, go straight to the part you
-need.
+Each guide covers one part; go to the one you need.
 
-1. **[Input recordings](https://github.com/00apm/scribeio/blob/main/docs/recordings.md):**
-   which Craig downloads work, where scribeio puts its files, and how to
-   use tracks that did not come from Craig.
-2. **[Audio mastering](https://github.com/00apm/scribeio/blob/main/docs/usage/audio.md):**
-   listen to a short preview after each step, change how the voices and
-   the music sound, adjust one player only, and choose the file format.
-3. **[Transcribing a recording](https://github.com/00apm/scribeio/blob/main/docs/usage/transcribe.md):**
-   set names and the language, download the models, read the transcript
-   and the report, and teach Whisper the names of your world with a
-   glossary.
+- **[Input recordings](https://github.com/00apm/scribeio/blob/main/docs/recordings.md):**
+  which Craig downloads work, where scribeio puts its files, and how to
+  use tracks that did not come from Craig.
+- **[Audio mastering](https://github.com/00apm/scribeio/blob/main/docs/usage/audio.md):**
+  listen to a short preview after each step, change how the voices and
+  the music sound, adjust one player only, and choose the file format.
+- **[Transcribing a recording](https://github.com/00apm/scribeio/blob/main/docs/usage/transcribe.md):**
+  set names and the language, download the models, read the transcript
+  and the report, and teach Whisper the names of your world with a
+  glossary.
 
 All documentation pages, install included:
 [docs](https://github.com/00apm/scribeio/blob/main/docs/README.md).
@@ -105,18 +120,30 @@ All documentation pages, install included:
 ## Development
 
 ```
-pip install -e ".[transcribe,dev]"
+git clone https://github.com/00apm/scribeio.git
+cd scribeio
+pip install -e ".[dev]"
 pytest -m "not gpu"
 mypy
 ruff format src tests && ruff check src tests
 ```
 
-Tests use synthetic data only; no real recordings are in the repository.
+The tests need ffmpeg 6.1 or newer with the mp3 encoder on PATH, but not
+WhisperX, PyTorch or a GPU: transcription is tested with stand-ins. Tests
+use synthetic data only; no real recordings are in the repository (the
+`gpu` tests need a local recording; `-m "not gpu"` leaves them out).
+
+To run real transcriptions from the checkout, install PyTorch with CUDA
+first
+([Install into your own Python environment](https://github.com/00apm/scribeio/blob/main/docs/install-own-env.md#install)),
+then `pip install -e ".[transcribe,dev]"`.
 
 ## License
 
 scribeio is free and open source under the
 [MIT License](https://github.com/00apm/scribeio/blob/main/LICENSE): you
 may use, change and share it, also commercially, as long as the licence
-text stays with it. ffmpeg, WhisperX and the speech models are installed
-separately and come with their own licences.
+text stays with it.
+
+WhisperX, ffmpeg and the speech models are installed separately and come
+with their own licences.

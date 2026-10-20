@@ -188,8 +188,9 @@ def model_lines(
         return [
             *lines,
             f"  No {init.CONFIG_NAME} in {cwd} (the folder this terminal is in).",
+            # with the recording: a bare `scribe init` writes example accounts
             "  To set up a session: go to the folder with your recording and run "
-            "scribe init",
+            'scribe init "<your recording>.zip"',
         ]
     # absolute(), not resolve(): a mapped drive (Z:\) would become \\server\...
     path = checked.path.absolute()

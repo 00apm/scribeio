@@ -121,6 +121,8 @@ def main() -> None:
         import colorama
 
         colorama.just_fix_windows_console()
+    # progress lines (✔ ⚠ →) go to stderr; a log file gets them as UTF-8
+    _utf8_output(sys.stderr)
 
 
 @main.command()
@@ -154,6 +156,7 @@ def transcribe(
     installed); an NVIDIA GPU is strongly recommended.
     """
     # Imported here: numpy is only needed for transcription, not for merge.
+    from scribeio import ffmpeg
     from scribeio.transcribe import energy
 
     progress = Progress()
@@ -196,6 +199,9 @@ def transcribe(
         with progress.step(f"open {input_path.name}"):
             patterns = cfg.settings["input"]["music_patterns"]
             rec = stack.enter_context(craig.open_recording(input_path, patterns, start))
+            # a damaged player track stops here, not after the model load
+            for t in rec.players:
+                ffmpeg.duration(t.path)
         paths = _paths(
             out_dir or input_path.resolve().parent,
             name or rec.start.strftime("%Y-%m-%d"),
@@ -206,6 +212,9 @@ def transcribe(
                 f"output already exists: {existing[0]} (use --force to overwrite)"
             )
         _print_music(rec, "not transcribed", progress)
+        for w in rec.warnings:
+            progress.warn(w)
+        run_warnings += rec.warnings
         for t in rec.players:
             if craig.sanitize(t.account) not in cfg.speakers:
                 progress.warn(
@@ -236,7 +245,7 @@ def transcribe(
                 )
                 energy.annotate(found, audio, cleanup["energy_db"], cleanup["frame_ms"])
                 segments.extend(found)
-                bar.done(f"{t.account}: {len(found)} segments")
+                bar.done(f"{t.account}: {_count(len(found), 'segment')}")
         estimated = sum(w.estimated for s in segments for w in s.words)
         if estimated:
             progress.warn(
@@ -256,7 +265,8 @@ def transcribe(
             segments=segments,
             scribe=__version__,
             versions=used_versions,
-            warnings=[*run_warnings, *hidden],
+            # outputs may be shared: no local paths (ffmpeg's messages hold some)
+            warnings=[whisper.hide_home(w) for w in [*run_warnings, *hidden]],
         )
         with progress.step(f"write {paths['md'].name}"):
             paths["md"].parent.mkdir(parents=True, exist_ok=True)
@@ -264,9 +274,8 @@ def transcribe(
             result = _merge_and_write(raw, cfg, gloss, paths)
     _summary(progress, paths, result)
     if hidden:
-        s = "" if len(hidden) == 1 else "s"
         progress.console.print(
-            f"{len(hidden)} library warning{s} hidden, listed in the report",
+            f"{_count(len(hidden), 'library warning')} hidden, listed in the report",
             markup=False,
         )
 
@@ -553,11 +562,8 @@ def master(
             patterns = cfg.settings["input"]["music_patterns"]
             rec = stack.enter_context(craig.open_recording(input_path, patterns, start))
         _print_music(rec, "music chain", progress)
-        for t in rec.players:
-            if craig.sanitize(t.account) not in cfg.speakers:
-                progress.warn(
-                    f"unknown account {t.account}: no speakers: entry, voice chain used"
-                )
+        for w in rec.warnings:
+            progress.warn(w)
         for key in unknown_players(mcfg, [t.account for t in rec.players]):
             progress.warn(f"players: {key}: not in this recording, ignored")
         name = name or rec.start.strftime("%Y-%m-%d")
@@ -565,7 +571,12 @@ def master(
         if preview or write_tracks:
             # the folder is replaced, so it must not be (or hold) the input
             kind = "preview" if preview else "tracks"
-            _check_not_input(folder / f"{name}_{kind}", input_path)
+            target = folder / f"{name}_{kind}"
+            _check_not_input(target, input_path)
+            if write_tracks:  # a leftover partial folder is removed too
+                from scribeio.master.mix import partial_path
+
+                _check_not_input(partial_path(target, folder=True), input_path)
         if preview:
             account = _solo_account(rec, solo) if solo is not None else None
             clean = cfg.settings["transcribe"]["cleanup"]
@@ -727,15 +738,13 @@ def _write_master(
     mix_gains = measuring.measure(plans, mcfg.mix, mcfg.channels, progress, verbose)
     out.parent.mkdir(parents=True, exist_ok=True)
     if tracks_dir is not None:
-        part = mix.partial_path(tracks_dir)
+        part = mix.partial_path(tracks_dir, folder=True)
         mix.discard(part)  # a leftover of a run that was stopped hard
         part.mkdir()
         if rec.info_txt is not None:
             (part / "info.txt").write_text(rec.info_txt, encoding="utf-8")
     n = len(plans)
-    with progress.bar(
-        f"render {out.name} ({n} track{'s' if n != 1 else ''} + mix)"
-    ) as update:
+    with progress.bar(f"render {out.name} ({_count(n, 'track')} + mix)") as update:
         mix.render(plans, mcfg.mix, mix_gains, mcfg.channels, out, mcfg.format,
                    mcfg.bitrate, update, tracks_dir=tracks_dir)  # fmt: skip
     progress.console.print(f"master: {out}", markup=False, soft_wrap=True)
@@ -884,8 +893,13 @@ def _create_config(
     names = ", ".join(p.name for p in written)
     out = progress.console
     out.print(f"✔ created {names} in {folder}", markup=False, soft_wrap=True)
-    for path in kept:
-        out.print(f"kept existing {path.name}", markup=False, soft_wrap=True)
+    for path in kept:  # only the glossary is ever kept
+        out.print(
+            f"kept existing {path.name} (it holds your corrections; "
+            "delete it yourself for a fresh template)",
+            markup=False,
+            soft_wrap=True,
+        )
     target = f'"{source}"' if source is not None else "<recording>"
     # scribe finds scribe.yaml only next to the recording; elsewhere it needs -c.
     beside = source is not None and folder.resolve() == source.resolve().parent
@@ -904,7 +918,22 @@ def _create_config(
 
 
 def _glossary(cfg: Config) -> Glossary:
-    return load_glossary(cfg.glossary_path) if cfg.glossary_path else Glossary()
+    """The glossary the config or ``-g`` names, or an empty one.
+
+    Raises:
+        ScribeError: If the config's glossary is missing (``-g`` is checked by
+            click), with the full path and what to do.
+    """
+    path = cfg.glossary_path
+    if path is None:
+        return Glossary()
+    if not path.is_file():
+        # e.g. only scribe.yaml copied to the next session's folder
+        raise ScribeError(
+            f"glossary not found: {path.resolve()} (transcribe.glossary in the "
+            "config); copy it from your last session, or remove that line"
+        )
+    return load_glossary(path)
 
 
 def _paths(out_dir: Path, name: str) -> dict[str, Path]:
@@ -936,8 +965,13 @@ def _summary(
     progress: Progress, paths: dict[str, Path], result: pipeline.MergeResult
 ) -> None:
     progress.console.print(
-        f"{paths['md'].name}: {len(result.lines)} lines, "
-        f"{len(result.dropped)} segments dropped, {len(result.bleed)} possible "
-        f"bleed - see {paths['report'].name}",
+        f"{paths['md'].name}: {_count(len(result.lines), 'line')}, "
+        f"{_count(len(result.dropped), 'segment')} dropped, "
+        f"{len(result.bleed)} possible bleed - see {paths['report'].name}",
         markup=False,
     )
+
+
+def _count(n: int, noun: str) -> str:
+    """``1 segment``, ``2 segments``."""
+    return f"{n} {noun}{'' if n == 1 else 's'}"
