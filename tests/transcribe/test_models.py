@@ -26,6 +26,7 @@ class NotCached(FileNotFoundError):
 def fakes(monkeypatch, tmp_path):
     state = SimpleNamespace(
         whisper_cached={"large-v3"},
+        whisper_incomplete=set(),  # cached folder without config.json
         hf_cached={},  # repo -> folder
         hf_files={},  # repo -> {file name: size} on the Hub
         hf_error=None,  # raised by snapshot_download when downloading
@@ -44,7 +45,14 @@ def fakes(monkeypatch, tmp_path):
             raise ValueError(f"Invalid model size '{name}'")
         if local_files_only and name not in state.whisper_cached:
             raise NotCached(name)
-        return str(tmp_path / name)
+        # the snapshot folder, as a finished download leaves it; one in
+        # whisper_incomplete lacks config.json (download cut short)
+        folder = tmp_path / "snapshots" / name
+        folder.mkdir(parents=True, exist_ok=True)
+        for file in ("config.json", "model.bin", "tokenizer.json", "vocabulary.txt"):
+            if not (file == "config.json" and name in state.whisper_incomplete):
+                (folder / file).write_text("x")
+        return str(folder)
 
     def snapshot_download(repo, local_files_only=False, **kwargs):
         if local_files_only:
@@ -221,6 +229,21 @@ def test_language_name_instead_of_code(fakes, name):
 def test_cached_whisper_models_without_aliases(fakes):
     fakes.whisper_cached = {"medium", "large-v3", "large"}
     assert models.cached_whisper_models() == ["large-v3", "medium"]
+
+
+def test_incomplete_whisper_model_is_damaged(fakes):
+    # a cut-short download leaves the folder without config.json; Whisper
+    # then loads and crashes in CTranslate2 mid-transcription
+    fakes.whisper_cached = {"large-v3", "medium"}
+    fakes.whisper_incomplete = {"medium"}
+    whisper, _ = models.needed(cfg(model="medium"))
+    assert (whisper.cached, whisper.damaged) == (False, True)
+
+
+def test_incomplete_whisper_model_is_not_offered(fakes):
+    fakes.whisper_cached = {"large-v3", "medium"}
+    fakes.whisper_incomplete = {"large-v3"}
+    assert models.cached_whisper_models() == ["medium"]
 
 
 # --- download ------------------------------------------------------------------------

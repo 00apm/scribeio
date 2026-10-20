@@ -105,15 +105,28 @@ def _whisper(name: str) -> Model:
 
     # download_model with local_files_only only looks into the cache.
     try:
-        faster_whisper.download_model(name, local_files_only=True)
-        cached = True
+        folder = faster_whisper.download_model(name, local_files_only=True)
+        complete = _whisper_complete(Path(folder))
+        cached, damaged = complete, not complete
     except FileNotFoundError:  # huggingface_hub's "not in cache" error
-        cached = False
+        cached, damaged = False, False
     except ValueError as e:
         raise ScribeError(f"unknown Whisper model {name!r}: {e}") from None
     repos: dict[str, str] = getattr(faster_whisper.utils, "_MODELS", {})
     repo = name if "/" in name else repos.get(name, "")
-    return Model("Whisper model", name, "huggingface", cached, repo=repo)
+    return Model("Whisper model", name, "huggingface", cached, damaged, repo=repo)
+
+
+def _whisper_complete(folder: Path) -> bool:
+    """True if a cached Whisper model has the files CTranslate2 loads.
+
+    The cache folder exists as soon as a download starts, so a cut-short
+    download looks cached; without config.json Whisper loads and then
+    crashes mid-transcription.
+    """
+    return all((folder / f).is_file() for f in ("config.json", "model.bin")) and any(
+        folder.glob("vocabulary.*")
+    )
 
 
 def _alignment(language: str, align_model: str | None) -> Model:
@@ -183,8 +196,10 @@ def cached_whisper_models() -> list[str]:
     found: dict[str, str] = {}  # repo -> first name
     for name in faster_whisper.available_models():
         try:
-            faster_whisper.download_model(name, local_files_only=True)
+            folder = faster_whisper.download_model(name, local_files_only=True)
         except (FileNotFoundError, ValueError):
+            continue
+        if not _whisper_complete(Path(folder)):
             continue
         found.setdefault(repos.get(name, name), name)
 
