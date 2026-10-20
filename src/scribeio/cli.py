@@ -565,7 +565,12 @@ def master(
         if preview or write_tracks:
             # the folder is replaced, so it must not be (or hold) the input
             kind = "preview" if preview else "tracks"
-            _check_not_input(folder / f"{name}_{kind}", input_path)
+            target = folder / f"{name}_{kind}"
+            _check_not_input(target, input_path)
+            if write_tracks:  # a leftover partial folder is removed too
+                from scribeio.master.mix import partial_path
+
+                _check_not_input(partial_path(target, folder=True), input_path)
         if preview:
             account = _solo_account(rec, solo) if solo is not None else None
             clean = cfg.settings["transcribe"]["cleanup"]
@@ -727,7 +732,7 @@ def _write_master(
     mix_gains = measuring.measure(plans, mcfg.mix, mcfg.channels, progress, verbose)
     out.parent.mkdir(parents=True, exist_ok=True)
     if tracks_dir is not None:
-        part = mix.partial_path(tracks_dir)
+        part = mix.partial_path(tracks_dir, folder=True)
         mix.discard(part)  # a leftover of a run that was stopped hard
         part.mkdir()
         if rec.info_txt is not None:
@@ -884,8 +889,13 @@ def _create_config(
     names = ", ".join(p.name for p in written)
     out = progress.console
     out.print(f"✔ created {names} in {folder}", markup=False, soft_wrap=True)
-    for path in kept:
-        out.print(f"kept existing {path.name}", markup=False, soft_wrap=True)
+    for path in kept:  # only the glossary is ever kept
+        out.print(
+            f"kept existing {path.name} (it holds your corrections; "
+            "delete it yourself for a fresh template)",
+            markup=False,
+            soft_wrap=True,
+        )
     target = f'"{source}"' if source is not None else "<recording>"
     # scribe finds scribe.yaml only next to the recording; elsewhere it needs -c.
     beside = source is not None and folder.resolve() == source.resolve().parent

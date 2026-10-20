@@ -54,6 +54,14 @@ def test_init_refuses_to_overwrite(tmp_path):
     assert result.exit_code == 1 and "--force" in result.output
 
 
+def test_init_force_says_why_the_glossary_is_kept(tmp_path):
+    assert invoke("init", "-o", tmp_path).exit_code == 0
+    result = invoke("init", "-o", tmp_path, "--force")
+    assert result.exit_code == 0, result.output
+    assert "created scribe.yaml in" in result.output
+    assert "kept existing glossary.txt (it holds your corrections" in result.output
+
+
 def test_init_elsewhere_hints_config_option(tmp_path):
     zip_path = craig_zip(tmp_path / "rec")
     result = invoke("init", zip_path, "-o", tmp_path / "cfg")

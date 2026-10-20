@@ -6,7 +6,7 @@ import pytest
 
 from scribeio import ffmpeg
 from scribeio.master.catalogue import FILTERS, Step, quote
-from scribeio.master.mix import discard
+from scribeio.master.mix import discard, partial_path
 from scribeio.master.render import (
     chain_filter,
     measure_filter,
@@ -259,3 +259,10 @@ def test_discard_gives_up_without_raising(tmp_path, monkeypatch):
     discard(folder, wait=0.2)  # no exception: the real error is what matters
     assert folder.exists()
     discard(tmp_path / "missing")  # nothing to do
+
+
+def test_partial_path_keeps_a_folder_name_whole():
+    # files: the marker before the suffix, so players still open them
+    assert partial_path(Path("s1.v2_master.mp3")) == Path("s1.v2_master.partial.mp3")
+    folder = Path("s1.v2_tracks")
+    assert partial_path(folder, folder=True) == Path("s1.v2_tracks.partial")

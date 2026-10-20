@@ -193,9 +193,9 @@ def write(
 ) -> tuple[list[Path], list[Path]]:
     """Write ``scribe.yaml`` and ``glossary.txt`` into `folder`.
 
-    An existing glossary is kept (unless `force`), since it may hold work.
-    With ``only="master"`` there is no glossary. `only` and `full` as in
-    `render_config`.
+    An existing glossary is always kept, also with `force`: it holds the
+    user's corrections. With ``only="master"`` there is no glossary. `only`
+    and `full` as in `render_config`.
 
     Returns:
         Files written and existing files kept.
@@ -220,7 +220,7 @@ def write(
     written, kept = [config], []
     if only == "master":
         pass  # mastering reads no glossary
-    elif glossary.exists() and not force:
+    elif glossary.exists():
         kept.append(glossary)
     else:
         glossary.write_text(template(GLOSSARY_NAME), encoding="utf-8", newline="\n")

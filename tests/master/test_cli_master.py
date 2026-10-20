@@ -1,7 +1,9 @@
 """Tests for `scribe master` on short generated recordings."""
 
+import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -342,6 +344,59 @@ def test_master_force_failed_render_keeps_old_outputs(tmp_path, monkeypatch):
 
 
 @pytest.mark.ffmpeg
+@pytest.mark.parametrize("blocked", ["s1_tracks", "s1_master.mp3"])
+def test_master_force_blocked_output_keeps_old_outputs(tmp_path, monkeypatch, blocked):
+    # an old output that cannot be replaced (on Windows: open in another
+    # program) stops the run with a message; old outputs stay as they were
+    folder = tracks_dir(tmp_path)
+    assert invoke("master", folder, "--name", "s1", "--tracks").exit_code == 0
+    rec = tmp_path / "rec"
+    old = (rec / "s1_master.mp3").read_bytes()
+    old_tracks = {p.name: p.read_bytes() for p in (rec / "s1_tracks").iterdir()}
+    real = os.replace
+
+    def replace(src, dst):
+        moving_old = Path(src) == rec / blocked
+        replacing = Path(dst) == rec / blocked and ".partial" in Path(src).name
+        if moving_old or replacing:
+            raise PermissionError(13, "Permission denied")
+        real(src, dst)
+
+    monkeypatch.setattr(os, "replace", replace)
+    result = invoke("master", folder, "--name", "s1", "--tracks", "--force")
+    assert result.exit_code == 1
+    assert f"could not replace {blocked}" in result.output
+    assert "open in another program" in result.output
+    assert (rec / "s1_master.mp3").read_bytes() == old
+    tracks = {p.name: p.read_bytes() for p in (rec / "s1_tracks").iterdir()}
+    assert tracks == old_tracks
+    assert sorted(p.name for p in rec.iterdir()) == [
+        "s1_master.mp3", "s1_tracks", "tracks",
+    ]  # fmt: skip
+
+
+@pytest.mark.ffmpeg
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows locks open files")
+@pytest.mark.parametrize("held", ["s1_master.mp3", "s1_tracks/1-gm_account.flac"])
+def test_master_force_with_an_output_open(tmp_path, held):
+    folder = tracks_dir(tmp_path)
+    assert invoke("master", folder, "--name", "s1", "--tracks").exit_code == 0
+    rec = tmp_path / "rec"
+    old = (rec / "s1_master.mp3").read_bytes()
+    old_tracks = {p.name: p.read_bytes() for p in (rec / "s1_tracks").iterdir()}
+    with open(rec / held, "rb"):
+        result = invoke("master", folder, "--name", "s1", "--tracks", "--force")
+    assert result.exit_code == 1
+    assert "open in another program" in result.output
+    assert (rec / "s1_master.mp3").read_bytes() == old
+    tracks = {p.name: p.read_bytes() for p in (rec / "s1_tracks").iterdir()}
+    assert tracks == old_tracks
+    assert sorted(p.name for p in rec.iterdir()) == [
+        "s1_master.mp3", "s1_tracks", "tracks",
+    ]  # fmt: skip
+
+
+@pytest.mark.ffmpeg
 def test_master_tracks_clears_a_leftover_partial_folder(tmp_path):
     folder = tracks_dir(tmp_path)
     leftover = tmp_path / "rec" / "s1_tracks.partial"
@@ -416,6 +471,18 @@ def test_master_tracks_output_is_the_input(tmp_path, extra):
     result = invoke("master", folder, *START_ARG, "--name", "s1", *extra)
     assert result.exit_code == 1
     assert "output folder s1_tracks holds the input" in result.output
+    assert sorted(p.name for p in folder.iterdir()) == before
+
+
+@pytest.mark.ffmpeg
+def test_master_tracks_partial_folder_is_the_input(tmp_path):
+    # a hard-stopped --tracks run leaves s1_tracks.partial, a valid input;
+    # the next --tracks run clears that folder first, so it must refuse
+    folder = master_dir(tmp_path / "rec" / "s1_tracks.partial")
+    before = sorted(p.name for p in folder.iterdir())
+    result = invoke("master", folder, *START_ARG, "--name", "s1", "--tracks")
+    assert result.exit_code == 1
+    assert "output folder s1_tracks.partial holds the input" in result.output
     assert sorted(p.name for p in folder.iterdir()) == before
 
 
