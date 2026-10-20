@@ -257,6 +257,15 @@ def test_merge_without_user_section():
             "master.music.loudness: loudness needs a target in LUFS, e.g. -19",
         ),
         (
+            # a typo for -19: a nearly silent master
+            "  voice:\n    loudness: {target: -190}\n",
+            "master.voice.loudness: target: expected from -70 to 0 LUFS, got -190",
+        ),
+        (
+            "  mix:\n    chain: [up]\n    up: {type: loudness, target: 5}\n",
+            "master.mix.up: target: expected from -70 to 0 LUFS, got 5",
+        ),
+        (
             "  voice:\n    chain: [x]\n    x: {type: {a: 1}}\n",
             "master.voice.x: unknown type {'a': 1}",
         ),

@@ -198,6 +198,18 @@ def test_utf8_output_for_a_file_with_a_legacy_encoding():
     assert raw.getvalue().decode("utf-8") == "✔ ✘ ⚠ ℹ"
 
 
+def test_every_command_writes_utf8_to_a_redirected_stderr(tmp_path, monkeypatch):
+    # progress lines (✔ ⚠ →) go to stderr: a log file must show them as such
+    import sys
+
+    from scribeio import cli
+
+    seen = []
+    monkeypatch.setattr(cli, "_utf8_output", lambda s: seen.append(s is sys.stderr))
+    assert invoke("init", "-o", tmp_path).exit_code == 0
+    assert seen == [True]
+
+
 def test_check_online_option(monkeypatch):
     from scribeio import check_report
 

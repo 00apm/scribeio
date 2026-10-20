@@ -382,15 +382,29 @@ def _problem(step: Step) -> str | None:
     if done.returncode == 0:
         return None
     lines = error_lines(done.stderr)
-    # the most specific line first: a range, then any option line, else the last
-    for key in ("out of range", "option"):
+    # the most specific line first: a range, a bad option or expression,
+    # else the last line
+    keys = ("out of range", "option", "unable to parse", "invalid chars",
+            "error when evaluating")  # fmt: skip
+    for key in keys:
         for line in lines:
             if key in line.lower():
-                return line
-    return lines[-1] if lines else f"ffmpeg exited with {done.returncode}"
+                return line + _eq_form(step, key)
+    last = lines[-1] if lines else f"ffmpeg exited with {done.returncode}"
+    return last + _eq_form(step, "")
+
+
+def _eq_form(step: Step, key: str) -> str:
+    """The form of the eq's ``gain_entry``, after a line about an expression.
+
+    audio.md tells users to edit it; ffmpeg's lines say only that it fails.
+    """
+    if step.type != "firequalizer" or key in ("out of range", "option"):
+        return ""
+    return " (gain_entry is entry(Hz,dB) entries joined with ;)"
 
 
 def error_lines(stderr: str) -> list[str]:
     """ffmpeg's non-empty error lines without their ``[name @ 0x...]`` prefix."""
-    lines = [_PREFIX.sub("", line).strip() for line in stderr.splitlines()]
+    lines = [_PREFIX.sub("", line.strip()).strip() for line in stderr.splitlines()]
     return [line for line in lines if line]

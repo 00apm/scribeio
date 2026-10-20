@@ -121,6 +121,8 @@ def main() -> None:
         import colorama
 
         colorama.just_fix_windows_console()
+    # progress lines (✔ ⚠ →) go to stderr; a log file gets them as UTF-8
+    _utf8_output(sys.stderr)
 
 
 @main.command()
@@ -243,7 +245,7 @@ def transcribe(
                 )
                 energy.annotate(found, audio, cleanup["energy_db"], cleanup["frame_ms"])
                 segments.extend(found)
-                bar.done(f"{t.account}: {len(found)} segments")
+                bar.done(f"{t.account}: {_count(len(found), 'segment')}")
         estimated = sum(w.estimated for s in segments for w in s.words)
         if estimated:
             progress.warn(
@@ -272,9 +274,8 @@ def transcribe(
             result = _merge_and_write(raw, cfg, gloss, paths)
     _summary(progress, paths, result)
     if hidden:
-        s = "" if len(hidden) == 1 else "s"
         progress.console.print(
-            f"{len(hidden)} library warning{s} hidden, listed in the report",
+            f"{_count(len(hidden), 'library warning')} hidden, listed in the report",
             markup=False,
         )
 
@@ -743,9 +744,7 @@ def _write_master(
         if rec.info_txt is not None:
             (part / "info.txt").write_text(rec.info_txt, encoding="utf-8")
     n = len(plans)
-    with progress.bar(
-        f"render {out.name} ({n} track{'s' if n != 1 else ''} + mix)"
-    ) as update:
+    with progress.bar(f"render {out.name} ({_count(n, 'track')} + mix)") as update:
         mix.render(plans, mcfg.mix, mix_gains, mcfg.channels, out, mcfg.format,
                    mcfg.bitrate, update, tracks_dir=tracks_dir)  # fmt: skip
     progress.console.print(f"master: {out}", markup=False, soft_wrap=True)
@@ -966,8 +965,13 @@ def _summary(
     progress: Progress, paths: dict[str, Path], result: pipeline.MergeResult
 ) -> None:
     progress.console.print(
-        f"{paths['md'].name}: {len(result.lines)} lines, "
-        f"{len(result.dropped)} segments dropped, {len(result.bleed)} possible "
-        f"bleed - see {paths['report'].name}",
+        f"{paths['md'].name}: {_count(len(result.lines), 'line')}, "
+        f"{_count(len(result.dropped), 'segment')} dropped, "
+        f"{len(result.bleed)} possible bleed - see {paths['report'].name}",
         markup=False,
     )
+
+
+def _count(n: int, noun: str) -> str:
+    """``1 segment``, ``2 segments``."""
+    return f"{n} {noun}{'' if n == 1 else 's'}"

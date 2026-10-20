@@ -611,6 +611,14 @@ def test_any_existing_output_needs_force(tmp_path, fake_whisper, campaign):
     assert not (tmp_path / "rec" / "s_transcript.md").exists()
 
 
+def test_counts_are_singular_for_one(tmp_path, fake_whisper, campaign):
+    result = invoke("transcribe", craig_zip(tmp_path / "rec"), "-c", campaign)
+    assert result.exit_code == 0, result.output
+    assert "player_one: 1 segment (" in result.output
+    assert "gm_account: 2 segments (" in result.output
+    assert "1 segment dropped" in result.output  # the one over silence
+
+
 def test_glossary_option_replaces_the_config_glossary(tmp_path, fake_whisper, campaign):
     other = tmp_path / "other.txt"
     other.write_text("Karak Varn\n", encoding="utf-8")
