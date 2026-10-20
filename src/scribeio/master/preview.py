@@ -64,9 +64,8 @@ def _cut_one(track: craig.Track, ranges: list[tuple[int, int]], dest: Path) -> P
     out = dest / track.path.name
     if len(ranges) == 1:
         [(start, end)] = ranges
-        # -ss after -i: ffmpeg decodes up to `start` instead of jumping there
-        # (seeking a FLAC on input crashes ffmpeg 4.4.2's Windows build)
-        args = ["-i", str(track.path), "-ss", str(start), "-t", str(end - start)]
+        # -ss before -i: ffmpeg jumps to `start` instead of decoding up to it
+        args = ["-ss", str(start), "-t", str(end - start), "-i", str(track.path)]
     else:
         args = ["-i", str(track.path), "-filter_complex", _join(ranges),
                 "-map", "[out]"]  # fmt: skip
