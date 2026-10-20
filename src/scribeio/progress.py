@@ -16,13 +16,14 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 
 from rich.console import Console
-from rich.live import Live
 from rich.markup import escape
 from rich.progress import (
     BarColumn,
     DownloadColumn,
     MofNCompleteColumn,
+    ProgressColumn,
     SpinnerColumn,
+    Task,
     TaskID,
     TaskProgressColumn,
     TextColumn,
@@ -30,8 +31,26 @@ from rich.progress import (
     TransferSpeedColumn,
 )
 from rich.progress import Progress as RichProgress
-from rich.spinner import Spinner
 from rich.text import Text
+
+# Why loading WhisperX and PyTorch may be slow: Python compiles and the
+# antivirus scans thousands of files once after an install.
+FIRST_RUN = "(first run after an install: up to a few minutes)"
+
+
+class SlowHint(ProgressColumn):
+    """A dim note shown once the task has run `after` seconds."""
+
+    def __init__(self, text: str, after: float = 10.0) -> None:
+        super().__init__()
+        self.text = text
+        self.after = after
+
+    def render(self, task: Task) -> Text:
+        """The note, or nothing while the task is still young."""
+        if task.elapsed is not None and task.elapsed >= self.after:
+            return Text(self.text, style="dim")
+        return Text("")
 
 
 class Progress:
@@ -44,43 +63,63 @@ class Progress:
     def __init__(self, console: Console | None = None) -> None:
         self.console = console or Console(stderr=True)
 
+    def _live(self, *columns: ProgressColumn, transient: bool = True) -> RichProgress:
+        """A rich progress display that leaves sys.stdout and sys.stderr alone.
+
+        A library imported meanwhile may keep sys.stdout (tqdm's colorama.init
+        writes a reset code to it at exit); through rich's proxy that code
+        would be printed as "[0m".
+        """
+        return RichProgress(
+            *columns,
+            console=self.console,
+            transient=transient,
+            redirect_stdout=False,
+            redirect_stderr=False,
+        )
+
     @contextmanager
-    def step(self, label: str) -> Iterator[None]:
+    def step(self, label: str, slow: str | None = None) -> Iterator[None]:
         """Show a spinner and elapsed time while the block runs.
 
         Afterwards prints ``✔ label (1.2s)``. Nothing is printed if the
         block raises; the error is reported by the caller.
+
+        Args:
+            label: What the step does.
+            slow: Shown after the label once the step has run 10 s, e.g.
+                why it may take long (`FIRST_RUN`).
         """
         t0 = time.monotonic()
         columns = (
             SpinnerColumn(),
             TextColumn("{task.description}"),
+            SlowHint(slow or ""),
             TimeElapsedColumn(),
         )
-        with RichProgress(*columns, console=self.console, transient=True) as spinner:
+        with self._live(*columns) as spinner:
             spinner.add_task(escape(label), total=None)
             yield
         self.done(label, time.monotonic() - t0)
 
     @contextmanager
     def busy(self, label: str) -> Iterator[None]:
-        """Show a spinner while the block runs; leave nothing behind.
+        """Show a spinner and elapsed time while the block runs; leave
+        nothing behind.
 
         For work whose result is printed afterwards (``scribe check``).
         Nothing is shown when the console is not a terminal.
         """
-        spinner = Spinner("dots", text=Text(label), style="status.spinner")
-        # no stdout/stderr redirect: a library imported meanwhile may keep
-        # sys.stdout (tqdm's colorama.init writes a reset code to it at exit),
-        # and through rich's proxy that code would be printed as "[0m"
-        live = Live(
-            spinner,
-            console=self.console,
-            transient=True,
-            redirect_stdout=False,
-            redirect_stderr=False,
+        if not self.console.is_terminal:  # rich would still print a blank line
+            yield
+            return
+        columns = (
+            SpinnerColumn(),
+            TextColumn("{task.description}"),
+            TimeElapsedColumn(),
         )
-        with live:
+        with self._live(*columns) as spinner:
+            spinner.add_task(escape(label), total=None)
             yield
 
     def done(self, label: str, seconds: float) -> None:
@@ -109,7 +148,7 @@ class Progress:
             TransferSpeedColumn(),
             TimeElapsedColumn(),
         )
-        with RichProgress(*columns, console=self.console, transient=True) as bar:
+        with self._live(*columns) as bar:
             task = bar.add_task(escape(f"download {label}"), total=total)
             yield lambda n: bar.advance(task, n)
         self.done(f"download {label}", time.monotonic() - t0)
@@ -130,7 +169,7 @@ class Progress:
             TaskProgressColumn(),
             TimeElapsedColumn(),
         )
-        with RichProgress(*columns, console=self.console, transient=True) as live:
+        with self._live(*columns) as live:
             yield Rows(self, live, labels)
         self.done(label, time.monotonic() - t0)
 
@@ -145,7 +184,7 @@ class Progress:
             MofNCompleteColumn(),
             TimeElapsedColumn(),
         )
-        with RichProgress(*columns, console=self.console, transient=True) as bar:
+        with self._live(*columns) as bar:
             task = bar.add_task(escape(live), total=total)
             yield lambda: bar.advance(task)
         self.done(label, time.monotonic() - t0)
@@ -161,7 +200,7 @@ class Progress:
             TaskProgressColumn(),
             TimeElapsedColumn(),
         )
-        with RichProgress(*columns, console=self.console, transient=True) as bar:
+        with self._live(*columns) as bar:
             task = bar.add_task(escape(label), total=100)
             yield lambda percent: bar.update(task, completed=percent)
         self.done(label, time.monotonic() - t0)
@@ -175,7 +214,7 @@ class Progress:
             MofNCompleteColumn(),
             TimeElapsedColumn(),
         )
-        with RichProgress(*columns, console=self.console) as bar:
+        with self._live(*columns, transient=False) as bar:
             task = bar.add_task("transcribing", total=total)
             yield TrackBar(self, bar, task)
 

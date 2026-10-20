@@ -427,3 +427,37 @@ def test_online_no_size_lookups_when_the_source_is_unreachable(
     [needs] = [s for s in lines if s.startswith("    needs")]
     assert "(size unknown, downloaded on first transcription)" in needs
     assert lines.index("Connection") > lines.index(needs)  # layout unchanged
+
+
+def test_report_shows_each_section_as_it_is_done(ready, monkeypatch, tmp_path):
+    # a first run spends minutes loading WhisperX and PyTorch: the instant
+    # parts are shown first, the slow ones behind a named indicator
+    from contextlib import contextmanager
+
+    events = []
+    active = []
+
+    @contextmanager
+    def busy(label):
+        events.append(("busy", label))
+        active.append(label)
+        yield
+        active.pop()
+
+    def whisperx_item():
+        events.append(("whisperx", list(active)))
+        return Item("WhisperX", "ok", "3.8.6")
+
+    monkeypatch.setattr(checks, "whisperx_item", whisperx_item)
+    shown = []
+
+    def show(lines):
+        events.append(("show", lines[0]))
+        shown.extend(lines)
+
+    lines, _ = check_report.report(None, tmp_path, online=False, show=show, busy=busy)
+    assert shown == lines
+    assert events[0] == ("show", lines[0])  # header and audio before the wait
+    assert events[1] == ("busy", check_report.LOADING)
+    assert events[2] == ("whisperx", [check_report.LOADING])
+    assert any(e[0] == "show" and e[1].startswith("Transcription") for e in events)

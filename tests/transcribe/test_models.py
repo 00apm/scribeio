@@ -26,6 +26,7 @@ class NotCached(FileNotFoundError):
 def fakes(monkeypatch, tmp_path):
     state = SimpleNamespace(
         whisper_cached={"large-v3"},
+        whisper_incomplete=set(),  # cached folder without config.json
         hf_cached={},  # repo -> folder
         hf_files={},  # repo -> {file name: size} on the Hub
         hf_error=None,  # raised by snapshot_download when downloading
@@ -44,7 +45,14 @@ def fakes(monkeypatch, tmp_path):
             raise ValueError(f"Invalid model size '{name}'")
         if local_files_only and name not in state.whisper_cached:
             raise NotCached(name)
-        return str(tmp_path / name)
+        # the snapshot folder, as a finished download leaves it; one in
+        # whisper_incomplete lacks config.json (download cut short)
+        folder = tmp_path / "snapshots" / name
+        folder.mkdir(parents=True, exist_ok=True)
+        for file in ("config.json", "model.bin", "tokenizer.json", "vocabulary.txt"):
+            if not (file == "config.json" and name in state.whisper_incomplete):
+                (folder / file).write_text("x")
+        return str(folder)
 
     def snapshot_download(repo, local_files_only=False, **kwargs):
         if local_files_only:
@@ -54,6 +62,7 @@ def fakes(monkeypatch, tmp_path):
         if state.hf_error:
             raise state.hf_error
         state.downloads.append(("hf", repo, kwargs.get("allow_patterns")))
+        state.download_kwargs = kwargs
         return str(tmp_path / repo.replace("/", "--"))
 
     fw_utils = SimpleNamespace(_MODELS=repos)
@@ -222,6 +231,21 @@ def test_cached_whisper_models_without_aliases(fakes):
     assert models.cached_whisper_models() == ["large-v3", "medium"]
 
 
+def test_incomplete_whisper_model_is_damaged(fakes):
+    # a cut-short download leaves the folder without config.json; Whisper
+    # then loads and crashes in CTranslate2 mid-transcription
+    fakes.whisper_cached = {"large-v3", "medium"}
+    fakes.whisper_incomplete = {"medium"}
+    whisper, _ = models.needed(cfg(model="medium"))
+    assert (whisper.cached, whisper.damaged) == (False, True)
+
+
+def test_incomplete_whisper_model_is_not_offered(fakes):
+    fakes.whisper_cached = {"large-v3", "medium"}
+    fakes.whisper_incomplete = {"large-v3"}
+    assert models.cached_whisper_models() == ["medium"]
+
+
 # --- download ------------------------------------------------------------------------
 
 
@@ -292,6 +316,17 @@ def test_failed_whisper_download_gives_the_hint(fakes):
     assert str(e.value).endswith(models.CONNECTION_HINT)
 
 
+def test_failed_write_during_download_does_not_blame_the_connection(fakes):
+    # e.g. WinError 1314 (no symlink rights) or a full disk: the error names
+    # a file, which network errors do not
+    fakes.hf_error = OSError(22, "A required privilege is not held", "blob", None, 1314)
+    whisper, _ = models.needed(cfg(model="medium"))
+    with pytest.raises(ScribeError, match="download of medium failed") as e:
+        models.download(whisper, quiet_progress())
+    assert "internet" not in str(e.value)
+    assert str(e.value).endswith(models.DISK_HINT.format(folder=models.cache_folder()))
+
+
 def test_failed_alignment_download_is_a_scribe_error(fakes):
     # WhisperX turns any loading error into this ValueError
     fakes.align_error = ValueError('The chosen align_model "x" could not be found')
@@ -321,6 +356,15 @@ def test_download_whisper_model_through_huggingface(fakes):
     [(kind, repo, patterns)] = fakes.downloads
     assert (kind, repo) == ("hf", "Systran/faster-whisper-medium")
     assert "model.bin" in patterns
+
+
+def test_whisper_download_fetches_one_file_at_a_time(fakes):
+    # huggingface_hub's symlink test races with parallel downloads: on Windows
+    # without symlink rights a thread then tries a symlink and fails (WinError
+    # 1314), leaving the model without config.json
+    whisper, _ = models.needed(cfg(model="medium"))
+    models.download(whisper, quiet_progress())
+    assert fakes.download_kwargs["max_workers"] == 1
 
 
 def test_download_huggingface_alignment_model(fakes, monkeypatch):

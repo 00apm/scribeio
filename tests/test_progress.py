@@ -57,6 +57,30 @@ def test_busy_leaves_stdout_and_stderr_alone():
         assert (sys.stdout, sys.stderr) == before
 
 
+@pytest.mark.parametrize(
+    "open_bar",
+    [
+        lambda p: p.step("check"),
+        lambda p: p.download("model.bin", 10),
+        lambda p: p.rows(["a"], "transcribe"),
+        lambda p: p.count("tracks", "measure", 2),
+        lambda p: p.bar("render"),
+        lambda p: p.tracks(2),
+    ],
+    ids=["step", "download", "rows", "count", "bar", "tracks"],
+)
+def test_bars_leave_stdout_and_stderr_alone(open_bar):
+    # transcribe's first step imports WhisperX; tqdm's colorama.init keeps
+    # sys.stdout and writes a reset code to it at exit: "[0m" as text on
+    # both test laptops (2026-10-21) when that was rich's proxy
+    import sys
+
+    p = Progress(Console(file=io.StringIO(), force_terminal=True))
+    before = sys.stdout, sys.stderr
+    with open_bar(p):
+        assert (sys.stdout, sys.stderr) == before
+
+
 def test_busy_prints_nothing_when_not_a_terminal():
     p, buf = make()
     with p.busy("checking"):
@@ -173,3 +197,33 @@ def test_row_clock_keeps_running_across_passes():
         rows.update("a", "l2 2/2", 0.0)
         [task] = rows._live.tasks
         assert task.finished_time is None
+
+
+def test_busy_shows_a_running_timer():
+    buf = io.StringIO()
+    p = Progress(Console(file=buf, width=120, force_terminal=True))
+    with p.busy("loading"):
+        pass
+    assert "0:00:00" in buf.getvalue()
+
+
+@pytest.mark.parametrize(
+    ("elapsed", "shown"), [(None, False), (3.0, False), (10.0, True)]
+)
+def test_slow_hint_appears_after_ten_seconds(elapsed, shown):
+    from types import SimpleNamespace
+
+    from scribeio.progress import SlowHint
+
+    text = SlowHint("(first run)", after=10.0).render(SimpleNamespace(elapsed=elapsed))
+    assert (str(text) == "(first run)") is shown
+
+
+def test_step_with_a_slow_hint_shows_it_once_slow(monkeypatch):
+    buf = io.StringIO()
+    p = Progress(Console(file=buf, width=120, force_terminal=True))
+    with p.step("check WhisperX", slow="(first run)"):
+        pass
+    # fast: the hint never shows, the finished line is as before
+    assert "(first run)" not in buf.getvalue()
+    assert "✔" in buf.getvalue()

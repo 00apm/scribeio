@@ -43,6 +43,8 @@ ALIGN_FILES = [
     "tokenizer_config.json",
     "added_tokens.json",
 ]
+# Ends a download error that came from the disk (full, no write access).
+DISK_HINT = "check free disk space and that you can write to {folder}"
 TORCHAUDIO_URL = "https://download.pytorch.org/torchaudio/models/"
 # Ends every download error: most are a blocked or dropped connection.
 CONNECTION_HINT = (
@@ -105,15 +107,28 @@ def _whisper(name: str) -> Model:
 
     # download_model with local_files_only only looks into the cache.
     try:
-        faster_whisper.download_model(name, local_files_only=True)
-        cached = True
+        folder = faster_whisper.download_model(name, local_files_only=True)
+        complete = _whisper_complete(Path(folder))
+        cached, damaged = complete, not complete
     except FileNotFoundError:  # huggingface_hub's "not in cache" error
-        cached = False
+        cached, damaged = False, False
     except ValueError as e:
         raise ScribeError(f"unknown Whisper model {name!r}: {e}") from None
     repos: dict[str, str] = getattr(faster_whisper.utils, "_MODELS", {})
     repo = name if "/" in name else repos.get(name, "")
-    return Model("Whisper model", name, "huggingface", cached, repo=repo)
+    return Model("Whisper model", name, "huggingface", cached, damaged, repo=repo)
+
+
+def _whisper_complete(folder: Path) -> bool:
+    """True if a cached Whisper model has the files CTranslate2 loads.
+
+    The cache folder exists as soon as a download starts, so a cut-short
+    download looks cached; without config.json Whisper loads and then
+    crashes mid-transcription.
+    """
+    return all((folder / f).is_file() for f in ("config.json", "model.bin")) and any(
+        folder.glob("vocabulary.*")
+    )
 
 
 def _alignment(language: str, align_model: str | None) -> Model:
@@ -183,8 +198,10 @@ def cached_whisper_models() -> list[str]:
     found: dict[str, str] = {}  # repo -> first name
     for name in faster_whisper.available_models():
         try:
-            faster_whisper.download_model(name, local_files_only=True)
+            folder = faster_whisper.download_model(name, local_files_only=True)
         except (FileNotFoundError, ValueError):
+            continue
+        if not _whisper_complete(Path(folder)):
             continue
         found.setdefault(repos.get(name, name), name)
 
@@ -304,9 +321,11 @@ def download(model: Model, progress: Progress) -> None:
     except (OSError, ValueError) as e:
         # WhisperX reports any failure to load an alignment model, a blocked
         # download included, as a ValueError ("could not be found").
-        raise ScribeError(
-            f"download of {model.name} failed: {e}; {CONNECTION_HINT}"
-        ) from None
+        # A disk or permission error names the file it failed on; network
+        # errors do not.
+        local = isinstance(e, OSError) and e.filename is not None
+        hint = DISK_HINT.format(folder=cache_folder()) if local else CONNECTION_HINT
+        raise ScribeError(f"download of {model.name} failed: {e}; {hint}") from None
 
 
 def _download_whisper(model: Model) -> None:
@@ -314,7 +333,13 @@ def _download_whisper(model: Model) -> None:
         import huggingface_hub
 
         # Unlike faster-whisper's own download, this shows a progress bar.
-        huggingface_hub.snapshot_download(model.repo, allow_patterns=WHISPER_FILES)
+        # One file at a time: huggingface_hub marks a folder "symlinks work"
+        # before testing it, so with parallel downloads another thread can
+        # try a symlink and fail on Windows without symlink rights (WinError
+        # 1314), leaving the model without config.json.
+        huggingface_hub.snapshot_download(
+            model.repo, allow_patterns=WHISPER_FILES, max_workers=1
+        )
         return
     import faster_whisper
 
