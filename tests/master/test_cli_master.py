@@ -708,3 +708,5 @@ def test_master_names_music_tracks(tmp_path):
     result = invoke("master", folder, *START_ARG)
     assert result.exit_code == 0, result.output
     assert "music (music chain): Kenku_FM_1234\n" in result.output
+    # mastering does not use speakers: no warning about them
+    assert "unknown account" not in result.output

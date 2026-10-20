@@ -5,6 +5,7 @@ import sys
 import textwrap
 import warnings
 from datetime import datetime, timezone
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -158,13 +159,22 @@ def test_unreadable_music_track_only_warns(
     tmp_path, fake_whisper, campaign, monkeypatch
 ):
     def fail(path):
-        raise ScribeError("ffmpeg failed (duration x.flac): Invalid data")
+        if "Kenku" not in path.name:
+            return 20.0
+        # ffmpeg's last lines may hold the full path: no home in the outputs
+        bad = Path.home() / "rec" / path.name
+        raise ScribeError(f"ffmpeg failed (duration x.flac): Error opening {bad}")
 
     monkeypatch.setattr("scribeio.ffmpeg.duration", fail)
     zip_path = craig_zip(tmp_path / "rec")
     result = invoke("transcribe", zip_path, "-c", campaign, "--name", "s")
     assert result.exit_code == 0, result.output
     assert "Kenku_FM_1234: length unknown, not in the duration" in result.output
+    rec = tmp_path / "rec"
+    for name in ["s_transcript.json", "s_transcript-report.md"]:
+        text = (rec / name).read_text(encoding="utf-8")
+        assert "Error opening ~" in text.replace("\\\\", "\\")
+        assert str(Path.home()) not in text.replace("\\\\", "\\")
     data = json.loads((tmp_path / "rec" / "s_transcript.json").read_text("utf-8"))
     assert data["session"]["duration"] == 20.0
 
@@ -298,6 +308,22 @@ def test_unknown_account_warns(tmp_path, fake_whisper):
     assert "unknown account gm_account" in result.output
     md = (tmp_path / "rec" / f"{LOCAL_DATE}_transcript.md").read_text(encoding="utf-8")
     assert "gm_account: Witajcie" in md
+
+
+def test_unreadable_player_track_stops_before_the_model_load(
+    tmp_path, fake_whisper, campaign, monkeypatch
+):
+    def duration(path):
+        if "player_one" in path.name:
+            raise ScribeError(f"ffmpeg failed (duration {path.name}): Invalid data")
+        return 20.0
+
+    monkeypatch.setattr("scribeio.ffmpeg.duration", duration)
+    result = invoke("transcribe", craig_zip(tmp_path / "rec"), "-c", campaign)
+    assert result.exit_code == 1
+    assert "ffmpeg failed (duration 2-player_one.flac)" in result.output
+    assert "load Whisper" not in result.output
+    assert fake_whisper.calls == []
 
 
 def test_unzipped_download_missing_player_warns(tmp_path, fake_whisper, campaign):
@@ -593,6 +619,19 @@ def test_glossary_option_replaces_the_config_glossary(tmp_path, fake_whisper, ca
     assert result.exit_code == 0, result.output
     data = json.loads((tmp_path / "rec" / "s_transcript.json").read_text("utf-8"))
     assert data["whisper"]["initial_prompt"] == "Karak Varn"
+
+
+def test_missing_glossary_names_the_key_and_what_to_do(
+    tmp_path, fake_whisper, campaign
+):
+    # e.g. only scribe.yaml copied to the next session's folder
+    (campaign.parent / "glossary.txt").unlink()
+    result = invoke("transcribe", craig_zip(tmp_path / "rec"), "-c", campaign)
+    assert result.exit_code == 1
+    path = campaign.parent / "glossary.txt"
+    assert f"glossary not found: {path}" in result.output.replace("\n", "")
+    assert "(transcribe.glossary in the config)" in result.output
+    assert "copy it from your last session, or remove that line" in result.output
 
 
 def test_unexpected_error_keeps_its_traceback(tmp_path, fake_whisper, campaign):

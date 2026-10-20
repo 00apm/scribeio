@@ -13,6 +13,7 @@ inside functions.
 from __future__ import annotations
 
 import os
+import re
 import zipfile
 from dataclasses import dataclass
 from fnmatch import fnmatch
@@ -123,6 +124,12 @@ def _alignment(language: str, align_model: str | None) -> Model:
         or alignment.DEFAULT_ALIGN_MODELS_TORCH.get(language)
         or alignment.DEFAULT_ALIGN_MODELS_HF.get(language)
     )
+    if not name and not re.fullmatch(r"[a-z]{2,3}", language):
+        # e.g. "polish": the value is wrong, not the alignment model
+        raise ScribeError(
+            f"transcribe.whisper.language: {language!r} is not a language code; "
+            "use a code such as en, de, pl"
+        )
     if not name:
         raise ScribeError(
             f"no word alignment model for language {language!r}; set "

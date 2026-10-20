@@ -253,6 +253,15 @@ KNOWN_NOISE = (
 HF_DOWNLOAD_LOGGER = "huggingface_hub.file_download"
 
 
+def hide_home(text: str) -> str:
+    """`text` with the home folder shown as ``~``.
+
+    For every warning written to the outputs: they hold no local paths, as
+    they may be shared.
+    """
+    return text.replace(str(Path.home()), "~")
+
+
 @contextmanager
 def hidden_warnings() -> Iterator[list[str]]:
     """Keep the known noisy library warnings off the screen.
@@ -267,9 +276,7 @@ def hidden_warnings() -> Iterator[list[str]]:
     def caught(text: str) -> bool:
         if not any(noise in text for noise in KNOWN_NOISE):
             return False
-        # Outputs hold no local paths (they may be shared): home becomes ~.
-        text = text.replace(str(Path.home()), "~")
-        hidden.append("library warning: " + " ".join(text.split()))
+        hidden.append("library warning: " + " ".join(hide_home(text).split()))
         return True
 
     show = warnings.showwarning

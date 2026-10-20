@@ -154,6 +154,7 @@ def transcribe(
     installed); an NVIDIA GPU is strongly recommended.
     """
     # Imported here: numpy is only needed for transcription, not for merge.
+    from scribeio import ffmpeg
     from scribeio.transcribe import energy
 
     progress = Progress()
@@ -196,6 +197,9 @@ def transcribe(
         with progress.step(f"open {input_path.name}"):
             patterns = cfg.settings["input"]["music_patterns"]
             rec = stack.enter_context(craig.open_recording(input_path, patterns, start))
+            # a damaged player track stops here, not after the model load
+            for t in rec.players:
+                ffmpeg.duration(t.path)
         paths = _paths(
             out_dir or input_path.resolve().parent,
             name or rec.start.strftime("%Y-%m-%d"),
@@ -259,7 +263,8 @@ def transcribe(
             segments=segments,
             scribe=__version__,
             versions=used_versions,
-            warnings=[*run_warnings, *hidden],
+            # outputs may be shared: no local paths (ffmpeg's messages hold some)
+            warnings=[whisper.hide_home(w) for w in [*run_warnings, *hidden]],
         )
         with progress.step(f"write {paths['md'].name}"):
             paths["md"].parent.mkdir(parents=True, exist_ok=True)
@@ -558,11 +563,6 @@ def master(
         _print_music(rec, "music chain", progress)
         for w in rec.warnings:
             progress.warn(w)
-        for t in rec.players:
-            if craig.sanitize(t.account) not in cfg.speakers:
-                progress.warn(
-                    f"unknown account {t.account}: no speakers: entry, voice chain used"
-                )
         for key in unknown_players(mcfg, [t.account for t in rec.players]):
             progress.warn(f"players: {key}: not in this recording, ignored")
         name = name or rec.start.strftime("%Y-%m-%d")
@@ -919,7 +919,22 @@ def _create_config(
 
 
 def _glossary(cfg: Config) -> Glossary:
-    return load_glossary(cfg.glossary_path) if cfg.glossary_path else Glossary()
+    """The glossary the config or ``-g`` names, or an empty one.
+
+    Raises:
+        ScribeError: If the config's glossary is missing (``-g`` is checked by
+            click), with the full path and what to do.
+    """
+    path = cfg.glossary_path
+    if path is None:
+        return Glossary()
+    if not path.is_file():
+        # e.g. only scribe.yaml copied to the next session's folder
+        raise ScribeError(
+            f"glossary not found: {path.resolve()} (transcribe.glossary in the "
+            "config); copy it from your last session, or remove that line"
+        )
+    return load_glossary(path)
 
 
 def _paths(out_dir: Path, name: str) -> dict[str, Path]:
