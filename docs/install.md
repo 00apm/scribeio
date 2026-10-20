@@ -5,9 +5,11 @@ and scribeio itself.
 
 > **What you need**
 >
-> - **For transcription, an NVIDIA GPU.** Run `nvidia-smi`: a table
->   naming your GPU means the driver is ready. No NVIDIA GPU, or a Mac:
->   see [GPU](#gpu). Audio mastering needs no GPU.
+> - **For transcription, an NVIDIA GPU:** GTX 16xx, RTX 20xx or newer,
+>   with at least 6 GB of memory; 8 GB recommended. Run `nvidia-smi`: a
+>   table naming your GPU means the driver is ready. An older or smaller
+>   GPU, no NVIDIA GPU, or a Mac: see [GPU](#gpu). Audio mastering needs
+>   no GPU.
 > - **Disk:** up to about 12 GB with transcription (the install and the
 >   speech models); audio mastering alone needs well under 1 GB.
 
@@ -184,6 +186,10 @@ then run step 3 again with `--force`.
 "not seen": PyTorch cannot use the GPU. Check that `nvidia-smi` shows it;
 update the NVIDIA driver if it does not.
 
+"the installed PyTorch does not support this GPU": the GPU is older than
+the installed PyTorch supports. With the install above, that is the GTX 900
+and 1000 series and older. Transcribe on the CPU instead (below).
+
 No NVIDIA GPU, or a Mac: transcription still runs on the CPU, very slowly
 (hours for a session). Set it in `scribe.yaml`:
 
@@ -195,9 +201,11 @@ transcribe:
 
 Audio mastering needs no GPU.
 
-GPU memory: scribeio is tested on an 8 GB NVIDIA GPU. With less, set
-`compute_type: int8_float16` or `model: large-v3-turbo` under
-`transcribe: whisper:`.
+GPU memory: the default settings need up to about 6 GB, so 8 GB leaves
+room for Windows and open apps. With 6 GB, set `model: large-v3-turbo`
+(faster, about the same quality) or `compute_type: int8_float16` under
+`transcribe: whisper:`; either needs about 4.5 GB. Less than 6 GB:
+transcribe on the CPU (`device: cpu`, above).
 
 ### Connection problems
 

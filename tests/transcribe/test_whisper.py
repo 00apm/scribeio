@@ -266,6 +266,7 @@ def fakes(monkeypatch):
     )
     state.freed = 0
     state.free_bytes = 6 * 1024**3
+    state.capability = (8, 9)
 
     def empty_cache():
         state.freed += 1
@@ -284,6 +285,8 @@ def fakes(monkeypatch):
             ),
             empty_cache=empty_cache,
             mem_get_info=lambda: (state.free_bytes, 8 * 1024**3),
+            get_device_capability=lambda index=None: state.capability,
+            get_arch_list=lambda: ["sm_70", "sm_75", "sm_80", "sm_86", "sm_120"],
         ),
         version=SimpleNamespace(cuda=state.cuda_build),
     )
@@ -335,6 +338,15 @@ def test_preflight_cpu_build_of_torch(fakes):
 def test_preflight_no_cuda(fakes):
     fakes.cuda = False
     with pytest.raises(InstallError, match="GPU: not seen"):
+        whisper.preflight(wcfg())
+
+
+def test_preflight_gpu_too_old(fakes):
+    # stops before any model loads, not with a CUDA error mid-run
+    fakes.capability = (5, 0)
+    with pytest.raises(
+        InstallError, match="the installed PyTorch does not support this GPU"
+    ):
         whisper.preflight(wcfg())
 
 

@@ -11,6 +11,7 @@ import os
 import re
 import shutil
 import sys
+import warnings
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -251,7 +252,7 @@ def torch_item(device: str) -> Item:
 
 
 def gpu_item(device: str) -> Item:
-    """The GPU PyTorch sees, with its memory, or why it sees none.
+    """The GPU PyTorch sees, with its memory, or why it cannot use it.
 
     Args:
         device: ``transcribe.whisper.device``; with ``cpu`` the item is info
@@ -263,10 +264,24 @@ def gpu_item(device: str) -> Item:
 
     try:
         if torch.cuda.is_available():
-            name = torch.cuda.get_device_name(0)
-            memory = torch.cuda.get_device_properties(0).total_memory / 1024**3
+            # torch warns at length on its first CUDA call for a card its
+            # build cannot run; the item below says it in one line
+            with warnings.catch_warnings():
+                for text in _OLD_GPU_WARNINGS:
+                    warnings.filterwarnings("ignore", message=text)
+                name = torch.cuda.get_device_name(0)
+                memory = torch.cuda.get_device_properties(0).total_memory / 1024**3
             # as the message, so the line reads "GPU: <name>, 8 GB"
-            return Item("GPU", "ok", message=f"{name}, {memory:.0f} GB")
+            found = f"{name}, {memory:.0f} GB"
+            if _too_old(torch):
+                return Item(
+                    "GPU", "missing",
+                    message=f"{found}: the installed PyTorch does not support "
+                    "this GPU; set device: cpu to transcribe on the CPU (very "
+                    "slow, hours per recording)",
+                    guide="gpu",
+                )  # fmt: skip
+            return Item("GPU", "ok", message=found)
         reason = _no_gpu_reason(torch)
     except Exception as e:
         reason = _first_line(e)
@@ -275,6 +290,30 @@ def gpu_item(device: str) -> Item:
         message=f"not seen ({reason}); transcription would take hours on the CPU",
         guide="gpu",
     )  # fmt: skip
+
+
+# Starts of the warnings torch gives for a card older than its build supports
+# (matched from the message's start, after its leading whitespace).
+_OLD_GPU_WARNINGS = (
+    r"\s*Found GPU\d+ .* which is of cuda capability",
+    r"\s*Please install PyTorch with a following CUDA",
+    r"\s*.* with CUDA capability sm_\d+ is not compatible",
+)
+
+
+def _too_old(torch: Any) -> bool:
+    """The GPU is older than every architecture the PyTorch build has code for.
+
+    Such a card is seen, but its first CUDA work fails: PyTorch 2.8's CUDA
+    12.9 build starts at compute capability 7.0, so a GTX 900/1000 card
+    cannot run it. A card newer than the list still runs (same-major code,
+    PTX), so only "older" counts.
+    """
+    archs = [int(a[3:]) for a in torch.cuda.get_arch_list() if a.startswith("sm_")]
+    if not archs:
+        return False
+    major, minor = torch.cuda.get_device_capability(0)
+    return bool(major * 10 + minor < min(archs))
 
 
 def _no_gpu_reason(torch: Any) -> str:
