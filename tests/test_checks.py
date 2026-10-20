@@ -1,8 +1,11 @@
 """Installation checks shared by `scribe check`, `transcribe` and `master`."""
 
 import http.client
+import importlib.abc
+import importlib.util
 import subprocess
 import sys
+import warnings
 from email.message import Message
 from types import ModuleType, SimpleNamespace
 from urllib.error import HTTPError, URLError
@@ -268,6 +271,52 @@ def test_whisperx_with_broken_torch(fake_whisperx, monkeypatch):  # Review Focus
     assert item.message.startswith(
         "installed but does not load (OSError: [WinError 126]"
     )
+
+
+class WarnsOnImport(importlib.abc.MetaPathFinder, importlib.abc.Loader):
+    """Imports `whisperx.asr` as pyannote does with ffmpeg 8+: with a warning."""
+
+    def __init__(self, text):
+        self.text = text
+
+    def find_spec(self, name, path=None, target=None):
+        if name == "whisperx.asr":
+            return importlib.util.spec_from_loader(name, self)
+        return None
+
+    def create_module(self, spec):
+        return None
+
+    def exec_module(self, module):
+        warnings.warn(self.text, UserWarning, stacklevel=1)
+
+
+def importing_asr_warns(monkeypatch, text):
+    package = ModuleType("whisperx")
+    package.__path__ = []  # a package, so the finders are asked for its submodules
+    monkeypatch.setitem(sys.modules, "whisperx", package)
+    monkeypatch.delitem(sys.modules, "whisperx.asr")
+    monkeypatch.setattr(sys, "meta_path", [WarnsOnImport(text), *sys.meta_path])
+
+
+def test_whisperx_hides_the_torchcodec_warning(fake_whisperx, monkeypatch, capsys):
+    # with ffmpeg 8+ pyannote warns on import; the ffmpeg item's info explains it
+    importing_asr_warns(
+        monkeypatch,
+        "\ntorchcodec is not installed correctly so built-in audio decoding will "
+        "fail. Solutions are:\n* fix torchcodec installation.",
+    )
+    with warnings.catch_warnings(record=True) as shown:
+        warnings.simplefilter("always")
+        assert checks.whisperx_item() == Item("WhisperX", "ok", "3.8.6")
+    assert shown == []
+    assert "torchcodec" not in capsys.readouterr().err
+
+
+def test_whisperx_lets_other_warnings_through(fake_whisperx, monkeypatch):
+    importing_asr_warns(monkeypatch, "something new")
+    with pytest.warns(UserWarning, match="something new"):
+        checks.whisperx_item()
 
 
 @pytest.mark.parametrize("found", ["3.4.2", "3.9.0", "4.0.0"])

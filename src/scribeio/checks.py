@@ -187,13 +187,20 @@ def whisperx_item() -> Item:
     An install that fails to import for another reason than WhisperX itself
     missing (a DLL that does not load, a missing dependency) is broken.
     """
-    try:
-        import whisperx  # noqa: F401
+    # imported here: whisper imports this module
+    from scribeio.transcribe.whisper import hidden_warnings
 
-        # WhisperX imports lazily: these load torch, torchaudio, transformers
-        # and faster-whisper, where a broken install shows (a few seconds)
-        import whisperx.alignment
-        import whisperx.asr  # noqa: F401
+    try:
+        # the known noisy warnings (torchcodec with ffmpeg 8+) stay off the
+        # screen, as in transcribe; the ffmpeg item's info explains that one
+        with hidden_warnings():
+            import whisperx  # noqa: F401
+
+            # WhisperX imports lazily: these load torch, torchaudio,
+            # transformers and faster-whisper, where a broken install shows
+            # (a few seconds)
+            import whisperx.alignment
+            import whisperx.asr  # noqa: F401
     except ModuleNotFoundError as e:
         if e.name == "whisperx":
             return Item(
