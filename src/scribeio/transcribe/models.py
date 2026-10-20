@@ -43,6 +43,8 @@ ALIGN_FILES = [
     "tokenizer_config.json",
     "added_tokens.json",
 ]
+# Ends a download error that came from the disk (full, no write access).
+DISK_HINT = "check free disk space and that you can write to {folder}"
 TORCHAUDIO_URL = "https://download.pytorch.org/torchaudio/models/"
 # Ends every download error: most are a blocked or dropped connection.
 CONNECTION_HINT = (
@@ -319,9 +321,11 @@ def download(model: Model, progress: Progress) -> None:
     except (OSError, ValueError) as e:
         # WhisperX reports any failure to load an alignment model, a blocked
         # download included, as a ValueError ("could not be found").
-        raise ScribeError(
-            f"download of {model.name} failed: {e}; {CONNECTION_HINT}"
-        ) from None
+        # A disk or permission error names the file it failed on; network
+        # errors do not.
+        local = isinstance(e, OSError) and e.filename is not None
+        hint = DISK_HINT.format(folder=cache_folder()) if local else CONNECTION_HINT
+        raise ScribeError(f"download of {model.name} failed: {e}; {hint}") from None
 
 
 def _download_whisper(model: Model) -> None:

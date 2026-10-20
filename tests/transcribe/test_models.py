@@ -316,6 +316,17 @@ def test_failed_whisper_download_gives_the_hint(fakes):
     assert str(e.value).endswith(models.CONNECTION_HINT)
 
 
+def test_failed_write_during_download_does_not_blame_the_connection(fakes):
+    # e.g. WinError 1314 (no symlink rights) or a full disk: the error names
+    # a file, which network errors do not
+    fakes.hf_error = OSError(22, "A required privilege is not held", "blob", None, 1314)
+    whisper, _ = models.needed(cfg(model="medium"))
+    with pytest.raises(ScribeError, match="download of medium failed") as e:
+        models.download(whisper, quiet_progress())
+    assert "internet" not in str(e.value)
+    assert str(e.value).endswith(models.DISK_HINT.format(folder=models.cache_folder()))
+
+
 def test_failed_alignment_download_is_a_scribe_error(fakes):
     # WhisperX turns any loading error into this ValueError
     fakes.align_error = ValueError('The chosen align_model "x" could not be found')
