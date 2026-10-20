@@ -20,7 +20,7 @@ import click
 from scribeio import __version__, checks, craig, init
 from scribeio.config import Config, load_config
 from scribeio.errors import InstallError, ScribeError
-from scribeio.progress import Progress
+from scribeio.progress import FIRST_RUN, Progress
 from scribeio.transcribe import (
     markdown,
     models,
@@ -187,7 +187,7 @@ def transcribe(
         stack.push(lambda kind, *_: _show_hidden_on_error(kind, hidden, progress))
 
         # Cheap checks first: fail in seconds, before unzipping or loading models.
-        with progress.step("check ffmpeg, WhisperX, CUDA"):
+        with progress.step("check ffmpeg, WhisperX, CUDA", slow=FIRST_RUN):
             run_warnings = whisper.preflight(wcfg)
             used_versions = whisper.versions()
         for w in run_warnings:
@@ -838,12 +838,17 @@ def check(ctx: click.Context, config_path: Path | None, online: bool) -> None:
     """
     from scribeio import check_report
 
-    # loading WhisperX takes a few seconds: show that scribe is working
-    with Progress().busy("checking what scribe needs"):
-        lines, code = check_report.report(config_path, Path.cwd(), online=online)
     _utf8_output(sys.stdout)
-    for text in lines:
-        click.echo(text)
+
+    def show(lines: list[str]) -> None:
+        for text in lines:
+            click.echo(text)
+
+    # each section shows when done; the slow ones (loading WhisperX) behind
+    # a spinner that says what is going on
+    _lines, code = check_report.report(
+        config_path, Path.cwd(), online=online, show=show, busy=Progress().busy
+    )
     ctx.exit(code)
 
 

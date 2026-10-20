@@ -16,7 +16,6 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 
 from rich.console import Console
-from rich.live import Live
 from rich.markup import escape
 from rich.progress import (
     BarColumn,
@@ -24,6 +23,7 @@ from rich.progress import (
     MofNCompleteColumn,
     ProgressColumn,
     SpinnerColumn,
+    Task,
     TaskID,
     TaskProgressColumn,
     TextColumn,
@@ -31,8 +31,26 @@ from rich.progress import (
     TransferSpeedColumn,
 )
 from rich.progress import Progress as RichProgress
-from rich.spinner import Spinner
 from rich.text import Text
+
+# Why loading WhisperX and PyTorch may be slow: Python compiles and the
+# antivirus scans thousands of files once after an install.
+FIRST_RUN = "(first run after an install: up to a few minutes)"
+
+
+class SlowHint(ProgressColumn):
+    """A dim note shown once the task has run `after` seconds."""
+
+    def __init__(self, text: str, after: float = 10.0) -> None:
+        super().__init__()
+        self.text = text
+        self.after = after
+
+    def render(self, task: Task) -> Text:
+        """The note, or nothing while the task is still young."""
+        if task.elapsed is not None and task.elapsed >= self.after:
+            return Text(self.text, style="dim")
+        return Text("")
 
 
 class Progress:
@@ -61,16 +79,22 @@ class Progress:
         )
 
     @contextmanager
-    def step(self, label: str) -> Iterator[None]:
+    def step(self, label: str, slow: str | None = None) -> Iterator[None]:
         """Show a spinner and elapsed time while the block runs.
 
         Afterwards prints ``✔ label (1.2s)``. Nothing is printed if the
         block raises; the error is reported by the caller.
+
+        Args:
+            label: What the step does.
+            slow: Shown after the label once the step has run 10 s, e.g.
+                why it may take long (`FIRST_RUN`).
         """
         t0 = time.monotonic()
         columns = (
             SpinnerColumn(),
             TextColumn("{task.description}"),
+            SlowHint(slow or ""),
             TimeElapsedColumn(),
         )
         with self._live(*columns) as spinner:
@@ -80,21 +104,22 @@ class Progress:
 
     @contextmanager
     def busy(self, label: str) -> Iterator[None]:
-        """Show a spinner while the block runs; leave nothing behind.
+        """Show a spinner and elapsed time while the block runs; leave
+        nothing behind.
 
         For work whose result is printed afterwards (``scribe check``).
         Nothing is shown when the console is not a terminal.
         """
-        spinner = Spinner("dots", text=Text(label), style="status.spinner")
-        # no stdout/stderr redirect, as in _live
-        live = Live(
-            spinner,
-            console=self.console,
-            transient=True,
-            redirect_stdout=False,
-            redirect_stderr=False,
+        if not self.console.is_terminal:  # rich would still print a blank line
+            yield
+            return
+        columns = (
+            SpinnerColumn(),
+            TextColumn("{task.description}"),
+            TimeElapsedColumn(),
         )
-        with live:
+        with self._live(*columns) as spinner:
+            spinner.add_task(escape(label), total=None)
             yield
 
     def done(self, label: str, seconds: float) -> None:

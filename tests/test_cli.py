@@ -153,15 +153,17 @@ def test_check_is_listed_with_its_short_help():
 def test_check_prints_report_and_exits_with_its_code(monkeypatch):
     from scribeio import check_report
 
-    monkeypatch.setattr(
-        check_report, "report", lambda config, cwd, online: (["a", "b"], 1)
-    )
+    def report(config, cwd, online, show, busy):
+        show(["a", "b"])
+        return ["a", "b"], 1
+
+    monkeypatch.setattr(check_report, "report", report)
     result = invoke("check")
     assert result.exit_code == 1
     assert result.output == "a\nb\n"
 
 
-def test_check_builds_the_report_behind_a_busy_indicator(monkeypatch):
+def test_check_prints_each_section_as_the_report_shows_it(monkeypatch):
     from contextlib import contextmanager
 
     from scribeio import check_report
@@ -173,16 +175,18 @@ def test_check_builds_the_report_behind_a_busy_indicator(monkeypatch):
     def fake_busy(self, label):
         busy.append(label)
         yield
-        busy.append("done")
 
-    def report(config, cwd, online):
-        assert busy and busy[-1] != "done"  # built while the indicator runs
-        return ["a"], 0
+    def report(config, cwd, online, show, busy):
+        show(["a"])
+        with busy("loading"):
+            pass
+        show(["b"])
+        return ["a", "b"], 0
 
     monkeypatch.setattr(Progress, "busy", fake_busy)
     monkeypatch.setattr(check_report, "report", report)
-    assert invoke("check").output == "a\n"
-    assert busy[-1] == "done"
+    assert invoke("check").output == "a\nb\n"
+    assert busy == ["loading"]
 
 
 def test_utf8_output_for_a_file_with_a_legacy_encoding():
@@ -217,7 +221,7 @@ def test_check_online_option(monkeypatch):
     monkeypatch.setattr(
         check_report,
         "report",
-        lambda config, cwd, online: (seen.append(online), ([], 0))[1],
+        lambda config, cwd, online, show, busy: (seen.append(online), ([], 0))[1],
     )
     assert invoke("check", "--online").exit_code == 0
     assert invoke("check").exit_code == 0

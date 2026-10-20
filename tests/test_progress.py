@@ -197,3 +197,33 @@ def test_row_clock_keeps_running_across_passes():
         rows.update("a", "l2 2/2", 0.0)
         [task] = rows._live.tasks
         assert task.finished_time is None
+
+
+def test_busy_shows_a_running_timer():
+    buf = io.StringIO()
+    p = Progress(Console(file=buf, width=120, force_terminal=True))
+    with p.busy("loading"):
+        pass
+    assert "0:00:00" in buf.getvalue()
+
+
+@pytest.mark.parametrize(
+    ("elapsed", "shown"), [(None, False), (3.0, False), (10.0, True)]
+)
+def test_slow_hint_appears_after_ten_seconds(elapsed, shown):
+    from types import SimpleNamespace
+
+    from scribeio.progress import SlowHint
+
+    text = SlowHint("(first run)", after=10.0).render(SimpleNamespace(elapsed=elapsed))
+    assert (str(text) == "(first run)") is shown
+
+
+def test_step_with_a_slow_hint_shows_it_once_slow(monkeypatch):
+    buf = io.StringIO()
+    p = Progress(Console(file=buf, width=120, force_terminal=True))
+    with p.step("check WhisperX", slow="(first run)"):
+        pass
+    # fast: the hint never shows, the finished line is as before
+    assert "(first run)" not in buf.getvalue()
+    assert "✔" in buf.getvalue()

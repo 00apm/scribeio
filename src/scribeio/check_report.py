@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import platform
 import sys
+from collections.abc import Callable
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -18,6 +20,7 @@ from scribeio import __version__, checks, init
 from scribeio.checks import Item
 from scribeio.config import load_config
 from scribeio.errors import ScribeError
+from scribeio.progress import FIRST_RUN
 
 if TYPE_CHECKING:
     from scribeio.transcribe.models import Model
@@ -25,6 +28,8 @@ if TYPE_CHECKING:
 SYMBOLS = {"ok": "✔", "missing": "✘", "warning": "⚠", "info": "ℹ"}
 NOT_INSTALLED = "not installed (audio mastering only)"
 NONE_YET = "none yet: downloaded on your first transcription"
+# Shown while WhisperX and PyTorch load: the slow part of a first check.
+LOADING = f"loading WhisperX and PyTorch {FIRST_RUN}"
 # Model source -> the host its downloads come from (checks.SOURCES)
 SOURCE_HOSTS = {"huggingface": "huggingface.co", "torchaudio": "download.pytorch.org"}
 
@@ -242,7 +247,13 @@ def connection_lines(items: list[Item]) -> list[str]:
     return lines
 
 
-def report(config: Path | None, cwd: Path, online: bool) -> tuple[list[str], int]:
+def report(
+    config: Path | None,
+    cwd: Path,
+    online: bool,
+    show: Callable[[list[str]], None] | None = None,
+    busy: Callable[[str], AbstractContextManager[None]] | None = None,
+) -> tuple[list[str], int]:
     """The whole report and the exit code (1 if a use is not ready).
 
     Args:
@@ -250,25 +261,38 @@ def report(config: Path | None, cwd: Path, online: bool) -> tuple[list[str], int
         cwd: The current folder (its ``scribe.yaml`` is checked without -c).
         online: Also look up missing model sizes and test the model sources;
             neither changes the exit code.
+        show: Called with each section's lines as soon as it is done, so the
+            instant parts show while the slow ones run.
+        busy: Wraps each slow part, given what it does (e.g. `LOADING`).
     """
+    lines: list[str] = []
+
+    def add(part: list[str]) -> None:
+        lines.extend(part)
+        if show is not None:
+            show(part)
+
+    def wait(label: str) -> AbstractContextManager[None]:
+        return busy(label) if busy is not None else nullcontext()
+
     checked = load_settings(config, cwd)
     audio = audio_group(checked.settings)
-    transcription = transcription_group(checked.settings, audio.items[0])
+    add([header(), "", *group_lines(audio), ""])
+    with wait(LOADING):
+        transcription = transcription_group(checked.settings, audio.items[0])
+    add([*group_lines(transcription), ""])
     whisperx = transcription.items[0].status != "missing"
-    needed = needed_models(checked, whisperx)
+    with wait("checking the models"):
+        needed = needed_models(checked, whisperx)
     # tested first, so the size lookups skip a source that does not answer
-    connection = connection_items(needed[0]) if online else []
-    reachable = frozenset(i.name for i in connection if i.status == "ok")
-    lines = [
-        header(),
-        "",
-        *group_lines(audio),
-        "",
-        *group_lines(transcription),
-        "",
-        *model_lines(checked, cwd, whisperx, needed, online, reachable),
-    ]
+    connection: list[Item] = []
     if online:
-        lines += ["", *connection_lines(connection)]
+        with wait("testing the model sources"):
+            connection = connection_items(needed[0])
+    reachable = frozenset(i.name for i in connection if i.status == "ok")
+    with wait("checking the models"):
+        add(model_lines(checked, cwd, whisperx, needed, online, reachable))
+    if online:
+        add(["", *connection_lines(connection)])
     code = 1 if "not ready" in (audio.verdict, transcription.verdict) else 0
     return lines, code
