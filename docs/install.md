@@ -65,7 +65,7 @@ scribe check
 It lists what each use needs and what it finds, offline:
 
 ```
-scribeio 0.1.1, Python 3.12.9 (installed with uv)
+scribeio 0.1.2, Python 3.12.9 (installed with uv)
 
 Audio mastering                                      ready
   ✔ ffmpeg 9.0.2  C:\Users\you\AppData\Local\Microsoft\WinGet\Links\ffmpeg.exe
