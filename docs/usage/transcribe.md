@@ -49,12 +49,16 @@ using config scribe.yaml (next to the input)
 ✔ open craig-session-7.zip (0.0s)
 music (not transcribed): Kenku
 ✔ load Whisper large-v3 (pl) on cuda (2.8s)
-✔ gm.account: 57 segments (15.8s)
-✔ player.one: 56 segments (20.1s)
+✔ gm_account: 57 segments (15.8s)
+✔ player_one: 56 segments (20.1s)
 …
 ✔ write 2026-09-22_transcript.md (0.0s)
 2026-09-22_transcript.md: 87 lines, 5 segments dropped, 0 possible bleed - see 2026-09-22_transcript-report.md
 ```
+
+The run names each account as in Craig's file names: `gm_account` for
+`gm.account`. To scribeio both are the same account; so are other
+characters Craig replaces with `_` in file names.
 
 If the outputs already exist, scribeio stops; `--force` overwrites them.
 `--name` and `-o` change the name and the folder, as for the audio.

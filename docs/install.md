@@ -8,7 +8,8 @@ and scribeio itself.
 > - **For transcription, an NVIDIA GPU.** Run `nvidia-smi`: a table
 >   naming your GPU means the driver is ready. No NVIDIA GPU, or a Mac:
 >   see [GPU](#gpu). Audio mastering needs no GPU.
-> - **Disk:** up to about 12 GB (the install and the speech models).
+> - **Disk:** up to about 12 GB with transcription (the install and the
+>   speech models); audio mastering alone needs well under 1 GB.
 
 Every step is a command to paste into a terminal. Rarely use one? See
 [Terminal tips](#terminal-tips).

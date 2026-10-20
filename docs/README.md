@@ -1,8 +1,7 @@
 # scribeio documentation
 
-New to scribeio? Install it, then read the usage pages: input recordings
-first, then audio mastering and transcription, in either order or only
-the one you need.
+New to scribeio? Install it, then go to the page for what you want to do.
+Each page covers one part.
 
 ## Install
 
@@ -14,9 +13,9 @@ the one you need.
 
 ## Use
 
-1. [Input recordings](recordings.md): which recordings work, where the
-   files land, and preparing tracks yourself.
-2. [Audio mastering](usage/audio.md): one evenly balanced audio file of the
-   session; preview and adjust how it sounds.
-3. [Transcribing a recording](usage/transcribe.md): a transcript with
-   everyone's name; teach Whisper the names of your world.
+- [Input recordings](recordings.md): which recordings work, where the
+  files land, and preparing tracks yourself.
+- [Audio mastering](usage/audio.md): one evenly balanced audio file of the
+  session; preview and adjust how it sounds.
+- [Transcribing a recording](usage/transcribe.md): a transcript with
+  everyone's name; teach Whisper the names of your world.
