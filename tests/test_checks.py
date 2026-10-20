@@ -336,17 +336,40 @@ def test_whisperx_newer_3_8_or_unknown_is_ok(fake_whisperx, monkeypatch, found):
     assert checks.whisperx_item().status == "ok"
 
 
+# torch.cuda.get_arch_list() of PyTorch 2.8.0+cu129 on Windows
+CU129_ARCHS = ["sm_70", "sm_75", "sm_80", "sm_86", "sm_90", "sm_100", "sm_120"]
+# the three warnings torch 2.8 gives for a GTX 950M (abridged)
+OLD_GPU_WARNINGS = [
+    "\n    Found GPU0 NVIDIA GeForce GTX 950M which is of cuda capability 5.0.\n"
+    "    Minimum and Maximum cuda capability supported by this version of "
+    "PyTorch is\n    (7.0) - (12.0)\n",
+    "\n    Please install PyTorch with a following CUDA\n    configurations:  "
+    "12.6 following instructions at\n    https://pytorch.org/get-started/locally/\n",
+    "\nNVIDIA GeForce GTX 950M with CUDA capability sm_50 is not compatible "
+    "with the current PyTorch installation.\n",
+]
+
+
 @pytest.fixture
 def fake_torch(monkeypatch):
     state = SimpleNamespace(
         available=True,
         init_error=None,
         properties_error=None,
+        capability=(8, 9),
+        arch_list=CU129_ARCHS,
+        # what torch warns on its first CUDA call (an unsupported card)
+        init_warnings=[],
     )
 
     def init():
         if state.init_error:
             raise state.init_error
+
+    def get_device_name(index=None):
+        for text in state.init_warnings:
+            warnings.warn(text, UserWarning, stacklevel=1)
+        return "NVIDIA RTX"
 
     def get_device_properties(index):
         if state.properties_error:
@@ -358,8 +381,10 @@ def fake_torch(monkeypatch):
         cuda=SimpleNamespace(
             is_available=lambda: state.available,
             init=init,
-            get_device_name=lambda index=None: "NVIDIA RTX",
+            get_device_name=get_device_name,
             get_device_properties=get_device_properties,
+            get_device_capability=lambda index=None: state.capability,
+            get_arch_list=lambda: state.arch_list,
         ),
     )
     state.torch = torch
@@ -424,6 +449,56 @@ def test_gpu_query_raising(fake_torch):  # Review Focus 4
     item = checks.gpu_item("cuda")
     assert item.status == "missing"
     assert item.message.startswith("not seen (bad)")
+
+
+def test_gpu_too_old_for_the_pytorch_build(fake_torch):
+    fake_torch.capability = (5, 0)  # GTX 950M; PyTorch 2.8 cu129 starts at 7.0
+    item = checks.gpu_item("cuda")
+    assert item == Item(
+        "GPU",
+        "missing",
+        message=(
+            "NVIDIA RTX, 8 GB: the installed PyTorch does not support this GPU; "
+            "set device: cpu to transcribe on the CPU (very slow, hours per "
+            "recording)"
+        ),
+        guide="gpu",
+    )
+
+
+@pytest.mark.parametrize(
+    "capability",
+    [
+        (7, 0),  # the oldest the build has
+        (8, 9),  # between two listed (sm_86 code runs on 8.9)
+        (12, 1),  # newer than all: same-major code and PTX run on it
+    ],
+)
+def test_gpu_supported_by_the_build(fake_torch, capability):
+    fake_torch.capability = capability
+    assert checks.gpu_item("cuda").status == "ok"
+
+
+def test_gpu_without_an_arch_list_is_not_judged(fake_torch):
+    fake_torch.arch_list = []
+    fake_torch.capability = (5, 0)
+    assert checks.gpu_item("cuda").status == "ok"
+
+
+def test_gpu_hides_torchs_old_gpu_warnings(fake_torch):
+    # the ✘ line says it once; torch's three long warnings would repeat it
+    fake_torch.capability = (5, 0)
+    fake_torch.init_warnings = OLD_GPU_WARNINGS
+    with warnings.catch_warnings(record=True) as shown:
+        warnings.simplefilter("always")
+        assert checks.gpu_item("cuda").status == "missing"
+    assert shown == []
+
+
+def test_gpu_lets_other_warnings_through(fake_torch):
+    fake_torch.init_warnings = ["something new"]
+    with pytest.warns(UserWarning, match="something new"):
+        checks.gpu_item("cuda")
 
 
 def test_gpu_cpu_device_is_info(fake_torch):

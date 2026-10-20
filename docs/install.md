@@ -184,6 +184,10 @@ then run step 3 again with `--force`.
 "not seen": PyTorch cannot use the GPU. Check that `nvidia-smi` shows it;
 update the NVIDIA driver if it does not.
 
+"the installed PyTorch does not support this GPU": the GPU is older than
+the installed PyTorch supports. With the install above, that is the GTX 900
+and 1000 series and older. Transcribe on the CPU instead (below).
+
 No NVIDIA GPU, or a Mac: transcription still runs on the CPU, very slowly
 (hours for a session). Set it in `scribe.yaml`:
 
