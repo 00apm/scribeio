@@ -54,6 +54,7 @@ def fakes(monkeypatch, tmp_path):
         if state.hf_error:
             raise state.hf_error
         state.downloads.append(("hf", repo, kwargs.get("allow_patterns")))
+        state.download_kwargs = kwargs
         return str(tmp_path / repo.replace("/", "--"))
 
     fw_utils = SimpleNamespace(_MODELS=repos)
@@ -321,6 +322,15 @@ def test_download_whisper_model_through_huggingface(fakes):
     [(kind, repo, patterns)] = fakes.downloads
     assert (kind, repo) == ("hf", "Systran/faster-whisper-medium")
     assert "model.bin" in patterns
+
+
+def test_whisper_download_fetches_one_file_at_a_time(fakes):
+    # huggingface_hub's symlink test races with parallel downloads: on Windows
+    # without symlink rights a thread then tries a symlink and fails (WinError
+    # 1314), leaving the model without config.json
+    whisper, _ = models.needed(cfg(model="medium"))
+    models.download(whisper, quiet_progress())
+    assert fakes.download_kwargs["max_workers"] == 1
 
 
 def test_download_huggingface_alignment_model(fakes, monkeypatch):

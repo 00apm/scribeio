@@ -314,7 +314,13 @@ def _download_whisper(model: Model) -> None:
         import huggingface_hub
 
         # Unlike faster-whisper's own download, this shows a progress bar.
-        huggingface_hub.snapshot_download(model.repo, allow_patterns=WHISPER_FILES)
+        # One file at a time: huggingface_hub marks a folder "symlinks work"
+        # before testing it, so with parallel downloads another thread can
+        # try a symlink and fail on Windows without symlink rights (WinError
+        # 1314), leaving the model without config.json.
+        huggingface_hub.snapshot_download(
+            model.repo, allow_patterns=WHISPER_FILES, max_workers=1
+        )
         return
     import faster_whisper
 
