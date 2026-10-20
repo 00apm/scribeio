@@ -22,6 +22,7 @@ from rich.progress import (
     BarColumn,
     DownloadColumn,
     MofNCompleteColumn,
+    ProgressColumn,
     SpinnerColumn,
     TaskID,
     TaskProgressColumn,
@@ -44,6 +45,21 @@ class Progress:
     def __init__(self, console: Console | None = None) -> None:
         self.console = console or Console(stderr=True)
 
+    def _live(self, *columns: ProgressColumn, transient: bool = True) -> RichProgress:
+        """A rich progress display that leaves sys.stdout and sys.stderr alone.
+
+        A library imported meanwhile may keep sys.stdout (tqdm's colorama.init
+        writes a reset code to it at exit); through rich's proxy that code
+        would be printed as "[0m".
+        """
+        return RichProgress(
+            *columns,
+            console=self.console,
+            transient=transient,
+            redirect_stdout=False,
+            redirect_stderr=False,
+        )
+
     @contextmanager
     def step(self, label: str) -> Iterator[None]:
         """Show a spinner and elapsed time while the block runs.
@@ -57,7 +73,7 @@ class Progress:
             TextColumn("{task.description}"),
             TimeElapsedColumn(),
         )
-        with RichProgress(*columns, console=self.console, transient=True) as spinner:
+        with self._live(*columns) as spinner:
             spinner.add_task(escape(label), total=None)
             yield
         self.done(label, time.monotonic() - t0)
@@ -70,9 +86,7 @@ class Progress:
         Nothing is shown when the console is not a terminal.
         """
         spinner = Spinner("dots", text=Text(label), style="status.spinner")
-        # no stdout/stderr redirect: a library imported meanwhile may keep
-        # sys.stdout (tqdm's colorama.init writes a reset code to it at exit),
-        # and through rich's proxy that code would be printed as "[0m"
+        # no stdout/stderr redirect, as in _live
         live = Live(
             spinner,
             console=self.console,
@@ -109,7 +123,7 @@ class Progress:
             TransferSpeedColumn(),
             TimeElapsedColumn(),
         )
-        with RichProgress(*columns, console=self.console, transient=True) as bar:
+        with self._live(*columns) as bar:
             task = bar.add_task(escape(f"download {label}"), total=total)
             yield lambda n: bar.advance(task, n)
         self.done(f"download {label}", time.monotonic() - t0)
@@ -130,7 +144,7 @@ class Progress:
             TaskProgressColumn(),
             TimeElapsedColumn(),
         )
-        with RichProgress(*columns, console=self.console, transient=True) as live:
+        with self._live(*columns) as live:
             yield Rows(self, live, labels)
         self.done(label, time.monotonic() - t0)
 
@@ -145,7 +159,7 @@ class Progress:
             MofNCompleteColumn(),
             TimeElapsedColumn(),
         )
-        with RichProgress(*columns, console=self.console, transient=True) as bar:
+        with self._live(*columns) as bar:
             task = bar.add_task(escape(live), total=total)
             yield lambda: bar.advance(task)
         self.done(label, time.monotonic() - t0)
@@ -161,7 +175,7 @@ class Progress:
             TaskProgressColumn(),
             TimeElapsedColumn(),
         )
-        with RichProgress(*columns, console=self.console, transient=True) as bar:
+        with self._live(*columns) as bar:
             task = bar.add_task(escape(label), total=100)
             yield lambda percent: bar.update(task, completed=percent)
         self.done(label, time.monotonic() - t0)
@@ -175,7 +189,7 @@ class Progress:
             MofNCompleteColumn(),
             TimeElapsedColumn(),
         )
-        with RichProgress(*columns, console=self.console) as bar:
+        with self._live(*columns, transient=False) as bar:
             task = bar.add_task("transcribing", total=total)
             yield TrackBar(self, bar, task)
 

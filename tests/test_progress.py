@@ -57,6 +57,30 @@ def test_busy_leaves_stdout_and_stderr_alone():
         assert (sys.stdout, sys.stderr) == before
 
 
+@pytest.mark.parametrize(
+    "open_bar",
+    [
+        lambda p: p.step("check"),
+        lambda p: p.download("model.bin", 10),
+        lambda p: p.rows(["a"], "transcribe"),
+        lambda p: p.count("tracks", "measure", 2),
+        lambda p: p.bar("render"),
+        lambda p: p.tracks(2),
+    ],
+    ids=["step", "download", "rows", "count", "bar", "tracks"],
+)
+def test_bars_leave_stdout_and_stderr_alone(open_bar):
+    # transcribe's first step imports WhisperX; tqdm's colorama.init keeps
+    # sys.stdout and writes a reset code to it at exit: "[0m" as text on
+    # both test laptops (2026-10-21) when that was rich's proxy
+    import sys
+
+    p = Progress(Console(file=io.StringIO(), force_terminal=True))
+    before = sys.stdout, sys.stderr
+    with open_bar(p):
+        assert (sys.stdout, sys.stderr) == before
+
+
 def test_busy_prints_nothing_when_not_a_terminal():
     p, buf = make()
     with p.busy("checking"):
