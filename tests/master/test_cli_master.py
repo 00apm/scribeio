@@ -12,6 +12,7 @@ from scribeio import checks, craig, ffmpeg
 from scribeio.errors import ScribeError
 
 from helpers import (
+    TRACKS,
     craig_dir,
     info_txt,
     invoke,
@@ -687,6 +688,18 @@ def test_master_preview_names_voices_with_their_own_chain(tmp_path):
     result, _ = run_preview(tmp_path, "-c", config)
     assert "gm_account: own chain, fully processed from file 01" in result.output
     assert "player_one: own chain" not in result.output
+
+
+@pytest.mark.ffmpeg
+def test_master_unzipped_download_missing_player_warns(tmp_path):
+    folder = tmp_path / "rec" / "session"
+    master_dir(folder / "AAAAAA_data")
+    two = ("player.two#0 (000000000000000013)", "player_two")
+    tracks = [*TRACKS, two]
+    (folder / "info.txt").write_text(info_txt(tracks), encoding="utf-8")
+    result = invoke("master", folder)
+    assert result.exit_code == 0, result.output
+    assert "info.txt lists player_two, but no track file matches" in result.output
 
 
 @pytest.mark.ffmpeg

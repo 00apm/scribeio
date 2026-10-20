@@ -17,6 +17,7 @@ from scribeio.transcribe import models, whisper
 
 from helpers import (
     craig_dir,
+    craig_unzipped,
     craig_zip,
     invoke,
     seg,
@@ -297,6 +298,18 @@ def test_unknown_account_warns(tmp_path, fake_whisper):
     assert "unknown account gm_account" in result.output
     md = (tmp_path / "rec" / f"{LOCAL_DATE}_transcript.md").read_text(encoding="utf-8")
     assert "gm_account: Witajcie" in md
+
+
+def test_unzipped_download_missing_player_warns(tmp_path, fake_whisper, campaign):
+    folder = craig_unzipped(tmp_path / "session")
+    (folder / "AAAAAA_data" / "2-player_one.flac").unlink()
+    result = invoke("transcribe", folder, "-c", campaign)
+    assert result.exit_code == 0, result.output
+    warning = "info.txt lists player_one, but no track file matches; left out"
+    assert warning in result.output
+    path = tmp_path / f"{LOCAL_DATE}_transcript.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert any(warning in w for w in data["warnings"])
 
 
 def test_dir_input_writes_next_to_folder(tmp_path, fake_whisper, campaign):

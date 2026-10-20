@@ -23,7 +23,7 @@ from typing import Any
 import yaml
 
 from scribeio.craig import sanitize
-from scribeio.errors import ScribeError
+from scribeio.errors import ScribeError, decode_utf8
 from scribeio.master.config import merge as merge_master
 
 # Allowed values of numeric settings: (lowest, highest, whole numbers only);
@@ -112,12 +112,7 @@ def read_utf8(path: Path) -> str:
         FileNotFoundError: If the file is missing.
         ScribeError: If the file is not UTF-8, naming the first bad line.
     """
-    data = path.read_bytes()
-    try:
-        return data.decode("utf-8-sig")
-    except UnicodeDecodeError as e:
-        line = data[: e.start].count(b"\n") + 1
-        raise ScribeError(f"{path.name}:{line}: not UTF-8; save it as UTF-8") from None
+    return decode_utf8(path.read_bytes(), path.name)
 
 
 def _read_yaml(path: Path) -> dict[str, Any]:

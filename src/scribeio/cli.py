@@ -206,6 +206,9 @@ def transcribe(
                 f"output already exists: {existing[0]} (use --force to overwrite)"
             )
         _print_music(rec, "not transcribed", progress)
+        for w in rec.warnings:
+            progress.warn(w)
+        run_warnings += rec.warnings
         for t in rec.players:
             if craig.sanitize(t.account) not in cfg.speakers:
                 progress.warn(
@@ -553,6 +556,8 @@ def master(
             patterns = cfg.settings["input"]["music_patterns"]
             rec = stack.enter_context(craig.open_recording(input_path, patterns, start))
         _print_music(rec, "music chain", progress)
+        for w in rec.warnings:
+            progress.warn(w)
         for t in rec.players:
             if craig.sanitize(t.account) not in cfg.speakers:
                 progress.warn(

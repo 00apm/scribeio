@@ -48,6 +48,14 @@ def test_init_from_recording_prefills_speakers(tmp_path):
     assert "scribe transcribe" in result.output  # next step hint
 
 
+def test_init_from_zip_without_flac(tmp_path):
+    zip_path = craig_zip(tmp_path / "rec", layout="aac")
+    result = invoke("init", zip_path)
+    assert result.exit_code == 1
+    assert "no FLAC tracks; download the recording from Craig" in result.output
+    assert not (tmp_path / "rec" / "scribe.yaml").exists()
+
+
 def test_init_refuses_to_overwrite(tmp_path):
     assert invoke("init", "-o", tmp_path).exit_code == 0
     result = invoke("init", "-o", tmp_path)

@@ -83,8 +83,10 @@ keep the result right.
   `speakers:` in `scribe.yaml` gives it a name (`player.one` and
   `player_one` count as the same account).
 - **With `info.txt` in the folder, keep Craig's track names and every
-  player's track.** scribeio checks that each player `info.txt` lists has a
-  file. To rename or drop tracks, remove `info.txt` and give `--start`.
+  player's track.** In a folder of FLAC files, scribeio stops when a player
+  `info.txt` lists has no file. In an unpacked Audacity or Audition download
+  (tracks in the `*_data` folder) it warns and goes on without that player.
+  To rename or drop tracks, remove `info.txt` and give `--start`.
 
 ## Not using Craig?
 

@@ -25,13 +25,15 @@ from __future__ import annotations
 import re
 import tempfile
 import zipfile
+import zlib
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Literal
 
-from scribeio.errors import ScribeError
+from scribeio.errors import ScribeError, decode_utf8
 
 TRACK_NUMBER = re.compile(r"^(\d+)-")
 # A Craig download without FLAC tracks (AAC, Ogg)
@@ -156,12 +158,15 @@ class Recording:
         start: Recording start in the system's local time zone.
         tracks: All tracks, ordered by their number in the file name.
         info_txt: Text of info.txt; None for a folder without one.
+        warnings: Problems that do not stop a run (a listed player with no
+            track in an unpacked download), for the screen and the outputs.
     """
 
     source: str
     start: datetime
     tracks: list[Track]
     info_txt: str | None = None
+    warnings: list[str] = field(default_factory=list)
 
     @property
     def players(self) -> list[Track]:
@@ -224,20 +229,51 @@ def read_info(path: Path) -> Info:
     """Read info.txt of a Craig zip or track folder, without extracting tracks.
 
     Raises:
-        ScribeError: If the input is not a Craig recording.
+        ScribeError: If the input is not a Craig recording, or a zip has no
+            FLAC tracks (Craig's AAC or Ogg download).
     """
     path = Path(path)
     if path.is_dir():
         info_path = path / "info.txt"
         if not info_path.is_file():
             raise ScribeError(f"{path.name}: info.txt not found")
-        return parse_info(info_path.read_text(encoding="utf-8-sig"))
+        return parse_info(_info_text(info_path.read_bytes()))
     if not zipfile.is_zipfile(path):
         raise ScribeError(f"{path.name}: not a zip file or a folder of tracks")
     with zipfile.ZipFile(path) as zf:
-        if "info.txt" not in zf.namelist():
-            raise ScribeError(f"{path.name}: not a Craig recording (no info.txt)")
-        return parse_info(zf.read("info.txt").decode("utf-8-sig"))
+        names = zf.namelist()
+        if "info.txt" not in names:
+            raise _no_info(path, names)
+        if not any(ZIP_TRACK.match(n) for n in names):
+            raise ScribeError(f"{path.name}: {NO_FLAC}")
+        return parse_info(_info_text(zf.read("info.txt")))
+
+
+def _info_text(data: bytes) -> str:
+    """Text of info.txt with ``\\n`` line ends, as `Path.read_text` gives.
+
+    Raises:
+        ScribeError: If it is not UTF-8 (an editor saved it in another
+            encoding), naming the line.
+    """
+    text = decode_utf8(data, "info.txt")
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _no_info(zip_path: Path, names: list[str]) -> ScribeError:
+    """The error for a zip without info.txt at its top.
+
+    A download folder zipped again (Windows' "Send to > Compressed folder")
+    has it one folder down: the message says what to do.
+    """
+    tops = [n.split("/")[0] for n in names if n.count("/") == 1]
+    tops = [t for t in tops if f"{t}/info.txt" in names]
+    if len(set(tops)) == 1:
+        return ScribeError(
+            f"{zip_path.name}: info.txt is inside {tops[0]}/; unzip it and pass "
+            "the folder"
+        )
+    return ScribeError(f"{zip_path.name}: not a Craig recording (no info.txt)")
 
 
 def _parse_time(value: str) -> datetime:
@@ -285,8 +321,9 @@ def open_recording(
             path.resolve().name,
             music_patterns,
             start,
-            # an extracted zip is Craig's own content, checked like the zip
-            complete=tracks == path,
+            # tracks next to info.txt were prepared by the user: all must be
+            # there; an unpacked download may lack a player who never spoke
+            missing="error" if tracks == path else "warn",
         )
         return
     if not zipfile.is_zipfile(path):
@@ -298,7 +335,7 @@ def open_recording(
         root = Path(tmp)
         data_dir = _extract(path, root)
         yield _read(
-            root / "info.txt", data_dir, path.name, music_patterns, start, False
+            root / "info.txt", data_dir, path.name, music_patterns, start, "skip"
         )
 
 
@@ -312,13 +349,26 @@ def _extract(zip_path: Path, dest: Path) -> Path:
 
     The project file (.aup, .sesx) and raw.dat (raw data of every track) are
     skipped.
+
+    Raises:
+        ScribeError: If the zip is no Craig recording, has no FLAC tracks, or
+            a member is damaged or cannot be written to the temp folder.
     """
     with zipfile.ZipFile(zip_path) as zf:
+        if "info.txt" not in zf.namelist():
+            raise _no_info(zip_path, zf.namelist())
         names = [n for n in zf.namelist() if n == "info.txt" or ZIP_TRACK.match(n)]
-        if "info.txt" not in names:
-            raise ScribeError(f"{zip_path.name}: not a Craig recording (no info.txt)")
         for name in names:
-            zf.extract(name, dest)
+            try:
+                zf.extract(name, dest)
+            except (zipfile.BadZipFile, zlib.error, EOFError):
+                raise ScribeError(
+                    f"{zip_path.name}: {name} is damaged; download the recording again"
+                ) from None
+            except OSError as e:  # e.g. the disk with the temp folder is full
+                raise ScribeError(
+                    f"{zip_path.name}: cannot unpack {name}: {e.strerror or e}"
+                ) from None
     tracks = track_dir(dest)
     if not dir_tracks(tracks):
         # e.g. Craig's AAC or Ogg download, or two *_data folders
@@ -332,7 +382,7 @@ def _read(
     source: str,
     music_patterns: list[str],
     start: datetime | None,
-    complete: bool,
+    missing: Literal["error", "warn", "skip"],
 ) -> Recording:
     """Build a Recording from info.txt (if any) and the FLACs in `track_dir`.
 
@@ -342,8 +392,9 @@ def _read(
         source: Name shown in outputs (zip or folder name).
         music_patterns: Substrings that mark music bot tracks.
         start: Given session start; wins over info.txt.
-        complete: Require a file for every player listed in info.txt (folder
-            input; a missing music track is fine).
+        missing: A player listed in info.txt with no track file stops the
+            run (``error``), is a warning (``warn``) or is not checked
+            (``skip``, a zip). A missing music track is always fine.
     """
     files = dir_tracks(track_dir)
     if not files:
@@ -353,7 +404,7 @@ def _read(
         account = account_of(f)
         kind = "music" if is_music(account, music_patterns) else "player"
         tracks.append(Track(account, kind, f))
-    text = info_path.read_text(encoding="utf-8-sig") if info_path else None
+    text = _info_text(info_path.read_bytes()) if info_path else None
     info = parse_info(text) if text is not None else None
     if start is None:
         if info is None:
@@ -362,20 +413,23 @@ def _read(
                 '--start "YYYY-MM-DD HH:MM"'
             )
         start = info.start
-    if info is not None and complete:
+    warnings = []
+    if info is not None and missing != "skip":
         present = {sanitize(t.account) for t in tracks}
-        missing = [
+        absent = [
             a
             for a in info.accounts
             if a not in present and not is_music(a, music_patterns)
         ]
-        if missing:
+        lists = f"{source}: info.txt lists {', '.join(absent)}, but no track file"
+        if absent and missing == "error":
             # also hit by tracks renamed after the speaker next to info.txt
             raise ScribeError(
-                f"{source}: info.txt lists {', '.join(missing)}, but no track "
-                "file matches; keep Craig's track names, or remove info.txt "
+                f"{lists} matches; keep Craig's track names, or remove info.txt "
                 "and give --start"
             )
+        if absent:
+            warnings.append(f"{lists} matches; left out")
     if not any(t.kind == "player" for t in tracks):
         raise ScribeError(f"{source}: no player tracks found")
-    return Recording(source, start, tracks, text)
+    return Recording(source, start, tracks, text, warnings)
