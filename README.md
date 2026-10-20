@@ -42,8 +42,9 @@ with one track per person
 
 - Windows, macOS or Linux.
 - [ffmpeg](https://ffmpeg.org) 6.1 or newer.
-- For transcription: an NVIDIA GPU (tested on 8 GB). Without one it works,
-  very slowly. Audio mastering needs no GPU.
+- For transcription: an NVIDIA GPU, GTX 16xx / RTX 20xx or newer, 6 GB or
+  more (8 GB recommended). Without one it runs on the CPU, very slowly
+  (`transcribe.whisper.device: cpu` in `scribe.yaml`). Audio mastering needs no GPU.
 - Disk: up to about 12 GB with transcription (the install and the speech
   models); audio mastering alone needs well under 1 GB.
 

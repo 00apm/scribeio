@@ -31,6 +31,9 @@ replace the one other tools in a shared environment use.
    pip install torch==2.8.0 torchaudio==2.8.0 torchvision==0.23.0 --index-url https://download.pytorch.org/whl/cu128
    ```
 
+   This build does not support the GTX 900 series and older; `scribe
+   check` says so when it does not support your GPU.
+
 2. scribeio with transcription:
 
    ```
