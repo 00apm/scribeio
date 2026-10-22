@@ -33,6 +33,7 @@ ANCHORS = {
     "pytorch-cuda": "pytorch-with-cuda",
     "gpu": "gpu",
     "connection": "connection-problems",
+    "app-control": "windows-smart-app-control",
 }
 CHECK_HINT = "Run `scribe check` to see everything scribe needs."
 
@@ -175,6 +176,12 @@ WHISPERX_NOT_INSTALLED = (
     "not installed, so scribe cannot transcribe (audio mastering works)"
 )
 ON_CPU = "set to run on the CPU: very slow"
+BLOCKED_BY_WINDOWS = (
+    "Windows Smart App Control blocked one of its files, so scribe cannot "
+    "transcribe on this PC (audio mastering works)"
+)
+# Windows: "An Application Control policy has blocked this file."
+APP_CONTROL_BLOCKED = 4551
 
 
 def _first_line(e: BaseException) -> str:
@@ -222,7 +229,27 @@ def whisperx_item() -> Item:
     return Item("WhisperX", "ok", found)
 
 
+def _blocked_by_windows(e: Exception) -> bool:
+    """True if Windows Application Control (Smart App Control) refused a file."""
+    if getattr(e, "winerror", None) == APP_CONTROL_BLOCKED:
+        return True
+    if sys.platform != "win32":
+        return False
+    # A blocked .pyd gives an ImportError with only Windows' text, in the
+    # language of Windows: ask Windows for that text.
+    import ctypes
+
+    text = ctypes.FormatError(APP_CONTROL_BLOCKED).strip()
+    return bool(text) and text in str(e)
+
+
 def _broken_whisperx(e: Exception) -> Item:
+    if _blocked_by_windows(e):
+        return Item(
+            "WhisperX", "missing",
+            message=f"{BLOCKED_BY_WINDOWS} ({type(e).__name__}: {_first_line(e)})",
+            guide="app-control",
+        )  # fmt: skip
     return Item(
         "WhisperX", "missing",
         message=f"installed but does not load ({type(e).__name__}: {_first_line(e)})",

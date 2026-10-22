@@ -44,6 +44,7 @@ def test_every_guide_key_has_an_anchor():
         "pytorch-cuda",
         "gpu",
         "connection",
+        "app-control",
     }
 
 
@@ -271,6 +272,38 @@ def test_whisperx_with_broken_torch(fake_whisperx, monkeypatch):  # Review Focus
     assert item.message.startswith(
         "installed but does not load (OSError: [WinError 126]"
     )
+
+
+def _whisperx_fails_with(monkeypatch, error):
+    class Blocked:
+        def find_spec(self, name, path=None, target=None):
+            if name == "whisperx":
+                raise error
+
+    monkeypatch.delitem(sys.modules, "whisperx", raising=False)
+    monkeypatch.setattr(sys, "meta_path", [Blocked(), *sys.meta_path])
+    return checks.whisperx_item()
+
+
+def test_whisperx_blocked_by_app_control(monkeypatch):
+    # torch loading its DLLs: an OSError with Windows error 4551
+    error = OSError("[WinError 4551] c10_cuda.dll")
+    error.winerror = 4551
+    item = _whisperx_fails_with(monkeypatch, error)
+    assert (item.status, item.guide) == ("missing", "app-control")
+    assert item.message.startswith(checks.BLOCKED_BY_WINDOWS)
+    assert item.message.endswith("(OSError: [WinError 4551] c10_cuda.dll)")
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows error text")
+def test_whisperx_blocked_by_app_control_in_any_language(monkeypatch):
+    # a .pyd import: only the text, in the language of Windows
+    import ctypes
+
+    text = ctypes.FormatError(4551).strip()
+    error = ImportError(f"DLL load failed while importing _liblinear: {text}")
+    item = _whisperx_fails_with(monkeypatch, error)
+    assert (item.status, item.guide) == ("missing", "app-control")
 
 
 class WarnsOnImport(importlib.abc.MetaPathFinder, importlib.abc.Loader):

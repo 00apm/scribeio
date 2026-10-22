@@ -139,3 +139,8 @@ See [Quick install: GPU](install.md#gpu): the driver, running on the CPU
 ### Connection problems
 
 See [Quick install: connection problems](install.md#connection-problems).
+
+### Windows Smart App Control
+
+See
+[Quick install: Windows Smart App Control](install.md#windows-smart-app-control).

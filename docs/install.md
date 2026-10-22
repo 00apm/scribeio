@@ -214,3 +214,26 @@ alignment models from download.pytorch.org) on the first transcription.
 A firewall, antivirus or proxy may be blocking Python. `scribe check
 --online` tests the sites your settings need; allow Python through, or
 try another network.
+
+### Windows Smart App Control
+
+"Windows Smart App Control blocked one of its files": Smart App Control
+(Windows 11) lets a program load only files it trusts: signed by a known
+publisher, or known to Microsoft as safe. Most libraries scribeio uses
+for transcription (PyTorch, WhisperX and the ones they bring) are not
+signed, so on some PCs Windows blocks one of them. scribeio cannot change
+that; audio mastering works either way. It can start after scribeio
+worked before: a new Windows 11 runs Smart App Control in evaluation mode
+first and may switch it on by itself later.
+
+Two ways out:
+
+- **Turn Smart App Control off:** Windows Security → App & browser
+  control → Smart App Control settings → Off. This lowers the protection
+  of the whole PC, so it is the PC owner's decision. Recent Windows 11
+  updates let you turn it back on later; older ones need Windows
+  reinstalled for that.
+- **Run scribeio in WSL** (Windows Subsystem for Linux, a Linux system
+  inside Windows; Smart App Control does not check programs there):
+  install it with `wsl --install`, then follow this page's Linux steps
+  inside WSL. An NVIDIA GPU works there with the usual Windows driver.
