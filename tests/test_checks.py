@@ -29,11 +29,9 @@ def test_guide_base_is_the_public_repo():
     assert checks.GUIDE_BASE == "https://github.com/00apm/scribeio/blob/main/docs/"
 
 
-def test_guide_url_follows_the_route(monkeypatch, tmp_path):
-    monkeypatch.setattr(checks.sys, "prefix", str(tmp_path))
-    assert checks.guide_url("gpu") == checks.GUIDE_BASE + "install-own-env.md#gpu"
-    (tmp_path / "uv-receipt.toml").write_text("")
-    assert checks.guide_url("encoder") == checks.GUIDE_BASE + "install.md#mp3-encoder"
+def test_guide_url_points_to_troubleshooting():
+    url = checks.GUIDE_BASE + "troubleshooting.md#mp3-encoder"
+    assert checks.guide_url("encoder") == url
 
 
 def test_every_guide_key_has_an_anchor():

@@ -2,7 +2,7 @@
 
 ``scribe check`` runs them all and prints a report; ``transcribe`` and
 ``master`` run the ones they need and stop at the first missing item, with
-the same words and a link to the install guide section that fixes it.
+the same words and a link to the troubleshooting section that fixes it.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from scribeio.errors import InstallError
 Status = Literal["ok", "missing", "warning", "info"]
 
 GUIDE_BASE = "https://github.com/00apm/scribeio/blob/main/docs/"
-# Guide section key -> anchor on the install pages (they must provide these).
+# Guide section key -> anchor on troubleshooting.md (it must provide these).
 ANCHORS = {
     "ffmpeg": "ffmpeg",
     "encoder": "mp3-encoder",
@@ -64,9 +64,8 @@ def uv_install(prefix: str | None = None) -> bool:
 
 
 def guide_url(key: str) -> str:
-    """Link to a guide section, on the install page of this install route."""
-    page = "install.md" if uv_install() else "install-own-env.md"
-    return f"{GUIDE_BASE}{page}#{ANCHORS[key]}"
+    """Link to a section of the troubleshooting page."""
+    return f"{GUIDE_BASE}troubleshooting.md#{ANCHORS[key]}"
 
 
 def line(item: Item) -> str:

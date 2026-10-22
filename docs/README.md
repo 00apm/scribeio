@@ -10,6 +10,8 @@ Each page covers one part.
 - [Install into your own Python environment](install-own-env.md): pip into
   a venv, a conda env or a uv project, next to a PyTorch you may already
   have.
+- [Troubleshooting](troubleshooting.md): what each ✘ of `scribe check`
+  means and how to fix it.
 
 ## Use
 

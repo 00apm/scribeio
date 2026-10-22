@@ -10,7 +10,7 @@ example next to a PyTorch you already have.
 | Python | 3.10–3.13 |
 | ffmpeg | 6.1 or newer, with the mp3 encoder (libmp3lame); without it, `--format m4a` |
 | WhisperX (transcription) | `>=3.8.6,<3.9`; 3.8.6 needs PyTorch 2.8 (`torch~=2.8.0`, `torchaudio~=2.8.0`, `torchvision~=0.23.0`) |
-| GPU (transcription) | NVIDIA with CUDA; see [GPU](#gpu) |
+| GPU (transcription) | NVIDIA with CUDA; see [GPU](troubleshooting.md#gpu) |
 
 Use an environment of its own: WhisperX pins its PyTorch version and would
 replace the one other tools in a shared environment use.
@@ -82,7 +82,7 @@ pip install --upgrade "scribeio[transcribe]"
 pip upgrades scribeio and WhisperX and keeps your PyTorch while it fits
 WhisperX's pin. Then run `scribe check`: if a newer WhisperX needed
 another PyTorch, pip took it from PyPI, and on Windows that is a CPU-only
-build; [PyTorch with CUDA](#pytorch-with-cuda) fixes it. Without
+build; [PyTorch with CUDA](troubleshooting.md#pytorch-with-cuda) fixes it. Without
 transcription: `pip install --upgrade scribeio`.
 
 ## Where the models go
@@ -96,51 +96,8 @@ transcription: `pip install --upgrade scribeio`.
 - `transcribe.whisper.model` in `scribe.yaml` also accepts a folder
   holding a Whisper model in faster-whisper's format.
 
+
 ## Troubleshooting
 
-Most problems are the same as for the quick install; the sections below
-link there where they are.
-
-### ffmpeg
-
-See [Quick install: ffmpeg](install.md#ffmpeg); in a conda env,
-`conda install ffmpeg -c conda-forge` also works.
-
-### MP3 encoder
-
-See [Quick install: MP3 encoder](install.md#mp3-encoder). In a conda env
-the env's ffmpeg comes first on PATH: install a build with libmp3lame, or
-use `--format m4a`.
-
-### Transcription
-
-"WhisperX not installed": `pip install "scribeio[transcribe]"` (after
-PyTorch, see [Install](#install)). "installed but does not load": often a
-PyTorch that does not fit WhisperX's pin; reinstall PyTorch 2.8 as in
-step 1.
-
-### PyTorch with CUDA
-
-`scribe check` shows "PyTorch 2.8.0: a CPU-only build" (a CUDA build reads
-"2.8.0+cu128, CUDA build"). Replace it:
-
-```
-pip uninstall -y torch torchaudio torchvision
-pip install torch==2.8.0 torchaudio==2.8.0 torchvision==0.23.0 --index-url https://download.pytorch.org/whl/cu128
-```
-
-Then `scribe check` again.
-
-### GPU
-
-See [Quick install: GPU](install.md#gpu): the driver, running on the CPU
-(`transcribe.whisper.device: cpu`, very slow), and GPU memory.
-
-### Connection problems
-
-See [Quick install: connection problems](install.md#connection-problems).
-
-### Windows Smart App Control
-
-See
-[Quick install: Windows Smart App Control](install.md#windows-smart-app-control).
+Something not working? `scribe check` links to the fix; all of them are
+on [Troubleshooting](troubleshooting.md).

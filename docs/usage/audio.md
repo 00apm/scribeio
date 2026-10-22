@@ -219,7 +219,7 @@ scribe master "craig-session-7.zip" --format m4a
 | `opus` | about 22 MB (48k) | browsers, VLC; not every older player |
 
 `format:` in `scribe.yaml` sets it for every run. If ffmpeg has no MP3
-encoder, use `m4a` ([MP3 encoder](../install.md#mp3-encoder)).
+encoder, use `m4a` ([MP3 encoder](../troubleshooting.md#mp3-encoder)).
 
 ## Write each processed track
 
