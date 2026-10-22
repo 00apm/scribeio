@@ -232,14 +232,15 @@ def _blocked_by_windows(e: Exception) -> bool:
     """True if Windows Application Control (Smart App Control) refused a file."""
     if getattr(e, "winerror", None) == APP_CONTROL_BLOCKED:
         return True
-    if sys.platform != "win32":
-        return False
-    # A blocked .pyd gives an ImportError with only Windows' text, in the
-    # language of Windows: ask Windows for that text.
-    import ctypes
+    if sys.platform == "win32":
+        # A blocked .pyd gives an ImportError with only Windows' text, in
+        # the language of Windows: ask Windows for that text.
+        import ctypes
 
-    text = ctypes.FormatError(APP_CONTROL_BLOCKED).strip()
-    return bool(text) and text in str(e)
+        text = ctypes.FormatError(APP_CONTROL_BLOCKED).strip()
+        return bool(text) and text in str(e)
+    else:  # an else, not a plain return: mypy checks per platform
+        return False
 
 
 def _broken_whisperx(e: Exception) -> Item:
