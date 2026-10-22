@@ -212,7 +212,7 @@ transcribe:
     batch_size: 2
 ```
 
-If that is not enough, see [GPU](../install.md#gpu) for the settings that
+If that is not enough, see [GPU](../troubleshooting.md#gpu) for the settings that
 need less memory.
 
 ### Transcription is much slower than expected (Windows)

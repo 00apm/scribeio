@@ -2,7 +2,7 @@
 
 ``scribe check`` runs them all and prints a report; ``transcribe`` and
 ``master`` run the ones they need and stop at the first missing item, with
-the same words and a link to the install guide section that fixes it.
+the same words and a link to the troubleshooting section that fixes it.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from scribeio.errors import InstallError
 Status = Literal["ok", "missing", "warning", "info"]
 
 GUIDE_BASE = "https://github.com/00apm/scribeio/blob/main/docs/"
-# Guide section key -> anchor on the install pages (they must provide these).
+# Guide section key -> anchor on troubleshooting.md (it must provide these).
 ANCHORS = {
     "ffmpeg": "ffmpeg",
     "encoder": "mp3-encoder",
@@ -33,6 +33,7 @@ ANCHORS = {
     "pytorch-cuda": "pytorch-with-cuda",
     "gpu": "gpu",
     "connection": "connection-problems",
+    "app-control": "windows-smart-app-control",
 }
 CHECK_HINT = "Run `scribe check` to see everything scribe needs."
 
@@ -63,9 +64,8 @@ def uv_install(prefix: str | None = None) -> bool:
 
 
 def guide_url(key: str) -> str:
-    """Link to a guide section, on the install page of this install route."""
-    page = "install.md" if uv_install() else "install-own-env.md"
-    return f"{GUIDE_BASE}{page}#{ANCHORS[key]}"
+    """Link to a section of the troubleshooting page."""
+    return f"{GUIDE_BASE}troubleshooting.md#{ANCHORS[key]}"
 
 
 def line(item: Item) -> str:
@@ -175,6 +175,12 @@ WHISPERX_NOT_INSTALLED = (
     "not installed, so scribe cannot transcribe (audio mastering works)"
 )
 ON_CPU = "set to run on the CPU: very slow"
+BLOCKED_BY_WINDOWS = (
+    "Windows Smart App Control blocked one of its files, so scribe cannot "
+    "transcribe on this PC (audio mastering works)"
+)
+# Windows: "An Application Control policy has blocked this file."
+APP_CONTROL_BLOCKED = 4551
 
 
 def _first_line(e: BaseException) -> str:
@@ -222,7 +228,28 @@ def whisperx_item() -> Item:
     return Item("WhisperX", "ok", found)
 
 
+def _blocked_by_windows(e: Exception) -> bool:
+    """True if Windows Application Control (Smart App Control) refused a file."""
+    if getattr(e, "winerror", None) == APP_CONTROL_BLOCKED:
+        return True
+    if sys.platform == "win32":
+        # A blocked .pyd gives an ImportError with only Windows' text, in
+        # the language of Windows: ask Windows for that text.
+        import ctypes
+
+        text = ctypes.FormatError(APP_CONTROL_BLOCKED).strip()
+        return bool(text) and text in str(e)
+    else:  # an else, not a plain return: mypy checks per platform
+        return False
+
+
 def _broken_whisperx(e: Exception) -> Item:
+    if _blocked_by_windows(e):
+        return Item(
+            "WhisperX", "missing",
+            message=f"{BLOCKED_BY_WINDOWS} ({type(e).__name__}: {_first_line(e)})",
+            guide="app-control",
+        )  # fmt: skip
     return Item(
         "WhisperX", "missing",
         message=f"installed but does not load ({type(e).__name__}: {_first_line(e)})",
