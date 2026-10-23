@@ -154,20 +154,50 @@ def needed_models(checked: Checked, whisperx: bool) -> tuple[list[Model], str]:
         return [], str(e)
 
 
-def model_lines(
+def model_lines() -> list[str]:
+    """The Models block: the models on disk, their sizes and folders.
+
+    The sizes are what deleting the models would free; the folders are
+    shared with other programs, so their own size would say more.
+    """
+    from scribeio.transcribe import models
+
+    whisper = models.whisper_on_disk()
+    ready, damaged = models.local_alignment()
+    total = sum(m.nbytes for m in [*whisper, *ready])
+
+    def listed(found: list[models.OnDisk]) -> str:
+        return ", ".join(f"{m.name} ({models.amount(m.nbytes)})" for m in found)
+
+    lines = [
+        f"Models: {models.amount(total)}" if total else "Models",
+        "  Whisper:   " + (listed(whisper) or NONE_YET),
+        "  Alignment: " + (listed(ready) or NONE_YET),
+    ]
+    lines += [
+        f"  ⚠ alignment {language}: damaged; replaced on the next transcription"
+        for language in damaged
+    ]
+    folders = list(dict.fromkeys(m.folder for m in [*whisper, *ready]))
+    lines += [
+        ("  Folders:   " if i == 0 else " " * 13) + str(folder)
+        for i, folder in enumerate(folders)
+    ]
+    return lines
+
+
+def settings_lines(
     checked: Checked,
     cwd: Path,
-    whisperx: bool,
     needed: tuple[list[Model], str],
     online: bool = False,
     reachable: frozenset[str] = frozenset(),
 ) -> list[str]:
-    """The models on disk (with WhisperX loaded) and the settings checked.
+    """The Settings block: the config checked and the models it needs.
 
     Args:
         checked: The settings checked.
         cwd: The current folder, named when it holds no config.
-        whisperx: True if WhisperX loaded; models are listed only then.
         needed: `needed_models` for these settings.
         online: Add the download size of the missing models.
         reachable: Model sources that answered; sizes are looked up only
@@ -175,20 +205,7 @@ def model_lines(
     """
     from scribeio.transcribe import models
 
-    lines = []
-    if whisperx:
-        ready, damaged = models.local_alignment()
-        lines += [
-            f"Models ({models.cache_folder()})",
-            "  Whisper:   " + (", ".join(models.cached_whisper_models()) or NONE_YET),
-            "  Alignment: " + (", ".join(ready) or NONE_YET),
-        ]
-        lines += [
-            f"  ⚠ alignment {language}: damaged; replaced on the next transcription"
-            for language in damaged
-        ]
-    else:
-        lines.append("Settings")  # no Models block to hold the settings lines
+    lines = ["Settings"]
     if checked.path is None:
         return [
             *lines,
@@ -208,8 +225,8 @@ def model_lines(
             text = str(path) + error.removeprefix(path.name)
         else:
             text = f"{path}: {error}"
-        return [*lines, f"  ⚠ Settings checked: {text}"]
-    lines.append(f"  Settings checked: {path}")
+        return [*lines, f"  ⚠ Checked: {text}"]
+    lines.append(f"  Checked: {path}")
     if not found:  # without WhisperX the models cannot be named
         return lines
 
@@ -223,7 +240,7 @@ def model_lines(
             size = f"{models.amount(nbytes)}, "
         return f"{name} ↓ ({size}downloaded on first transcription)"
 
-    return [*lines, "    needs " + ", ".join(need(m) for m in found)]
+    return [*lines, "  Needs:   " + ", ".join(need(m) for m in found)]
 
 
 def connection_items(needed: list[Model]) -> list[Item]:
@@ -292,7 +309,8 @@ def report(
     reachable = frozenset(i.name for i in connection if i.status == "ok")
     # shown after the spinner: a line printed under it would freeze its frame
     with wait("checking the models"):
-        models = model_lines(checked, cwd, whisperx, needed, online, reachable)
+        models = [*model_lines(), ""] if whisperx else []
+        models += settings_lines(checked, cwd, needed, online, reachable)
     add(models)
     if online:
         add(["", *connection_lines(connection)])
