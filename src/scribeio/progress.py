@@ -68,7 +68,9 @@ class Progress:
 
         A library imported meanwhile may keep sys.stdout (tqdm's colorama.init
         writes a reset code to it at exit); through rich's proxy that code
-        would be printed as "[0m".
+        would be printed as "[0m". The price: while the display runs, print
+        only through `console`; anything else written to the terminal lands
+        after the display's frame and leaves that frame on screen.
         """
         return RichProgress(
             *columns,

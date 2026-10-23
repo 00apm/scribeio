@@ -290,8 +290,10 @@ def report(
         with wait("testing the model sources"):
             connection = connection_items(needed[0])
     reachable = frozenset(i.name for i in connection if i.status == "ok")
+    # shown after the spinner: a line printed under it would freeze its frame
     with wait("checking the models"):
-        add(model_lines(checked, cwd, whisperx, needed, online, reachable))
+        models = model_lines(checked, cwd, whisperx, needed, online, reachable)
+    add(models)
     if online:
         add(["", *connection_lines(connection)])
     code = 1 if "not ready" in (audio.verdict, transcription.verdict) else 0

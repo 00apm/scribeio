@@ -461,3 +461,25 @@ def test_report_shows_each_section_as_it_is_done(ready, monkeypatch, tmp_path):
     assert events[1] == ("busy", check_report.LOADING)
     assert events[2] == ("whisperx", [check_report.LOADING])
     assert any(e[0] == "show" and e[1].startswith("Transcription") for e in events)
+
+
+def test_report_shows_nothing_while_a_spinner_runs(ready, tmp_path):
+    # the spinner does not redirect stdout (see Progress._live): a line
+    # printed under it lands after its frame and leaves that frame on screen
+    from contextlib import contextmanager
+
+    active = []
+    shown_under = []
+
+    @contextmanager
+    def busy(label):
+        active.append(label)
+        yield
+        active.pop()
+
+    def show(lines):
+        if active:
+            shown_under.append((active[-1], lines[0]))
+
+    check_report.report(None, tmp_path, online=False, show=show, busy=busy)
+    assert shown_under == []
