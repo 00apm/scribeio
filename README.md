@@ -54,6 +54,9 @@ with one track per person
   a few commands, no Python knowledge needed.
 - [Install into your own Python environment](https://github.com/00apm/scribeio/blob/main/docs/install-own-env.md):
   pip, Python 3.10–3.13.
+- [Uninstall](https://github.com/00apm/scribeio/blob/main/docs/uninstall.md):
+  remove scribeio and what it downloaded (the speech models, PyTorch,
+  ffmpeg).
 
 ## Quick start
 

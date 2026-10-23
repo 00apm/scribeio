@@ -96,6 +96,12 @@ transcription: `pip install --upgrade scribeio`.
 - `transcribe.whisper.model` in `scribe.yaml` also accepts a folder
   holding a Whisper model in faster-whisper's format.
 
+## Uninstall scribeio
+
+Delete the environment if it was only for scribeio; in one you keep,
+`pip uninstall scribeio whisperx`. The models and caches stay:
+[Uninstall](uninstall.md) lists them and how to remove them.
+
 
 ## Troubleshooting
 
