@@ -33,10 +33,16 @@ jobs:
           python-version: ${{ matrix.python }}
           cache: pip
           cache-dependency-path: pyproject.toml
-      # ffmpeg with an mp3 encoder; Ubuntu 24.04 ships 6.1, the minimum
+      # ffmpeg with an mp3 encoder; Ubuntu 24.04 ships 6.1, the minimum.
+      # Without recommends (video drivers, speech data) and with short
+      # timeouts: a slow Azure mirror otherwise stalls the job for hours.
       - name: Install ffmpeg (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+        timeout-minutes: 10
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            -o Acquire::Retries=3 -o Acquire::http::Timeout=30 ffmpeg
       - name: Install ffmpeg (macOS)
         if: runner.os == 'macOS'
         run: brew install ffmpeg

@@ -71,7 +71,8 @@ class Model:
         damaged: True if a cached file exists but is broken (cut off).
         repo: Hugging Face repo id, if any.
         url: Download URL of a torchaudio model.
-        path: Cache file of a torchaudio model.
+        path: Cache file of a torchaudio model; the snapshot folder of a
+            cached Hugging Face alignment model.
         language: Language the alignment model is for.
     """
 
@@ -84,6 +85,21 @@ class Model:
     url: str = ""
     path: Path | None = None
     language: str = ""
+
+
+@dataclass
+class OnDisk:
+    """A downloaded model: what deleting it would free, and where it is.
+
+    Attributes:
+        name: The Whisper model's name, or the alignment model's language.
+        nbytes: Its size on disk.
+        folder: The cache folder that holds it (Hugging Face's or torch's).
+    """
+
+    name: str
+    nbytes: int
+    folder: Path
 
 
 def needed(cfg: dict[str, Any]) -> list[Model]:
@@ -156,6 +172,7 @@ def _alignment(language: str, align_model: str | None) -> Model:
         return _torchaudio_model(name, language, torchaudio)
     import huggingface_hub
 
+    folder: Path | None = None
     try:
         folder = Path(huggingface_hub.snapshot_download(name, local_files_only=True))
         weights = ("pytorch_model.bin", "model.safetensors")
@@ -165,8 +182,9 @@ def _alignment(language: str, align_model: str | None) -> Model:
     except FileNotFoundError:
         cached = False
     return Model(
-        "alignment model", name, "huggingface", cached, repo=name, language=language
-    )
+        "alignment model", name, "huggingface", cached, repo=name, path=folder,
+        language=language,
+    )  # fmt: skip
 
 
 def _torchaudio_model(name: str, language: str, torchaudio: Any) -> Model:
@@ -191,24 +209,53 @@ def _torchaudio_model(name: str, language: str, torchaudio: Any) -> Model:
 
 def cached_whisper_models() -> list[str]:
     """Whisper models already downloaded, best first, without aliases."""
+    return [m.name for m in whisper_on_disk()]
+
+
+def whisper_on_disk() -> list[OnDisk]:
+    """Whisper models already downloaded, best first, without aliases."""
     import faster_whisper
     import faster_whisper.utils
 
     repos: dict[str, str] = getattr(faster_whisper.utils, "_MODELS", {})
-    found: dict[str, str] = {}  # repo -> first name
+    found: dict[str, OnDisk] = {}  # repo -> the model under its first name
     for name in faster_whisper.available_models():
+        repo = repos.get(name, name)
+        if repo in found:
+            continue
         try:
             folder = faster_whisper.download_model(name, local_files_only=True)
         except (FileNotFoundError, ValueError):
             continue
-        if not _whisper_complete(Path(folder)):
-            continue
-        found.setdefault(repos.get(name, name), name)
+        if _whisper_complete(Path(folder)):
+            found[repo] = _on_disk(name, Path(folder))
 
-    def rank(name: str) -> int:
+    def rank(model: OnDisk) -> int:
+        name = model.name
         return PREFERENCE.index(name) if name in PREFERENCE else len(PREFERENCE)
 
     return sorted(found.values(), key=rank)
+
+
+def _on_disk(name: str, path: Path) -> OnDisk:
+    """A cached model's size and folder, from its file or snapshot folder.
+
+    A Hugging Face snapshot sits in ``<cache>/models--org--name/snapshots/``;
+    the whole ``models--`` folder counts (its blobs hold the files).
+    """
+    if path.is_file():  # a torch checkpoint
+        return OnDisk(name, path.stat().st_size, path.parent)
+    repo = next((p for p in path.parents if p.name.startswith("models--")), path)
+    return OnDisk(name, _disk_size(repo), repo.parent)
+
+
+def _disk_size(folder: Path) -> int:
+    """Bytes of the files in `folder`; links (snapshot to blob) count once."""
+    return sum(
+        p.stat().st_size
+        for p in folder.rglob("*")
+        if p.is_file() and not p.is_symlink()
+    )
 
 
 def cache_folder() -> Path:
@@ -218,12 +265,12 @@ def cache_folder() -> Path:
     return Path(constants.HF_HUB_CACHE)
 
 
-def local_alignment() -> tuple[list[str], list[str]]:
+def local_alignment() -> tuple[list[OnDisk], list[str]]:
     """Languages whose default alignment model is on disk.
 
     Returns:
-        Sorted language codes with the model ready, and those whose
-        downloaded file is damaged.
+        The ready models (named by language), and the language codes whose
+        downloaded file is damaged; both sorted by language.
     """
     from whisperx import alignment
 
@@ -231,11 +278,14 @@ def local_alignment() -> tuple[list[str], list[str]]:
         *alignment.DEFAULT_ALIGN_MODELS_TORCH,
         *alignment.DEFAULT_ALIGN_MODELS_HF,
     }
-    ready, damaged = [], []
+    ready: list[OnDisk] = []
+    damaged: list[str] = []
     for language in sorted(languages):
         model = _alignment(language, None)
-        if model.cached:
-            ready.append(language)
+        # no path: a torchaudio bundle of unknown layout, "cached" only so
+        # that WhisperX fetches it itself; nothing known to be on disk
+        if model.cached and model.path is not None:
+            ready.append(_on_disk(language, model.path))
         elif model.damaged:
             damaged.append(language)
     return ready, damaged

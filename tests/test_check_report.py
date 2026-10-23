@@ -12,6 +12,7 @@ from scribeio.errors import ScribeError
 from scribeio.transcribe import models
 
 NONE_YET = "none yet: downloaded on your first transcription"
+MB, GB = 1024**2, 1024**3
 
 
 @pytest.fixture
@@ -47,9 +48,14 @@ def ready(monkeypatch, tmp_path):
     monkeypatch.setattr(
         checks, "gpu_item", lambda device: Item("GPU", "ok", message="NVIDIA RTX, 8 GB")
     )
-    monkeypatch.setattr(models, "cache_folder", lambda: tmp_path / "hf")
-    monkeypatch.setattr(models, "cached_whisper_models", lambda: ["large-v3", "medium"])
-    monkeypatch.setattr(models, "local_alignment", lambda: (["en", "pl"], []))
+    hf, torch = tmp_path / "hf", tmp_path / "torch" / "checkpoints"
+    whisper = [
+        models.OnDisk("large-v3", int(2.9 * GB), hf),
+        models.OnDisk("medium", int(1.4 * GB), hf),
+    ]
+    alignment = [models.OnDisk("en", 360 * MB, torch), models.OnDisk("pl", GB, hf)]
+    monkeypatch.setattr(models, "whisper_on_disk", lambda: whisper)
+    monkeypatch.setattr(models, "local_alignment", lambda: (alignment, []))
     monkeypatch.setattr(models, "needed", needed)
     return state
 
@@ -135,7 +141,7 @@ def test_whisperx_not_installed_is_exit_0(ready, monkeypatch, tmp_path):
     assert "(audio mastering works)" in checks.WHISPERX_NOT_INSTALLED
     i = lines.index("  ℹ WhisperX: " + checks.WHISPERX_NOT_INSTALLED)
     assert lines[i + 1] == "    see " + checks.guide_url("transcription")
-    assert "PyTorch" not in text and "Models (" not in text
+    assert "PyTorch" not in text and not any(s.startswith("Models") for s in lines)
 
 
 def test_cpu_device_in_config_makes_gpu_info(ready, monkeypatch, tmp_path):
@@ -172,23 +178,32 @@ def test_ffmpeg_8_info_line(ready, monkeypatch, tmp_path):
     assert "  ℹ ffmpeg 9: WhisperX's audio library prints a warning; harmless" in text
 
 
-def test_models_listed(ready, tmp_path):
+def test_models_listed_with_sizes_and_folders(ready, tmp_path):
     lines, _ = check_report.report(None, tmp_path, online=False)
-    assert f"Models ({tmp_path / 'hf'})" in lines
-    assert "  Whisper:   large-v3, medium" in lines
-    assert "  Alignment: en, pl" in lines
+    i = lines.index("Models: 5.7 GB")
+    assert lines[i + 1 : i + 5] == [
+        "  Whisper:   large-v3 (2.9 GB), medium (1.4 GB)",
+        "  Alignment: en (360 MB), pl (1.0 GB)",
+        f"  Folders:   {tmp_path / 'hf'}",
+        f"             {tmp_path / 'torch' / 'checkpoints'}",
+    ]
 
 
 def test_no_models_yet(ready, monkeypatch, tmp_path):
-    monkeypatch.setattr(models, "cached_whisper_models", lambda: [])
+    monkeypatch.setattr(models, "whisper_on_disk", lambda: [])
     monkeypatch.setattr(models, "local_alignment", lambda: ([], []))
     lines, _ = check_report.report(None, tmp_path, online=False)
-    assert "  Whisper:   " + NONE_YET in lines
-    assert "  Alignment: " + NONE_YET in lines
+    i = lines.index("Models")
+    assert lines[i + 1 : i + 3] == [
+        "  Whisper:   " + NONE_YET,
+        "  Alignment: " + NONE_YET,
+    ]
+    assert not any(s.startswith("  Folders:") for s in lines)
 
 
 def test_damaged_alignment(ready, monkeypatch, tmp_path):
-    monkeypatch.setattr(models, "local_alignment", lambda: (["pl"], ["en"]))
+    pl = models.OnDisk("pl", GB, tmp_path / "hf")
+    monkeypatch.setattr(models, "local_alignment", lambda: ([pl], ["en"]))
     lines, code = check_report.report(None, tmp_path, online=False)
     assert code == 0
     assert "  ⚠ alignment en: damaged; replaced on the next transcription" in lines
@@ -197,9 +212,9 @@ def test_damaged_alignment(ready, monkeypatch, tmp_path):
 def test_settings_from_cwd(ready, tmp_path):
     path = write_config(tmp_path, "transcribe:\n  whisper:\n    language: pl\n")
     lines, _ = check_report.report(None, tmp_path, online=False)
-    assert f"  Settings checked: {path.resolve()}" in lines
+    assert f"  Checked: {path.resolve()}" in lines
     assert (
-        "    needs large-v3 ✔, alignment pl ↓ (downloaded on first transcription)"
+        "  Needs:   large-v3 ✔, alignment pl ↓ (downloaded on first transcription)"
         in lines
     )
 
@@ -210,8 +225,8 @@ def test_settings_from_dash_c(ready, tmp_path):
     other.mkdir()
     path = write_config(other, "")
     lines, _ = check_report.report(path, tmp_path, online=False)
-    assert f"  Settings checked: {path.resolve()}" in lines
-    assert f"  Settings checked: {(tmp_path / 'scribe.yaml').resolve()}" not in lines
+    assert f"  Checked: {path.resolve()}" in lines
+    assert f"  Checked: {(tmp_path / 'scribe.yaml').resolve()}" not in lines
 
 
 def test_no_settings(ready, tmp_path):
@@ -237,18 +252,19 @@ def test_settings_do_not_load(ready, tmp_path):
     lines, code = check_report.report(None, tmp_path, online=False)
     text = "\n".join(lines)
     assert code == 0
-    [bad] = [s for s in lines if s.startswith("  ⚠ Settings checked: ")]
+    [bad] = [s for s in lines if s.startswith("  ⚠ Checked: ")]
     assert str(path) in bad and "YAML" in bad
-    assert "Models (" in text and re.search(r"^Transcription +ready$", text, re.M)
+    assert "Models: 5.7 GB" in lines
+    assert re.search(r"^Transcription +ready$", text, re.M)
 
 
 def test_unknown_model_in_settings(ready, tmp_path):  # Review Focus 1
     write_config(tmp_path, "transcribe:\n  whisper:\n    model: no-such-model\n")
     lines, code = check_report.report(None, tmp_path, online=False)
     assert code == 0
-    [bad] = [s for s in lines if s.startswith("  ⚠ Settings checked: ")]
+    [bad] = [s for s in lines if s.startswith("  ⚠ Checked: ")]
     assert "unknown Whisper model" in bad
-    assert not any(s.startswith("    needs") for s in lines)
+    assert not any(s.startswith("  Needs:") for s in lines)
 
 
 def test_encoder_uses_the_configs_format(ready, tmp_path):
@@ -316,7 +332,7 @@ def test_online_sizes_of_missing_models(ready, network, tmp_path):
     lines, code = online(tmp_path)
     assert code == 0
     assert (
-        "    needs large-v3 ✔, alignment pl ↓ (1.2 GB, downloaded on first "
+        "  Needs:   large-v3 ✔, alignment pl ↓ (1.2 GB, downloaded on first "
         "transcription)" in lines
     )
     assert network["sizes"] == ["org/x"]  # models on disk are not looked up
@@ -326,7 +342,7 @@ def test_online_size_lookup_failing(ready, network, tmp_path):
     network["size"] = None
     write_config(tmp_path, "")
     lines, _ = online(tmp_path)
-    [needs] = [s for s in lines if s.startswith("    needs")]
+    [needs] = [s for s in lines if s.startswith("  Needs:")]
     assert "(size unknown, downloaded on first transcription)" in needs
 
 
@@ -383,22 +399,24 @@ def test_settings_heading_without_whisperx(ready, monkeypatch, tmp_path):
     path = write_config(tmp_path, "")
     lines, _ = check_report.report(None, tmp_path, online=False)
     i = lines.index("Settings")
-    assert (
-        lines[i - 1] == "" and lines[i + 1] == f"  Settings checked: {path.resolve()}"
-    )
+    assert lines[i - 1] == "" and lines[i + 1] == f"  Checked: {path.resolve()}"
 
 
-def test_no_settings_heading_with_the_models_block(ready, tmp_path):
+def test_settings_block_after_the_models_block(ready, tmp_path):
+    # the models are this machine's; the settings this session folder's
+    path = write_config(tmp_path, "")
     lines, _ = check_report.report(None, tmp_path, online=False)
-    assert "Settings" not in lines
+    i = lines.index("Settings")
+    assert lines.index("Models: 5.7 GB") < i - 1 and lines[i - 1] == ""
+    assert lines[i + 1] == f"  Checked: {path.resolve()}"
 
 
 def test_settings_error_names_the_file_once(ready, tmp_path, monkeypatch):
     path = write_config(tmp_path, "master: [\n")
     monkeypatch.chdir(tmp_path)
     lines, _ = check_report.report(Path("scribe.yaml"), tmp_path, online=False)
-    [bad] = [s for s in lines if s.startswith("  ⚠ Settings checked: ")]
-    assert bad.startswith(f"  ⚠ Settings checked: {path}:2: invalid YAML")
+    [bad] = [s for s in lines if s.startswith("  ⚠ Checked: ")]
+    assert bad.startswith(f"  ⚠ Checked: {path}:2: invalid YAML")
     assert bad.count("scribe.yaml") == 1
 
 
@@ -406,7 +424,7 @@ def test_unknown_model_error_shows_the_full_path(ready, tmp_path, monkeypatch):
     path = write_config(tmp_path, "transcribe:\n  whisper:\n    model: no-such-model\n")
     monkeypatch.chdir(tmp_path)
     lines, _ = check_report.report(Path("scribe.yaml"), tmp_path, online=False)
-    assert f"  ⚠ Settings checked: {path}: unknown Whisper model" in "\n".join(lines)
+    assert f"  ⚠ Checked: {path}: unknown Whisper model" in "\n".join(lines)
 
 
 def test_settings_path_kept_as_given_not_resolved(ready, tmp_path, monkeypatch):
@@ -414,7 +432,7 @@ def test_settings_path_kept_as_given_not_resolved(ready, tmp_path, monkeypatch):
     path = write_config(tmp_path, "")
     monkeypatch.setattr(Path, "resolve", lambda self, strict=False: Path("X:/unc"))
     lines, _ = check_report.report(None, tmp_path, online=False)
-    assert f"  Settings checked: {path.absolute()}" in lines
+    assert f"  Checked: {path.absolute()}" in lines
 
 
 def test_online_no_size_lookups_when_the_source_is_unreachable(
@@ -424,7 +442,7 @@ def test_online_no_size_lookups_when_the_source_is_unreachable(
     write_config(tmp_path, "")
     lines, code = online(tmp_path)
     assert code == 0 and network["sizes"] == []
-    [needs] = [s for s in lines if s.startswith("    needs")]
+    [needs] = [s for s in lines if s.startswith("  Needs:")]
     assert "(size unknown, downloaded on first transcription)" in needs
     assert lines.index("Connection") > lines.index(needs)  # layout unchanged
 
@@ -461,3 +479,25 @@ def test_report_shows_each_section_as_it_is_done(ready, monkeypatch, tmp_path):
     assert events[1] == ("busy", check_report.LOADING)
     assert events[2] == ("whisperx", [check_report.LOADING])
     assert any(e[0] == "show" and e[1].startswith("Transcription") for e in events)
+
+
+def test_report_shows_nothing_while_a_spinner_runs(ready, tmp_path):
+    # the spinner does not redirect stdout (see Progress._live): a line
+    # printed under it lands after its frame and leaves that frame on screen
+    from contextlib import contextmanager
+
+    active = []
+    shown_under = []
+
+    @contextmanager
+    def busy(label):
+        active.append(label)
+        yield
+        active.pop()
+
+    def show(lines):
+        if active:
+            shown_under.append((active[-1], lines[0]))
+
+    check_report.report(None, tmp_path, online=False, show=show, busy=busy)
+    assert shown_under == []

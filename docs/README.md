@@ -12,6 +12,8 @@ Each page covers one part.
   have.
 - [Troubleshooting](troubleshooting.md): what each ✘ of `scribe check`
   means and how to fix it.
+- [Uninstall](uninstall.md): remove scribeio and what it downloaded (the
+  speech models, PyTorch, ffmpeg).
 
 ## Use
 

@@ -65,7 +65,7 @@ scribe check
 It lists what each use needs and what it finds, offline:
 
 ```
-scribeio 0.1.4, Python 3.12.9 (installed with uv)
+scribeio 0.1.5, Python 3.12.9 (installed with uv)
 
 Audio mastering                                      ready
   ✔ ffmpeg 9.0.2  C:\Users\you\AppData\Local\Microsoft\WinGet\Links\ffmpeg.exe
@@ -77,10 +77,23 @@ Transcription                                        ready
   ✔ GPU: NVIDIA GeForce RTX 4060, 8 GB
   ℹ ffmpeg 9: WhisperX's audio library prints a warning; harmless
 
-Models (C:\Users\you\.cache\huggingface\hub)
+Models
   Whisper:   none yet: downloaded on your first transcription
   Alignment: none yet: downloaded on your first transcription
+
+Settings
 …
+```
+
+After the first transcription, Models lists each model with its size and
+the folders they are in:
+
+```
+Models: 3.3 GB
+  Whisper:   large-v3 (2.9 GB)
+  Alignment: en (360 MB)
+  Folders:   C:\Users\you\.cache\huggingface\hub
+             C:\Users\you\.cache\torch\hub\checkpoints
 ```
 
 Each use is **ready**, **not ready**, or **not installed** (audio
@@ -122,10 +135,8 @@ uv tool upgrade scribeio
 uv tool uninstall scribeio
 ```
 
-The speech models stay in the folder `scribe check` shows under Models.
-Other programs that use Hugging Face models share that folder: delete the
-models there only if nothing else needs them. To remove uv as well, see
-[uninstalling uv](https://docs.astral.sh/uv/getting-started/installation/#uninstallation).
+This leaves the speech models, uv's download cache and ffmpeg on the
+computer: [Uninstall](uninstall.md) lists each one and how to remove it.
 
 ## Terminal tips
 

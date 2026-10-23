@@ -47,7 +47,8 @@ def fakes(monkeypatch, tmp_path):
             raise NotCached(name)
         # the snapshot folder, as a finished download leaves it; one in
         # whisper_incomplete lacks config.json (download cut short)
-        folder = tmp_path / "snapshots" / name
+        repo = repos.get(name, name).replace("/", "--")
+        folder = tmp_path / "hf" / f"models--{repo}" / "snapshots" / "abc"
         folder.mkdir(parents=True, exist_ok=True)
         for file in ("config.json", "model.bin", "tokenizer.json", "vocabulary.txt"):
             if not (file == "config.json" and name in state.whisper_incomplete):
@@ -246,6 +247,31 @@ def test_incomplete_whisper_model_is_not_offered(fakes):
     assert models.cached_whisper_models() == ["medium"]
 
 
+def test_whisper_on_disk_sizes_and_folder(fakes, tmp_path):
+    fakes.whisper_cached = {"large-v3", "large", "medium"}
+    blob = tmp_path / "hf" / "models--Systran--faster-whisper-medium" / "blobs" / "b"
+    blob.parent.mkdir(parents=True)
+    blob.write_bytes(b"x" * 1000)
+    found = models.whisper_on_disk()
+    assert [m.name for m in found] == ["large-v3", "medium"]
+    assert {m.folder for m in found} == {tmp_path / "hf"}
+    assert found[1].nbytes == 1004  # the blob and the four snapshot files
+
+
+def test_disk_size_counts_linked_files_once(tmp_path):
+    # Hugging Face snapshots link to its blobs on Linux and macOS
+    blob = tmp_path / "blobs" / "b"
+    blob.parent.mkdir()
+    blob.write_bytes(b"x" * 1000)
+    link = tmp_path / "snapshots" / "abc" / "model.bin"
+    link.parent.mkdir(parents=True)
+    try:
+        link.symlink_to(blob)
+    except OSError:
+        pytest.skip("no rights to create symlinks")
+    assert models._disk_size(tmp_path) == 1000
+
+
 # --- download ------------------------------------------------------------------------
 
 
@@ -440,25 +466,28 @@ def test_cache_folder(fakes):
 
 
 def test_local_alignment_lists_cached_and_damaged(fakes):
-    torch_file(fakes)
-    assert models.local_alignment() == (["en"], [])
+    path = torch_file(fakes)
+    on_disk = models.OnDisk("en", path.stat().st_size, path.parent)
+    assert models.local_alignment() == ([on_disk], [])
     torch_file(fakes, valid=False)
     assert models.local_alignment() == ([], ["en"])
 
 
 def test_local_alignment_huggingface_repo(fakes, tmp_path):
-    folder = tmp_path / "pl-model"
-    folder.mkdir()
+    hub = tmp_path / "hf"
+    folder = hub / "models--org--wav2vec2-polish" / "snapshots" / "abc"
+    folder.mkdir(parents=True)
     (folder / "config.json").write_text("{}", encoding="utf-8")
     (folder / "model.safetensors").write_bytes(b"x")
     fakes.hf_cached["org/wav2vec2-polish"] = folder
-    assert models.local_alignment() == (["pl"], [])
+    assert models.local_alignment() == ([models.OnDisk("pl", 3, hub)], [])
 
 
 def test_nothing_on_disk_on_a_fresh_install(fakes):  # Review Focus 5
     fakes.whisper_cached = set()
     assert not fakes.hub.exists() and not models.cache_folder().exists()
     assert models.cached_whisper_models() == []
+    assert models.whisper_on_disk() == []
     assert models.local_alignment() == ([], [])
 
 
