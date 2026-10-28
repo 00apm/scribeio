@@ -68,7 +68,7 @@ def test_render_prefilled_speakers_and_music(tmp_path):
     path.write_text(text, encoding="utf-8")
     speakers = load_config(path).speakers
     assert speakers == {"gm_account": "gm.account", "odd__name_1234": "odd: name#1234"}
-    assert "# music bots (not transcribed): Kenku FM#1234" in text
+    assert "# music tracks (not transcribed): Kenku FM#1234" in text
     assert "Game Master" not in text  # template placeholders replaced
 
 

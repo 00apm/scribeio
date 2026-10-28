@@ -7,8 +7,9 @@
 
 # Docs: https://github.com/00apm/scribeio/blob/main/docs/recordings.md
 input:
-  # Substrings (case-insensitive) that mark music bot tracks. Kenku is the
-  # default bot; add other bots' names in your config (the list replaces this).
+  # Substrings (case-insensitive) that mark music tracks. Kenku (a Discord
+  # music bot) is the default; add other names in your config (the list
+  # replaces this).
   music_patterns: [kenku]
 
 # Docs: https://github.com/00apm/scribeio/blob/main/docs/usage/audio-tuning.md

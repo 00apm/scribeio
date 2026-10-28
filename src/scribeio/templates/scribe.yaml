@@ -13,14 +13,14 @@ speakers:
   player.one.old: Player One   # several accounts may map to one person
 
 input:
-  music_patterns: [kenku]   # music bot tracks (part of the name); add your bots
+  music_patterns: [kenku]   # music tracks (part of the name); add your own
 
 master:
   channels: mono            # mono | stereo
   format: mp3               # mp3 | m4a | opus
   # voice:                  # every voice track
   #   loudness: {target: -19}   # voice level; higher = louder
-  # music:                  # the music bot's track
+  # music:                  # the music track
   #   loudness: {target: -36}   # music level; higher = louder
   # players:                # per Discord account: changes over `voice`
   #   player.one:

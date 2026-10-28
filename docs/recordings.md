@@ -1,7 +1,7 @@
 # Input recordings
 
 scribeio works from separate tracks: one voice track per person, plus the
-music bot's track if you had one. Most Craig multi-track downloads give
+music track if you had one. Most Craig multi-track downloads give
 exactly that, zipped or unpacked; so does any folder of FLAC files with
 one speaker per file. This page shows which downloads work, where scribeio
 puts its files, and how to prepare tracks yourself.
@@ -27,9 +27,11 @@ scribe transcribe tracks
   The start (local time) names the outputs (`2026-09-22_master.mp3`) and
   dates the transcript. With `info.txt`, `--start` still wins if given.
 
-Music bot tracks are recognised by their name (Kenku by default): they are
-mixed into the session audio as music and never transcribed. Other bots go
-in `scribe.yaml` under `input: music_patterns`.
+Music tracks are recognised by their name: they are mixed into the session
+audio as music and never transcribed. By default that is a track with
+"kenku" in its name (the Kenku music bot on Discord); other names (another
+bot, your own `music.flac`) go in `scribe.yaml` under
+`input: music_patterns`.
 
 ## Choose the right Craig format
 

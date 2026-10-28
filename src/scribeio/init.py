@@ -133,7 +133,7 @@ def render_config(
             for name in speakers
         ]
         if music:
-            lines.append(f"  # music bots (not transcribed): {', '.join(music)}")
+            lines.append(f"  # music tracks (not transcribed): {', '.join(music)}")
         # A function as replacement: names are inserted literally.
         sections["speakers"] = _SPEAKERS.sub(
             lambda _: "\n".join(lines) + "\n", sections["speakers"], count=1

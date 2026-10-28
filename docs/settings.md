@@ -12,8 +12,8 @@ what it cannot know by itself:
 
 - **Who is who:** the name to write in the transcript for each Discord
   account (`gm.account` → `Game Master`).
-- **Which track is music:** the music bot's name, so its track is mixed
-  in as music and never transcribed (Kenku by default).
+- **Which track is music:** part of the music track's name, so it is
+  mixed in as music and never transcribed (Kenku by default).
 - **Which language is spoken:** English by default.
 
 It also holds the settings that change scribeio's default behaviour:

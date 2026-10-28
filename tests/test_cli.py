@@ -43,7 +43,7 @@ def test_init_from_recording_prefills_speakers(tmp_path):
     assert result.exit_code == 0, result.output
     text = (tmp_path / "rec" / "scribe.yaml").read_text(encoding="utf-8")
     assert '"gm.account": "gm.account"' in text
-    assert "music bots (not transcribed): Kenku FM#1234" in text
+    assert "music tracks (not transcribed): Kenku FM#1234" in text
     assert "language: pl" in text
     assert "scribe transcribe" in result.output  # next step hint
 

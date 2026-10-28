@@ -37,7 +37,7 @@ scribe transcribe "craig-session-7.zip"
 ```
 
 Each player's track is transcribed on its own, so every line has the right
-speaker even when people talk over each other. The music bot is left out.
+speaker even when people talk over each other. The music track is left out.
 A 10-minute recording took about a minute and a half on an 8 GB NVIDIA
 GPU. When all goes well, the run looks like this, and its last line names
 the transcript and the report:
