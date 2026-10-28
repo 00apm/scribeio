@@ -110,15 +110,21 @@ Each guide covers one part; go to the one you need.
 - **[Input recordings](https://github.com/00apm/scribeio/blob/main/docs/recordings.md):**
   which Craig downloads work, where scribeio puts its files, and how to
   use tracks that did not come from Craig.
+- **[Your settings file](https://github.com/00apm/scribeio/blob/main/docs/settings.md):**
+  why `scribe.yaml` exists, how to read it and change a setting without
+  breaking it.
 - **[Audio mastering](https://github.com/00apm/scribeio/blob/main/docs/usage/audio.md):**
-  listen to a short preview after each step, change how the voices and
-  the music sound, adjust one player only, and choose the file format.
+  make the session audio and listen to a short preview after each step;
+  [tuning the audio](https://github.com/00apm/scribeio/blob/main/docs/usage/audio-tuning.md):
+  voice and music levels, one player only, the file format.
 - **[Transcribing a recording](https://github.com/00apm/scribeio/blob/main/docs/usage/transcribe.md):**
-  set names and the language, download the models, read the transcript
-  and the report, and teach Whisper the names of your world with a
-  glossary.
+  download the models, read the transcript and the report;
+  [tuning the transcription](https://github.com/00apm/scribeio/blob/main/docs/usage/transcribe-tuning.md):
+  the names of your world and corrections in a glossary, the language,
+  the model; [rebuild the transcript](https://github.com/00apm/scribeio/blob/main/docs/usage/merge.md)
+  in seconds after a fix.
 
-All documentation pages, install included:
+Every page, with a "where do I find…" guide:
 [docs](https://github.com/00apm/scribeio/blob/main/docs/README.md).
 
 ## Development

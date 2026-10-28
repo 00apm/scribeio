@@ -3,6 +3,7 @@
 Install scribeio with three commands: ffmpeg, uv (it brings its own Python),
 and scribeio itself.
 
+> [!IMPORTANT]
 > **What you need**
 >
 > - **For transcription, an NVIDIA GPU:** GTX 16xx, RTX 20xx or newer,

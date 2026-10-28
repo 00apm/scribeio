@@ -17,7 +17,8 @@ replace the one other tools in a shared environment use.
 
 ## Install
 
-> **Warning:** install PyTorch with CUDA *before* scribeio. Otherwise pip
+> [!WARNING]
+> install PyTorch with CUDA *before* scribeio. Otherwise pip
 > takes PyTorch from PyPI, which on Windows is a CPU-only build, and
 > transcription takes hours. The PyTorch version must also fit WhisperX's
 > pin (2.8 for WhisperX 3.8.6): with a newer one, pip replaces it the same

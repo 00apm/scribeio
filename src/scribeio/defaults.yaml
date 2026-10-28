@@ -5,18 +5,21 @@
 #   master      `scribe master`
 #   transcribe  `scribe transcribe` and `scribe merge`
 
+# Docs: https://github.com/00apm/scribeio/blob/main/docs/recordings.md
 input:
-  # Substrings (case-insensitive) that mark music bot tracks. Kenku is the
-  # default bot; add other bots' names in your config (the list replaces this).
+  # Substrings (case-insensitive) that mark music tracks. Kenku (a Discord
+  # music bot) is the default; add other names in your config (the list
+  # replaces this).
   music_patterns: [kenku]
 
+# Docs: https://github.com/00apm/scribeio/blob/main/docs/usage/audio-tuning.md
 master:
   channels: mono            # mono | stereo
   format: mp3               # mp3 | m4a | opus
   bitrate: null             # null = per format: mp3 96k, m4a 64k, opus 48k
   # Each stage runs the steps in its `chain`, in order. Every other key is a
-  # step: an ffmpeg filter (type + the filter's options) or `loudness` (LUFS).
-  # A step not in a chain does nothing until a chain names it.
+  # step: an allowed filter (`type` + its options) or scribe's `loudness`
+  # (a target level; closer to 0 is louder). A step in no chain does nothing.
   voice:                    # every voice track; per-player changes go in `players`
     stereo: false           # true keeps a stereo mic stereo (with channels: stereo)
     chain: [rumble, level, comp, eq, loudness]
@@ -41,9 +44,10 @@ master:
     limiter:  {type: alimiter, limit: -1.5dB, level: false}  # caps peaks; no auto gain
   players: {}               # Discord account -> changes over `voice`, same keys
 
+# Docs: https://github.com/00apm/scribeio/blob/main/docs/usage/transcribe-tuning.md
 transcribe:
   whisper:
-    model: large-v3
+    model: large-v3         # smaller and faster: large-v3-turbo, medium, small
     language: en            # any Whisper language code; tuned and tested: en, pl
     device: cuda            # cpu works, but very slowly
     compute_type: default   # WhisperX picks: float16 on GPU, float32 on CPU (or int8, ...)
@@ -52,8 +56,8 @@ transcribe:
     align_model: null       # word alignment model; null = WhisperX default for the language
 
   cleanup:                  # removing Whisper hallucinations, hesitations, loops
-    energy_db: -50          # word is voiced if a frame_ms frame within it exceeds this (dBFS)
-    frame_ms: 50
+    energy_db: -50          # a word is voiced when a slice of it is louder (0 = loudest)
+    frame_ms: 50            # slice length for energy_db, in milliseconds
     voiced_ratio: 0.5       # drop a segment when voiced words / words < this
     phrase_max_words: 6     # phrase backstop applies only to segments this short
     phrases:                # known Whisper hallucinations; case-insensitive substrings
@@ -71,13 +75,13 @@ transcribe:
       - subtitles by
       - amara.org
     keep_fillers: false     # true keeps hesitations (yyy, mmm, uh, um)
-    loop_min_words: 3
+    loop_min_words: 3       # shorter texts never count as a loop
     loop_max_repeat: 3      # a repeated segment is kept at most this many times in a row
 
   lines:
     pause: 1.5              # seconds; a new line starts when a speaker pauses this long
 
   bleed:                    # same speech on two tracks (report only)
-    similarity: 0.85
-    min_words: 5
+    similarity: 0.85        # how alike the two texts must be, 0 to 1
+    min_words: 5            # both texts need at least this many words
     min_overlap: 0.5        # fraction of the shorter segment
