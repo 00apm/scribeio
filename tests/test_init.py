@@ -39,22 +39,22 @@ def test_glossary_examples_work_once_uncommented():
     assert gloss.correct("w Worgradzie") == "w Vorgradzie"
 
 
-def test_master_examples_work_once_uncommented(tmp_path):
-    text = init.template("scribe.yaml")
-    # the master: block's examples are commented out as "  # key" lines
-    block = text[text.index("master:") : text.index("transcribe:")]
-    uncommented = re.sub(r"(?m)^  # ", "  ", block)
-    cfg = resolve(_load(tmp_path, text.replace(block, uncommented)).settings["master"])
-    assert cfg.players_stereo["player_one"] is True
-    assert [s.name for s in cfg.players["player_two"]] == [
-        "rumble",
-        "level",
-        "comp",
-        "eq",
-        "denoise",
-        "loudness",
-    ]
-    assert cfg.music[-1].options["target"] == -36
+def test_examples_work_once_uncommented(tmp_path):
+    # the docs' rule: remove the "# " of an indented line to use it
+    text = re.sub(r"(?m)^( +)# ", r"\1", init.template("scribe.yaml"))
+    cfg = resolve(_load(tmp_path, text).settings["master"])
+    assert cfg.players["player_one"][-1].options["target"] == -17
+    # the file itself, not the merge: the defaults hold these values anyway
+    settings = yaml.safe_load(text)
+    assert settings["master"]["voice"]["loudness"]["target"] == -19
+    assert settings["master"]["music"]["loudness"]["target"] == -36
+    whisper = settings["transcribe"]["whisper"]
+    assert (whisper["model"], whisper["device"], whisper["batch_size"]) == (
+        "large-v3",
+        "cuda",
+        4,
+    )
+    assert settings["transcribe"]["lines"]["pause"] == 1.5
 
 
 def test_render_without_changes_is_the_template():
@@ -162,12 +162,25 @@ def test_short_template_lists_only_the_usual_keys():
     text = init.render_config()
     assert _keys(text) == ["speakers", "input", "master", "transcribe"]
     assert "phrases" not in text and "--full" in text
+    assert "music_patterns: [kenku]" in text
+    active = [ln for ln in text.splitlines() if not ln.lstrip().startswith("#")]
+    for word in ("chain", "LUFS", "dBFS"):
+        assert not any(word in ln for ln in active), word
+
+
+def test_render_full_header():
+    text = init.render_config(full=True)
+    assert "scribe init --full" not in text
+    assert "every setting with its default" in text
+    assert "name it in a\n# `chain`" in text
+    assert "https://github.com/00apm/scribeio/blob/main/docs/settings.md" in text
 
 
 def test_render_only_master(tmp_path):
     text = init.render_config(["gm.account", "player.one"], ["Kenku"], only="master")
     assert _keys(text) == ["input", "master"]
     assert '# accounts in this recording: "gm.account", "player.one"' in text
+    assert "speakers" not in text  # nor in the header
     cfg = _load(tmp_path, text)
     assert cfg.speakers == {} and cfg.glossary_path is None
     assert cfg.settings["master"]["format"] == "mp3"

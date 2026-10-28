@@ -36,10 +36,13 @@ _SECTIONS: dict[Only, tuple[str, ...]] = {
     "master": ("input", "master"),
     "transcribe": ("speakers", "input", "transcribe"),
 }
+# The short template's pointer to --full; a --full file drops it.
+_FULL_LINE = "# All settings with their defaults: `scribe init --full`.\n"
 _FULL_NOTE = """\
 # Written with --full: every setting with its default value. A key you keep
 # wins over scribe's default, also a changed one in a later version; delete
-# what you do not change.
+# what you do not change. A step marked # is in no chain: name it in a
+# `chain` before you remove the "# ".
 
 """
 _GLOSSARY = (
@@ -115,7 +118,7 @@ def render_config(
     """
     header, sections = _split(template(CONFIG_NAME))
     if full:
-        header += _FULL_NOTE
+        header = header.replace(_FULL_LINE, "") + _FULL_NOTE
         defaults = files("scribeio").joinpath("defaults.yaml")
         _, built_in = _split(defaults.read_text(encoding="utf-8"))
         sections.update({k: built_in[k] for k in ("input", "master", "transcribe")})
