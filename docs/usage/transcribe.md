@@ -44,8 +44,10 @@ music (not transcribed): Kenku
 2026-09-22_transcript.md: 87 lines, 5 segments dropped, 0 possible bleed - see 2026-09-22_transcript-report.md
 ```
 
-If the outputs already exist, scribeio stops; `--force` overwrites them.
-`--name` and `-o` change the name and the folder, as for the audio.
+The files are named by the session date (`2026-09-22` here, from the
+recording's start time); yours have your session's date. `--name` gives
+them another name, `-o` writes to another folder. If the outputs already
+exist, scribeio stops; `--force` overwrites them.
 
 ### Download the models on the first run
 
@@ -72,7 +74,7 @@ Choose (d, a) [a]:
 |---|---|
 | `2026-09-22_transcript.md` | the transcript |
 | `2026-09-22_transcript-report.md` | the quality report |
-| `2026-09-22_transcript.json` | everything Whisper found, for rebuilding the transcript |
+| `2026-09-22_transcript.json` | everything Whisper found, for [rebuilding the transcript](merge.md) |
 
 The transcript starts with the session's date, start time, length and
 speakers, then one line per utterance, in time order:

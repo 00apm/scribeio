@@ -56,8 +56,10 @@ mix: limiter
 master: C:\RPG\Session 7\2026-09-22_master.mp3
 ```
 
-The name is the session date; `--name` changes it, `-o` writes to another
-folder. If the file already exists, scribeio stops; `--force` overwrites it.
+The files are named by the session date (`2026-09-22` here, from the
+recording's start time); yours have your session's date. `--name` gives
+them another name, `-o` writes to another folder. If the file already
+exists, scribeio stops; `--force` overwrites it.
 
 ## Preview your settings
 

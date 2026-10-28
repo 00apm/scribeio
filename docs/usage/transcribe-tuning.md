@@ -57,16 +57,13 @@ When the transcript has a name wrong:
 
 1. Add a correction to `glossary.txt`, e.g. `Strad* -> Strahd`, and save
    the file.
-2. Rebuild the transcript from the `.json`:
+2. Rebuild the transcript from its `.json` (named by your session's
+   date), in seconds and without the GPU
+   ([rebuild the transcript](merge.md)):
 
    ```
    scribe merge "2026-09-22_transcript.json"
    ```
-
-This takes seconds and needs no GPU. `scribe merge` rebuilds the
-transcript and the report, never the `.json`; it also picks up changed
-names under `speakers:`. New prompt names help only the next
-`scribe transcribe`.
 
 ## Choose the language
 
@@ -115,8 +112,8 @@ transcribe:
 A speaker's words stay on one line until they pause this many seconds.
 Lower: more, shorter lines, closer to the rhythm of the talk. Higher:
 fewer, longer lines, a long speech in one piece. A short reply from
-someone else always lands where it was said. `scribe merge` applies a
-change without transcribing again.
+someone else always lands where it was said. [`scribe merge`](merge.md)
+applies a change without transcribing again.
 
 ## Advanced: hallucinations and hesitations
 
@@ -146,7 +143,8 @@ transcribe:
 ```
 
 Each phrase matches part of a line, ignoring case. Check the report after
-the next `scribe merge`: it lists every dropped line with its reason.
+the next [`scribe merge`](merge.md): it lists every dropped line with its
+reason.
 
 ### Keep hesitations
 
