@@ -2,6 +2,7 @@
 
 import re
 from importlib.resources import files
+from pathlib import Path
 
 import pytest
 import yaml
@@ -166,6 +167,17 @@ def test_short_template_lists_only_the_usual_keys():
     active = [ln for ln in text.splitlines() if not ln.lstrip().startswith("#")]
     for word in ("chain", "LUFS", "dBFS"):
         assert not any(word in ln for ln in active), word
+
+
+def test_template_doc_links_exist():
+    root = Path(__file__).parents[1]
+    if not (root / "docs").is_dir():
+        pytest.skip("no docs folder (installed package)")
+    defaults = files("scribeio").joinpath("defaults.yaml").read_text("utf-8")
+    links = re.findall(r"docs/[\w./-]+\.md", init.template("scribe.yaml") + defaults)
+    assert "docs/usage/audio-tuning.md" in links
+    assert "docs/usage/transcribe-tuning.md" in links
+    assert [link for link in links if not (root / link).is_file()] == []
 
 
 def test_render_full_header():
