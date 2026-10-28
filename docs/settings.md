@@ -31,11 +31,20 @@ default settings and English, and says so.
 scribe init "craig-session-7.zip"
 ```
 
-This writes `scribe.yaml` next to the recording, with the recording's
-Discord accounts already listed, and `glossary.txt` for the names of your
-world ([teach Whisper your names](usage/transcribe-tuning.md)). Every
-`scribe` command uses `scribe.yaml` by itself when it sits next to the
-input; it says so on its first line:
+This writes two files next to the recording:
+
+- `scribe.yaml`, with the recording's Discord accounts already listed
+  under `speakers:`. Write each person's name after their account and
+  save the file; the transcript uses these names. For a language other
+  than English, add `--language pl` (any Whisper language code).
+- `glossary.txt`, optional: the names of your world
+  ([add names and corrections](usage/transcribe-tuning.md#add-names-and-corrections)).
+
+scribeio's messages sometimes show an account as in Craig's file names,
+`gm_account` for `gm.account`: to scribeio both are the same account.
+
+Every `scribe` command uses `scribe.yaml` by itself when it sits next to
+the input; it says so on its first line:
 
 ```
 using config scribe.yaml (next to the input)
@@ -140,7 +149,7 @@ default, also when a later version improves that default.
 
 ## Where each section is explained
 
-- `speakers`: [transcribing a recording](usage/transcribe.md)
+- `speakers`: [create the settings file](#create-the-settings-file)
 - `input`: [input recordings](recordings.md)
 - `master`: [tuning the audio](usage/audio-tuning.md)
 - `transcribe`: [tuning the transcription](usage/transcribe-tuning.md)

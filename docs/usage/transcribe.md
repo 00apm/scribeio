@@ -1,34 +1,22 @@
 # Transcribing a recording
 
-Turn a recording into a readable transcript with everyone's name, and fix
-the names Whisper gets wrong.
+Turn a recording into a readable transcript with everyone's name. Making
+it better (names of your world, language, model, line length) is on
+[tuning the transcription](transcribe-tuning.md).
 
 ## Configure the transcription
-
-Before the first transcription, create the config files:
 
 ```
 scribe init "craig-session-7.zip"
 ```
 
-The input is the Craig zip or a folder of FLAC tracks
-([input recordings](../recordings.md)). scribeio only sees Discord
-accounts and sounds: it needs you to tell it who is who, which language is
-spoken, and the names of your world. This writes two files next to the
-input:
-
-- `scribe.yaml`, with the recording's Discord accounts listed under
-  `speakers:`. Write each person's name after their account; the
-  transcript uses these names. Set the language here too
-  (`language: pl`; English by default).
-- `glossary.txt`, for the names of your world (see
-  [Teach Whisper your names](#teach-whisper-your-names)).
-
-Every `scribe` command uses `scribe.yaml` by itself when it sits next to the
-input. Without it, `scribe transcribe` offers to create it; a run without
-it uses the account names and English. For the next session of the same
-group, copy both files to its folder: the names and the glossary carry
-over.
+The transcription needs `scribe.yaml` with each person's name next to
+their Discord account, and the language if it is not English;
+`glossary.txt` with the names of your world is optional. How to fill them
+in: [create the settings file](../settings.md#create-the-settings-file).
+Without `scribe.yaml`, `scribe transcribe` offers to create it. The input
+is a Craig download or a folder of FLAC tracks
+([input recordings](../recordings.md)).
 
 ## Transcribe
 
@@ -56,18 +44,15 @@ music (not transcribed): Kenku
 2026-09-22_transcript.md: 87 lines, 5 segments dropped, 0 possible bleed - see 2026-09-22_transcript-report.md
 ```
 
-The run names each account as in Craig's file names: `gm_account` for
-`gm.account`. To scribeio both are the same account; so are other
-characters Craig replaces with `_` in file names.
-
 If the outputs already exist, scribeio stops; `--force` overwrites them.
 `--name` and `-o` change the name and the folder, as for the audio.
 
 ### Download the models on the first run
 
 The first transcription needs two speech models: the Whisper model
-(`large-v3` by default, 2.9 GB; `transcribe.whisper.model` in
-`scribe.yaml` picks another) and a smaller word-timing model for the
+(`large-v3` by default, 2.9 GB;
+[choose the model](transcribe-tuning.md#choose-the-model-and-the-device))
+and a smaller word-timing model for the
 language (up to about 1.2 GB). scribeio asks before downloading each one,
 with its size:
 
@@ -107,8 +92,10 @@ source: "craig-session-7.zip"
 [00:00:07] Game Master: Far above, a castle stands against the grey sky.
 ```
 
-A new line starts when a speaker pauses for 1.5 seconds; a short reply
-from someone else lands in the middle of a long speech, where it was said.
+A new line starts when a speaker pauses for 1.5 seconds
+([choose when a new line starts](transcribe-tuning.md#choose-when-a-new-line-starts));
+a short reply from someone else lands in the middle of a long speech,
+where it was said.
 
 ### Hallucinations are removed
 
@@ -117,74 +104,20 @@ cases are a "thanks for watching" in a silent stretch, the same phrase
 repeated over and over, and lines made only of hesitations ("um", "yyy").
 scribeio looks for these and deletes them from the transcript. The report
 lists every deleted line with the reason, so you can check that nothing
-real went missing.
+real went missing. To remove more or fewer of them, see
+[hallucinations and hesitations](transcribe-tuning.md#advanced-hallucinations-and-hesitations).
 
 The report also shows, per speaker, how many lines were kept and dropped,
 and lists "possible bleed": the same speech found on two tracks, usually
 one mic picking up another person's speakers.
 
-## Teach Whisper your names
+## Make the transcript better
 
-Whisper knows common words, not the names of your world: "Strahd" may
-come out as "Strad", "Skaven" as "Scaven", or differently each time.
-`glossary.txt` fixes this in two ways:
-
-```
-# names Whisper should listen for, most important first
-Strahd
-Barovia
-Cthulhu
-Skaven
-
-# corrections: wrong -> right
-Cthulu -> Cthulhu
-Scaven* -> Skaven
-Borovia* -> Barovia
-```
-
-- **A name on its own line** is given to Whisper before it listens, which
-  helps it hear the name right. The space is limited
-  (`prompt_max_tokens`, 200 by default), so put the most important names
-  first; scribeio warns about names left out.
-- **`wrong -> right`** replaces the wrong spelling in the transcript, as a
-  whole word or phrase, ignoring case: `Cthulu` becomes `Cthulhu`.
-- **`stem* -> right`** replaces any word that starts with the stem and
-  keeps its ending: with `Borovia* -> Barovia`, `Borovian` becomes
-  `Barovian`, and with `Scaven* -> Skaven`, `Scavens` becomes `Skavens`.
-  In languages where names change their endings (Polish `Strahda`,
-  `Strahdem`), one stem rule covers every form.
-
-The right side of a correction counts as a name for Whisper too.
-
-### Fix a misspelt name
-
-When the transcript has a name wrong:
-
-1. Add a correction to `glossary.txt`, e.g. `Strad* -> Strahd`.
-2. Rebuild the transcript from the `.json`:
-
-   ```
-   scribe merge "2026-09-22_transcript.json"
-   ```
-
-This takes seconds and needs no GPU. `scribe merge` rebuilds the
-transcript and the report, never the `.json`; it also picks up changed
-names under `speakers:`. New prompt names help only the next
-`scribe transcribe`.
-
-## Choose the language
-
-```yaml
-transcribe:
-  whisper:
-    language: pl
-```
-
-Any language code Whisper knows works (`en`, `de`, `fr`, …). English and
-Polish are tuned and tested: for those, scribeio knows Whisper's typical
-hallucinated phrases and the hesitation sounds. For another language, add
-the phrases you find in the transcript to `transcribe.cleanup.phrases` in
-`scribe.yaml` (a list you write replaces the default one).
+A name comes out wrong, the language is not English, the run is too slow,
+lines are too long or too short: see
+[tuning the transcription](transcribe-tuning.md). A misheard name is fixed
+with one line in `glossary.txt` and a rebuild that takes seconds
+([fix a misspelt name](transcribe-tuning.md#fix-a-misspelt-name)).
 
 ## Transcribe the processed tracks
 
