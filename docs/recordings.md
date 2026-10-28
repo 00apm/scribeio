@@ -48,7 +48,8 @@ like the zip.
 
 ## Keep the tracks inside a session folder
 
-> **Warning:** scribeio writes `scribe.yaml` and every output *next to* the
+> [!WARNING]
+> scribeio writes `scribe.yaml` and every output *next to* the
 > input, in the folder that holds it, not inside it. For a track folder
 > that is its parent folder. Running `scribe init .` from inside the track
 > folder puts `scribe.yaml` one level up, and the outputs follow it there.

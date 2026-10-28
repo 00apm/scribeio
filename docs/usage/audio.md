@@ -17,7 +17,8 @@ If you only want the audio, `scribe init --only master` writes only the
 mastering settings, and no glossary. scribeio also works without
 `scribe.yaml`, on its default settings.
 
-> **Warning:** `scribe.yaml` and the outputs land next to the input, not
+> [!WARNING]
+> `scribe.yaml` and the outputs land next to the input, not
 > inside it. Run scribeio from the session folder, with the tracks inside it
 > ([keep the tracks inside a session folder](../recordings.md#keep-the-tracks-inside-a-session-folder)).
 
