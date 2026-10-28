@@ -1,7 +1,8 @@
 # Audio mastering
 
-Turn a session recording into one evenly balanced audio file, and adjust
-how it sounds.
+Turn a session recording into one evenly balanced audio file, and hear
+on a short preview how it will sound. Changing how it sounds is on
+[tuning the audio](audio-tuning.md).
 
 ## Configure the audio mastering
 
@@ -11,19 +12,10 @@ scribe init "craig-session-7.zip"
 
 The input is the Craig zip or a folder of FLAC tracks
 ([input recordings](../recordings.md)). This writes `scribe.yaml` next to
-it: the file where your settings for this recording live (the mastering
-steps you change, changes for one player, the file format). It holds the
-settings people change most; `--full` writes every setting with its
-default value. The same file serves [transcription](transcribe.md), so
-it also has the speakers, and `glossary.txt` comes with it.
-
-If you only want the audio, `scribe init --only master` leaves the
-transcription part out: `scribe.yaml` gets only the mastering settings
-(with a comment listing the recording's accounts), and no glossary.
-
-scribeio works without `scribe.yaml`, using the default settings (it says
-so), but every change described below goes into this file. Every scribeio
-command uses it by itself when it sits next to the input.
+it, the file for your settings ([your settings file](../settings.md)).
+If you only want the audio, `scribe init --only master` writes only the
+mastering settings, and no glossary. scribeio also works without
+`scribe.yaml`, on its default settings.
 
 > **Warning:** `scribe.yaml` and the outputs land next to the input, not
 > inside it. Run scribeio from the session folder, with the tracks inside it
@@ -37,7 +29,7 @@ scribe master "craig-session-7.zip"
 
 Every player's track goes through the same steps: low rumble and desk
 thumps cut, every player brought to the same level, loud and quiet words
-evened out, a little warmth and clarity added. The music bot is set well
+evened out, a little warmth and clarity added. The music track is set well
 under the voices. Then everything is mixed, peaks are capped, and one file
 is written next to the input.
 
@@ -128,98 +120,15 @@ A player who stays silent in the excerpt is named in a warning. With
 | `--length 60` | excerpt length in seconds (default 90) |
 | `--montage` | always makes the montage (not with `--at`) |
 
-## Change a setting
+## Change how it sounds
 
-Loudness is given in LUFS: loudness as the ear hears it, in negative
-numbers; closer to 0 is louder, and a change of a few units is clearly
-audible.
-
-Each player's track goes through the `voice` chain, the music bot through
-`music`, and the mixed result through `mix`. The steps, in order:
-
-| Step | What it does | What you hear if you change it | Setting |
-|---|---|---|---|
-| `voice` `rumble` | cuts the lowest sounds: desk thumps, mic rumble | more cut: less boom, but voices get thinner | `f: 80` (Hz): higher cuts more, lower keeps more bass |
-| `voice` `level` | brings every player to the same loudness | it sets how hard `comp` works | `target: -19`: usually leave it |
-| `voice` `comp` | evens out loud and quiet words | stronger: steadier, but flatter and less lively | `ratio: 3`: higher evens out more, lower sounds more natural |
-| `voice` `eq` | adds warmth (150 Hz) and clarity (3–5 kHz) | more clarity: crisper words, but harsher "s" sounds | the dB in `entry(3300,3);entry(5000,3)`: higher is brighter, 0 is off |
-| `voice` `loudness` | the final voice level | louder or quieter voices; the music stays where it is | `target: -19`: closer to 0 is louder |
-| `music` `loudness` | the music level | louder or quieter music under the voices | `target: -36`: closer to 0 is louder |
-| `mix` `limiter` | caps the loudest peaks | rarely audible; lower caps more often | `limit: -1.5dB`: usually leave it |
-
-Four more voice steps are ready but in no chain: `hum` (mains hum; set `f:
-60` in the Americas), `denoise` (steady background hiss), `gate` (quieter
-between words) and `deess` (softer sharp "s" sounds). They are untested
-starting points; to use one, add its name to `chain`, e.g. `chain: [rumble,
-hum, level, comp, eq, loudness]`. A list you write replaces the default
-one, so write the whole chain.
-
-Deeper settings (every option of every step) get a reference page after the
-first release.
-
-### Try a change and listen
-
-1. In `scribe.yaml`, under `master:`, change one value; only the option you
-   change needs writing, the step keeps its other settings:
-
-   ```yaml
-   master:
-     voice:
-       comp: {ratio: 4}
-   ```
-
-2. Run `scribe master "craig-session-7.zip" --preview` again.
-3. Listen to `03-voice-comp.flac` against your copy from the last try, and
-   to `08-final.mp3`.
-4. Repeat until it sounds right, then run `scribe master` without
-   `--preview` for the whole session.
-
-### Change one player only
-
-A player is one person's track; the voice chain is what all of them go
-through. Under `players:`, a player's account gets changes over `voice`,
-with the same keys:
-
-```yaml
-master:
-  players:
-    player.two: {chain: [rumble, level, comp, eq, denoise, loudness]}
-    player.three: {eq: {gain_entry: "entry(80,0);entry(150,0);entry(3300,1);entry(5000,1);entry(6000,0)"}}
-```
-
-The account is written as Discord shows it (the comment `scribe init`
-writes lists them). `--preview` says which players have their own chain;
-`--solo player.two --preview` lets you hear one of them alone.
-
-### Keep a stereo mic stereo
-
-Voices are mixed in mono by default. For a player with a stereo mic:
-
-```yaml
-master:
-  channels: stereo
-  players:
-    player.one: {stereo: true}
-```
-
-`channels: stereo` makes the session file stereo (the music keeps its
-stereo); `stereo: true` keeps that player's track stereo too
-(`voice: {stereo: true}` does it for everyone).
-
-## Choose the file format
+The voice and music levels, one player's sound, stereo, the file format
+and the processing steps are on [tuning the audio](audio-tuning.md).
+For one run in another format:
 
 ```
 scribe master "craig-session-7.zip" --format m4a
 ```
-
-| Format | Size per hour (default bitrate) | Plays on |
-|---|---|---|
-| `mp3` (default) | about 43 MB (96k) | everything |
-| `m4a` | about 29 MB (64k) | phones and most players |
-| `opus` | about 22 MB (48k) | browsers, VLC; not every older player |
-
-`format:` in `scribe.yaml` sets it for every run. If ffmpeg has no MP3
-encoder, use `m4a` ([MP3 encoder](../troubleshooting.md#mp3-encoder)).
 
 ## Write each processed track
 
